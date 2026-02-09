@@ -348,18 +348,34 @@ class PolymarketClient:
         client = self._get_clob_client()
 
         try:
-            # Build order args for py-clob-client
-            # Must use OrderArgs dataclass, not a plain dict
-            from py_clob_client.clob_types import OrderArgs
-            order_args = OrderArgs(
-                token_id=request.token_id,
-                side=request.side,
-                price=price,
-                size=request.size,
-            )
+            # For market orders, use create_market_order() with MarketOrderArgs
+            # For limit orders, use create_and_post_order() with OrderArgs
+            from py_clob_client.clob_types import OrderArgs, MarketOrderArgs, OrderType
 
-            # Use create_and_post_order method
-            result = client.create_and_post_order(order_args)
+            if request.order_type == "market":
+                # Market order (FOK/FAK) - use amount instead of size
+                # For BUY: amount = dollar amount, for SELL: amount = shares
+                amount = price * request.size if request.side == "BUY" else request.size
+
+                market_order_args = MarketOrderArgs(
+                    token_id=request.token_id,
+                    amount=amount,
+                    side=request.side,
+                    price=price,  # Optional price limit
+                    order_type=OrderType.FOK,  # Fill-Or-Kill for immediate execution
+                )
+
+                result = client.create_and_post_order(market_order_args, orderType=OrderType.FOK)
+            else:
+                # Limit order (GTC) - use size
+                order_args = OrderArgs(
+                    token_id=request.token_id,
+                    side=request.side,
+                    price=price,
+                    size=request.size,
+                )
+
+                result = client.create_and_post_order(order_args)
 
             return OrderResponse(
                 order_id=result.get("orderId", ""),

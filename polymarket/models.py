@@ -87,7 +87,7 @@ class OrderRequest(BaseModel):
     side: Literal["BUY", "SELL"]
     price: float = Field(ge=0.0, le=1.0, description="Price from 0 to 1")
     size: float = Field(gt=0, description="Order size in shares")
-    order_type: Literal["limit", "market"] = "limit"
+    order_type: Literal["limit", "market"] = "market"  # Default to market for immediate execution
 
     @field_validator("side", mode="before")
     @classmethod
