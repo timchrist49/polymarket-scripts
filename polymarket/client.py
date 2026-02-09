@@ -433,6 +433,18 @@ class PolymarketClient:
             # Remove zero positions
             positions = {k: v for k, v in positions.items() if abs(v) > 0.0001}
 
+            # Calculate position values at current market prices
+            positions_value = 0.0
+            for token_id, quantity in positions.items():
+                try:
+                    price_data = client.get_last_trade_price(token_id)
+                    price = float(price_data.get("price", 0))
+                    positions_value += abs(quantity) * price
+                except Exception as e:
+                    logger.debug(f"Could not get price for {token_id}: {e}")
+
+            total_value = usdc_balance + positions_value
+
             return PortfolioSummary(
                 open_orders=open_orders,
                 total_notional=total_notional,
@@ -440,6 +452,8 @@ class PolymarketClient:
                 total_exposure=total_notional,
                 trades=trades,  # Include raw trades for detailed display
                 usdc_balance=usdc_balance,
+                positions_value=positions_value,
+                total_value=total_value,
             )
 
         except Exception as e:

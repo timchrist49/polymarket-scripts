@@ -110,7 +110,9 @@ def _print_portfolio_summary(portfolio, market_filter: str | None = None) -> Non
     console.print("\n[bold cyan]Portfolio Summary[/bold cyan]\n")
 
     # Summary stats
-    console.print(f"Available Balance: [cyan]${portfolio.usdc_balance:,.2f}[/cyan] USDC")
+    console.print(f"[bold]Total Portfolio Value:[/bold] [cyan]${portfolio.total_value:,.2f}[/cyan]")
+    console.print(f"  Available Cash: [green]${portfolio.usdc_balance:,.2f}[/green] USDC")
+    console.print(f"  Position Value: [green]${portfolio.positions_value:,.2f}[/green]")
     console.print(f"Open Orders: [cyan]{len(portfolio.open_orders)}[/cyan]")
     console.print(f"Total Notional: [cyan]${portfolio.total_notional:,.2f}[/cyan]")
     console.print(f"Total Exposure: [cyan]${portfolio.total_exposure:,.2f}[/cyan]")
