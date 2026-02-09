@@ -15,9 +15,6 @@ Usage:
     # Output as JSON for agent processing
     python scripts/portfolio_status.py --json
 
-    # Show trades only
-    python scripts/portfolio_status.py --trades-only
-
 Returns:
     Portfolio summary including:
         - total_value: Total portfolio value (cash + positions)

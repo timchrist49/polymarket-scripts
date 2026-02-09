@@ -42,8 +42,10 @@ Arguments:
 
 Returns:
     Order confirmation including:
-        - order_id: Unique order identifier
+        - accepted: Whether order was accepted
+        - order_id: Unique order identifier (if accepted)
         - status: Order status (pending, filled, rejected)
+        - error_message: Error details (if rejected)
         - side: BUY or SELL
         - price: Executed price
         - size: Number of shares
@@ -59,11 +61,7 @@ Examples:
 
 Exit codes:
     0: Success (order placed or dry-run verified)
-    1: API error or network failure
-    2: Invalid arguments (missing required, price out of range, etc.)
-    3: Insufficient balance
-    4: Market not accepting orders
-    5: Order rejected by exchange
+    1: API error, network failure, validation error, or configuration error
 
 Important Notes:
     - Market orders use FOK (Fill-Or-Kill) - execute immediately or cancel

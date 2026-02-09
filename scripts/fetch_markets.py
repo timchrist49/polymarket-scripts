@@ -24,8 +24,8 @@ Arguments:
     --market-id: Specific market ID to query
     --search: Search markets by query string
     --limit: Maximum results to return (default: 20)
+    --active-only: Only show active, tradeable markets (default: True)
     --json: Output as JSON instead of formatted table
-    --min-volume: Filter by minimum volume in USDC
 
 Returns:
     Market data including:
@@ -48,7 +48,7 @@ Examples:
 
     # Get BTC market as JSON
     $ python scripts/fetch_markets.py --btc-mode --json
-    {"token_id": "0x...", "price": 0.52, "volume": 12450.0, ...}
+    {"market": {"id": "0x...", "question": "...", "price": 0.52, "volume": 12450.0, ...}}
 
 Exit codes:
     0: Success
