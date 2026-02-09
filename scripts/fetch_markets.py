@@ -1,10 +1,66 @@
 #!/usr/bin/env python3
-"""fetch_markets.py - Fetch market data from Polymarket.
+"""
+Fetch Polymarket market data.
+
+This script queries the Polymarket CLOB API to retrieve market information
+including active BTC 15-minute markets. It supports multiple query modes:
+BTC market discovery, search by query string, and direct market lookup.
 
 Usage:
+    # Fetch current BTC 15-minute market
     python scripts/fetch_markets.py --btc-mode
+
+    # Search markets by query
     python scripts/fetch_markets.py --search "bitcoin" --limit 50
+
+    # Get market by ID
+    python scripts/fetch_markets.py --market-id 0x123...
+
+    # JSON output for agent processing
     python scripts/fetch_markets.py --btc-mode --json
+
+Arguments:
+    --btc-mode: Fetch current BTC 15-min market (auto-discovers timestamp)
+    --market-id: Specific market ID to query
+    --search: Search markets by query string
+    --limit: Maximum results to return (default: 20)
+    --json: Output as JSON instead of formatted table
+    --min-volume: Filter by minimum volume in USDC
+
+Returns:
+    Market data including:
+        - token_id: Token identifier for trading
+        - market_id: Market identifier
+        - title: Market title/description
+        - price: Current price (0-1 for binary markets)
+        - volume: Trading volume in USDC
+        - expiry_time: ISO timestamp when market expires
+        - accepting_orders: Whether market accepts new orders
+
+Examples:
+    # Get current BTC market with table output
+    $ python scripts/fetch_markets.py --btc-mode
+    +-----------------------------+--------+-----------+---------+
+    | Market                      | Price  | Volume    | Expires |
+    +-----------------------------+--------+-----------+---------+
+    | BTC Up or Down 15 Minutes   | 0.52   | $12,450   | 14:15   |
+    +-----------------------------+--------+-----------+---------+
+
+    # Get BTC market as JSON
+    $ python scripts/fetch_markets.py --btc-mode --json
+    {"token_id": "0x...", "price": 0.52, "volume": 12450.0, ...}
+
+Exit codes:
+    0: Success
+    1: API error or network failure
+    2: Invalid arguments
+    3: Market not found
+
+Notes:
+    - BTC markets use slug pattern: btc-updown-15m-{epoch_timestamp}
+    - Timestamp represents interval start time (floored to 15-min)
+    - Requires POLYMARKET_MODE env var (read_only or trading)
+    - For read_only mode, no credentials are required
 """
 
 import sys

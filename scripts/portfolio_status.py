@@ -1,10 +1,62 @@
 #!/usr/bin/env python3
-"""portfolio_status.py - Check open orders and positions.
+"""
+Check Polymarket portfolio status and open orders.
+
+This script queries the Polymarket CLOB API to retrieve current portfolio
+information including open orders, positions, total value, and trade history.
 
 Usage:
+    # Check full portfolio status
     python scripts/portfolio_status.py
-    python scripts/portfolio_status.py --market-id 0x...
+
+    # Filter by specific market
+    python scripts/portfolio_status.py --market-id 0x123...
+
+    # Output as JSON for agent processing
     python scripts/portfolio_status.py --json
+
+    # Show trades only
+    python scripts/portfolio_status.py --trades-only
+
+Returns:
+    Portfolio summary including:
+        - total_value: Total portfolio value (cash + positions)
+        - usdc_balance: Available USDC for trading
+        - positions_value: Total value of open positions
+        - open_orders: List of pending orders
+        - positions: Dictionary of token holdings
+        - trades: Recent trade history
+
+Examples:
+    # Full portfolio with table output
+    $ python scripts/portfolio_status.py
+    Portfolio Summary
+    ================
+    Total Value: $108.50
+    Available: $107.12 USDC
+    Positions: $1.38
+
+    Open Orders: 2
+    +--------------+--------+--------+---------+
+    | Market       | Side   | Price  | Size    |
+    +--------------+--------+--------+---------+
+    | BTC UP 15m   | BUY    | 0.52   | 10      |
+    +--------------+--------+--------+---------+
+
+    # JSON output for agents
+    $ python scripts/portfolio_status.py --json
+    {"total_value": 108.50, "usdc_balance": 107.12, ...}
+
+Exit codes:
+    0: Success
+    1: API error or authentication failure
+    2: Invalid arguments
+
+Notes:
+    - Requires trading mode with valid credentials
+    - Position values calculated at current market prices
+    - Trade history includes all historical trades
+    - Open orders show pending unfilled orders
 """
 
 import sys

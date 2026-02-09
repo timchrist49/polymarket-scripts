@@ -1,9 +1,82 @@
 #!/usr/bin/env python3
-"""place_order.py - Place orders on Polymarket.
+"""
+Place orders on Polymarket markets.
+
+This script places buy/sell orders on Polymarket using the CLOB API.
+It supports market orders (FOK - Fill-Or-Kill) for immediate execution
+and limit orders (GTC - Good-Til-Cancelled) for price control.
 
 Usage:
-    python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --dry-run true
-    python scripts/place_order.py --market-id 0x... --token-id 0x... --side sell --price 0.60 --size 5
+    # Place a test buy order (dry run - recommended first)
+    python scripts/place_order.py \\
+        --btc-mode \\
+        --side buy \\
+        --price 0.55 \\
+        --size 10
+
+    # Place a live sell order
+    python scripts/place_order.py \\
+        --btc-mode \\
+        --side sell \\
+        --price 0.60 \\
+        --size 5 \\
+        --live
+
+    # Place order with explicit market/token IDs
+    python scripts/place_order.py \\
+        --market-id 0x123... \\
+        --token-id 0x456... \\
+        --side buy \\
+        --price 0.50 \\
+        --size 20
+
+Arguments:
+    --btc-mode: Use BTC 15-min market (auto-discovers current market)
+    --market-id: Specific market ID (required if not using --btc-mode)
+    --token-id: Specific token ID (required if not using --btc-mode)
+    --side: Order side - "BUY" or "SELL" (required)
+    --price: Order price from 0.0 to 1.0 (required)
+    --size: Number of shares to trade (required, min: 0.01)
+    --live: Enable live trading (default is dry-run mode)
+    --order-type: "market" (default, FOK) or "limit" (GTC)
+
+Returns:
+    Order confirmation including:
+        - order_id: Unique order identifier
+        - status: Order status (pending, filled, rejected)
+        - side: BUY or SELL
+        - price: Executed price
+        - size: Number of shares
+
+Examples:
+    # Test order first (always recommended)
+    $ python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10
+    [DRY RUN] Would place BUY order: 10 shares @ $0.55
+
+    # Live market order (immediate execution or cancel)
+    $ python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --live
+    Order placed: ID=0xabc123, Status=pending
+
+Exit codes:
+    0: Success (order placed or dry-run verified)
+    1: API error or network failure
+    2: Invalid arguments (missing required, price out of range, etc.)
+    3: Insufficient balance
+    4: Market not accepting orders
+    5: Order rejected by exchange
+
+Important Notes:
+    - Market orders use FOK (Fill-Or-Kill) - execute immediately or cancel
+    - FOK is recommended for 15-min markets due to rapid price movement
+    - Limit orders may not fill before market expiry
+    - Default is dry-run mode; use --live flag for actual trading
+    - Minimum order size applies (check market requirements)
+    - Price must be between 0.0 and 1.0 for binary markets
+
+Security:
+    - Never commit .env file with credentials
+    - Use read_only mode when possible for testing
+    - Verify all parameters before live trading
 """
 
 import sys
