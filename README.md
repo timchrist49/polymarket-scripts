@@ -166,6 +166,42 @@ python scripts/portfolio_status.py
 - Use read-only mode when possible
 - Keep dry-run enabled until tested
 
+## OpenClaw Agent Integration
+
+This repository includes agent-specific resources in the `openclaw/` directory for use with OpenClaw agents.
+
+### Available Skills
+
+- **polymarket_fetch**: Fetch market data
+- **polymarket_trade**: Place orders
+- **polymarket_status**: Check portfolio
+
+### Quick Start for Agents
+
+1. Copy `.env.example` to `.env` and add credentials
+2. Install: `pip install -r requirements.txt`
+3. Run: `python scripts/fetch_markets.py --btc-mode`
+
+See [`openclaw/README.md`](openclaw/README.md) for detailed agent documentation.
+
+### Example Agent Workflow
+
+```bash
+# 1. Fetch market data
+python scripts/fetch_markets.py --btc-mode
+
+# 2. Check portfolio
+python scripts/portfolio_status.py
+
+# 3. Place order (dry run first)
+python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10
+
+# 4. Place live order
+python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --live
+```
+
+See `openclaw/examples/` for complete workflow examples.
+
 ## Known Limitations
 
 - MARKET orders are emulated via aggressive LIMIT orders
