@@ -6,11 +6,11 @@ This module provides retry decorators for handling transient API failures
 including network errors, rate limits, and temporary server issues.
 
 Functions:
-    retry_with_backoff: Retry function with exponential backoff
+    retry: Retry function with exponential backoff
 
 Example:
-    >>> from polymarket.utils.retry import retry_with_backoff
-    >>> @retry_with_backoff(max_attempts=3)
+    >>> from polymarket.utils.retry import retry
+    >>> @retry(max_attempts=3)
     ... def api_call():
     ...     return client.get_markets()
 """

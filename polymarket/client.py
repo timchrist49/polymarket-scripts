@@ -11,8 +11,8 @@ Classes:
 Example:
     >>> from polymarket import PolymarketClient
     >>> client = PolymarketClient()
-    >>> markets = client.fetch_markets(query="btc")
-    >>> orders = client.get_portfolio()
+    >>> markets = client.get_markets(search="btc")
+    >>> portfolio = client.get_portfolio_summary()
 
 Authentication:
     - L1 (Private key): Required for signing requests

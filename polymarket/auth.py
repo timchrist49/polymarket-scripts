@@ -31,8 +31,8 @@ class AuthManager:
     Manages authentication credentials and mode.
 
     Supports two modes:
-    - READ_ONLY: No credentials needed for public market data
-    - TRADING: Requires L1 (private key) and optionally L2 (API credentials)
+    - read_only: No credentials needed for public market data
+    - trading: Requires L1 (private key) and optionally L2 (API credentials)
     """
 
     def __init__(self, settings: Settings):
