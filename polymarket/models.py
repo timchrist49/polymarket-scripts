@@ -1,5 +1,24 @@
 # polymarket/models.py
-"""Data models for Polymarket API requests and responses."""
+"""
+Data models for Polymarket API requests and responses.
+
+This module defines Pydantic models for type-safe API interactions including
+order requests, market data, portfolio summaries, and error responses.
+
+Classes:
+    OrderRequest: Request model for placing orders
+    PortfolioSummary: Portfolio status summary
+    MarketInfo: Market information model
+
+Example:
+    >>> from polymarket.models import OrderRequest
+    >>> request = OrderRequest(
+    ...     token_id="0x...",
+    ...     side="BUY",
+    ...     price=0.55,
+    ...     size=10
+    ... )
+"""
 
 from datetime import datetime
 from typing import Literal

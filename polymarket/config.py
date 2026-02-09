@@ -1,5 +1,28 @@
 # polymarket/config.py
-"""Configuration management from environment variables."""
+"""
+Polymarket configuration from environment variables.
+
+This module defines the configuration dataclass that reads settings from
+environment variables. It supports both read_only and trading modes.
+
+Classes:
+    Settings: Configuration container with environment variable loading
+
+Environment Variables:
+    POLYMARKET_MODE: "read_only" or "trading"
+    POLYMARKET_PRIVATE_KEY: Wallet private key (trading mode)
+    POLYMARKET_API_KEY: API key for L2 auth (trading mode)
+    POLYMARKET_API_SECRET: API secret for L2 auth (trading mode)
+    POLYMARKET_API_PASSPHRASE: API passphrase (trading mode)
+    POLYMARKET_FUNDER: Proxy wallet address (Gmail accounts)
+    POLYMARKET_SIGNATURE_TYPE: 1 for Magic, 2 for Web3 (default: 1)
+
+Example:
+    >>> from polymarket.config import Settings
+    >>> settings = Settings()
+    >>> if settings.mode == Mode.TRADING:
+    ...     print("Trading mode enabled")
+"""
 
 import os
 from typing import Literal

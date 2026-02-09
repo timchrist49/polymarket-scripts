@@ -1,5 +1,22 @@
 # polymarket/exceptions.py
-"""Custom exceptions for Polymarket operations."""
+"""
+Polymarket-specific exceptions.
+
+This module defines custom exceptions for Polymarket API errors including
+authentication failures, order rejections, and network issues.
+
+Classes:
+    PolymarketError: Base exception for all Polymarket errors
+    AuthenticationError: Raised when authentication fails
+    OrderError: Raised when order placement fails
+    MarketNotFoundError: Raised when market is not found
+
+Example:
+    >>> try:
+    ...     client.place_order(...)
+    ... except AuthenticationError:
+    ...     print("Check your credentials")
+"""
 
 
 class PolymarketError(Exception):

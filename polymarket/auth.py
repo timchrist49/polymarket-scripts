@@ -1,4 +1,26 @@
-"""Authentication and credential management for Polymarket API."""
+"""
+Polymarket authentication handling.
+
+This module manages authentication for the Polymarket CLOB API including
+L1 (private key signing) and L2 (API key credentials) authentication.
+It supports both Web3 wallets and Gmail/Magic Link custodial accounts.
+
+Classes:
+    PolymarketAuth: Handles authentication credential derivation
+
+Constants:
+    CLOB_HOST: Production CLOB API endpoint
+    CLOB_CHAIN_ID: Polygon chain ID (137)
+
+Example:
+    >>> from polymarket.auth import PolymarketAuth
+    >>> auth = PolymarketAuth(private_key="0x...")
+    >>> credentials = auth.derive_credentials()
+
+Account Types:
+    - Web3 Wallets (MetaMask, etc.): signature_type=2
+    - Gmail/Magic Link: signature_type=1, requires funder address
+"""
 
 from polymarket.config import Settings
 from polymarket.exceptions import ConfigError

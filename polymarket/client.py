@@ -1,4 +1,29 @@
-"""Polymarket API client wrapper with isolation of py-clob-client quirks."""
+"""
+Polymarket CLOB API Client.
+
+This module provides a high-level Python client for interacting with the
+Polymarket Central Limit Order Book (CLOB) API. It handles authentication,
+order placement, market data fetching, and portfolio management.
+
+Classes:
+    PolymarketClient: Main client for Polymarket CLOB operations
+
+Example:
+    >>> from polymarket import PolymarketClient
+    >>> client = PolymarketClient()
+    >>> markets = client.fetch_markets(query="btc")
+    >>> orders = client.get_portfolio()
+
+Authentication:
+    - L1 (Private key): Required for signing requests
+    - L2 (API credentials): Required for trading operations
+    - Supports both Web3 wallets and Gmail/Magic Link accounts
+
+Note:
+    Market orders use FOK (Fill-Or-Kill) for immediate execution.
+    Limit orders use GTC (Good-Til-Cancelled) and may not fill
+    before 15-min markets expire.
+"""
 
 from datetime import datetime, timezone, timedelta
 from typing import Literal, Any
@@ -62,9 +87,32 @@ def generate_btc_15min_slug(utc_dt: datetime | None = None) -> str:
 
 class PolymarketClient:
     """
-    Wrapper around Polymarket APIs (Gamma + CLOB via py-clob-client).
+    High-level client for Polymarket CLOB API operations.
 
-    Isolates py-clob-client quirks and provides clean interface.
+    This client wraps py_clob_client to provide a simpler interface for
+    common Polymarket operations including market data, order placement,
+    and portfolio management.
+
+    Attributes:
+        _settings: Configuration settings from environment
+        _private_key: Wallet private key for L1 authentication
+        _funder: Proxy wallet address (for Gmail/Magic accounts)
+
+    Example:
+        >>> client = PolymarketClient()
+        >>> # Fetch BTC market
+        >>> market = client.get_btc_15min_market()
+        >>> # Place order
+        >>> result = client.place_order(
+        ...     token_id=market["token_id"],
+        ...     side="BUY",
+        ...     price=0.55,
+        ...     size=10
+        ... )
+
+    Note:
+        For Gmail/Magic Link accounts, ensure POLYMARKET_SIGNATURE_TYPE=1
+        and POLYMARKET_FUNDER is set to your proxy wallet address.
     """
 
     def __init__(self):

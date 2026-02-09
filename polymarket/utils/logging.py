@@ -1,5 +1,19 @@
 # polymarket/utils/logging.py
-"""Structured logging configuration."""
+"""
+Logging configuration for Polymarket scripts.
+
+This module sets up structured logging with appropriate levels and formats
+for both development and production use.
+
+Functions:
+    setup_logging: Configure logging based on environment and verbosity
+
+Example:
+    >>> from polymarket.utils.logging import setup_logging
+    >>> setup_logging(verbose=True)
+    >>> logger = logging.getLogger(__name__)
+    >>> logger.info("Starting operation")
+"""
 
 import logging
 import sys
