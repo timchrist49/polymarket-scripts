@@ -1,0 +1,13 @@
+Fetch the current BTC 15-minute market from Polymarket.
+
+Command to run:
+python scripts/fetch_markets.py --btc-mode --json
+
+Extract from output:
+- token_id: The market token identifier
+- price: Current price (0-1 for binary markets)
+- volume: Trading volume
+- expiry_time: When the market expires
+- market_id: The market identifier
+
+Return the data in a structured format for analysis.

@@ -1,0 +1,19 @@
+Place an order on Polymarket.
+
+First, determine the parameters:
+- side: "BUY" or "SELL"
+- price: Order price from 0 to 1
+- size: Number of shares
+- dry_run: Set to "true" for testing, "false" for live trading
+
+Command template:
+python scripts/place_order.py --btc-mode --side {side} --price {price} --size {size} --dry-run {dry_run}
+
+Examples:
+# Test buy order
+python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --dry-run true
+
+# Live sell order
+python scripts/place_order.py --btc-mode --side sell --price 0.60 --size 5 --dry-run false
+
+ALWAYS use --dry-run true first to verify the order works.

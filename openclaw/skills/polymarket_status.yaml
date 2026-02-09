@@ -1,0 +1,41 @@
+name: polymarket_status
+description: Check Polymarket portfolio status including open orders, positions, and total value
+category: trading
+version: 1.0.0
+
+command:
+  template: "python scripts/portfolio_status.py --json"
+  timeout: 30
+
+outputs:
+  - name: open_orders
+    type: array
+    description: List of pending orders
+  - name: total_value
+    type: float
+    description: Total portfolio value in USDC
+  - name: usdc_balance
+    type: float
+    description: Available USDC for trading
+  - name: positions_value
+    type: float
+    description: Value of open positions
+  - name: trades
+    type: array
+    description: Recent trade history
+
+requirements:
+  - python3
+  - py-clob-client
+  - Valid Polymarket credentials in .env
+
+examples:
+  - command: python scripts/portfolio_status.py
+    description: Get full portfolio status
+  - command: python scripts/portfolio_status.py --json
+    description: Get portfolio as JSON
+
+errors:
+  - code: AUTH_ERROR
+    message: Authentication failed
+    resolution: Check .env credentials

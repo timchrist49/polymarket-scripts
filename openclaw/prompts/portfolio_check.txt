@@ -1,0 +1,13 @@
+Check the Polymarket portfolio status.
+
+Command to run:
+python scripts/portfolio_status.py --json
+
+Extract from output:
+- open_orders: List of pending orders
+- total_value: Total portfolio value (cash + positions)
+- usdc_balance: Available USDC for trading
+- positions_value: Value of open positions
+- trades: Recent trade history
+
+Return a summary of current positions and any actions needed.

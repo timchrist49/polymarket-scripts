@@ -1,0 +1,63 @@
+name: polymarket_trade
+description: Place buy or sell orders on Polymarket markets with market order execution (FOK)
+category: trading
+version: 1.0.0
+
+command:
+  template: "python scripts/place_order.py --btc-mode --side {side} --price {price} --size {size} --dry-run {dry_run}"
+  timeout: 30
+
+inputs:
+  - name: side
+    type: enum
+    values: [BUY, SELL]
+    required: true
+    description: Order side (buy or sell)
+  - name: price
+    type: float
+    required: true
+    min: 0.0
+    max: 1.0
+    description: Order price (0-1 for binary markets)
+  - name: size
+    type: float
+    required: true
+    min: 0.01
+    description: Number of shares to trade
+  - name: dry_run
+    type: boolean
+    default: true
+    description: Test mode (true) or live trading (false)
+
+outputs:
+  - name: order_id
+    type: string
+    description: The placed order ID
+  - name: status
+    type: string
+    description: Order status (pending, filled, rejected)
+
+requirements:
+  - python3
+  - py-clob-client
+  - Valid Polymarket credentials in .env
+
+warnings:
+  - ALWAYS use dry_run=true first to verify
+  - Market orders use FOK (Fill-Or-Kill) for immediate execution
+  - Minimum order size applies
+
+examples:
+  - command: python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --dry-run true
+    description: Test buy order
+
+errors:
+  - code: INSUFFICIENT_BALANCE
+    message: Not enough USDC to place order
+    resolution: Check portfolio status and deposit funds
+  - code: MARKET_CLOSED
+    message: Market is not accepting orders
+    resolution: Verify market is active
+  - code: PRICE_OUT_OF_RANGE
+    message: Price must be between 0 and 1
+    resolution: Check price parameter

@@ -1,0 +1,42 @@
+name: polymarket_fetch
+description: Fetch Polymarket BTC 15-minute market data including current price, volume, and expiry time
+category: trading
+version: 1.0.0
+
+command:
+  template: "python scripts/fetch_markets.py --btc-mode --json"
+  timeout: 30
+
+outputs:
+  - name: token_id
+    type: string
+    description: The market token identifier for trading
+  - name: price
+    type: float
+    description: Current market price (0-1 for binary)
+  - name: volume
+    type: float
+    description: Trading volume in USDC
+  - name: expiry_time
+    type: string
+    description: ISO timestamp when market expires
+  - name: market_id
+    type: string
+    description: The market identifier
+
+requirements:
+  - python3
+  - py-clob-client
+  - Valid Polymarket credentials in .env
+
+examples:
+  - command: python scripts/fetch_markets.py --btc-mode
+    description: Get current BTC market data
+
+errors:
+  - code: MARKET_NOT_FOUND
+    message: No active BTC 15-minute market found
+    resolution: Verify market is active or use manual market-id
+  - code: AUTH_ERROR
+    message: Authentication failed
+    resolution: Check .env credentials
