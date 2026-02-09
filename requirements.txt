@@ -1,5 +1,5 @@
 # Core dependencies
-py-clob-client==3.3.0
+py-clob-client>=0.34.0
 pydantic>=2.0.0
 requests>=2.31.0
 python-dotenv>=1.0.0
@@ -7,6 +7,7 @@ python-dotenv>=1.0.0
 # Logging and utilities
 structlog>=23.1.0
 colorama>=0.4.6
+colorlog>=6.7.0
 
 # CLI and output
 typer>=0.9.0

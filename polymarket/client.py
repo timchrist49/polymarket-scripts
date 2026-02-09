@@ -88,6 +88,7 @@ class PolymarketClient:
     def _fetch_gamma_markets(
         self,
         search: str | None = None,
+        slug: str | None = None,
         limit: int = 100,
         active: bool | None = None,
         accepting_orders: bool | None = None,
@@ -96,7 +97,8 @@ class PolymarketClient:
         Fetch markets from Gamma API.
 
         Args:
-            search: Search query string
+            search: Search query string (partial match)
+            slug: Exact slug match (overrides search)
             limit: Max results to return
             active: Filter by active status
             accepting_orders: Filter by acceptingOrders status
@@ -107,7 +109,10 @@ class PolymarketClient:
         url = f"{self._gamma_url}/markets"
         params: dict[str, Any] = {"limit": limit}
 
-        if search:
+        if slug:
+            # Slug takes priority for exact matching
+            params["slug"] = slug
+        elif search:
             params["search"] = search
         if active is not None:
             params["closed"] = not active  # API uses 'closed' not 'active'
@@ -146,26 +151,9 @@ class PolymarketClient:
         """
         logger.info("Discovering BTC 15-min market...")
 
-        # Primary: Search by query
-        markets = self._fetch_gamma_markets(
-            search="BTC Up or Down 15 Minutes",
-            limit=50,
-            active=True,
-            accepting_orders=True,
-        )
-
-        # Parse and filter
-        for market_data in markets:
-            market = Market(**market_data)
-            if market.is_tradeable():
-                logger.info(f"Found BTC market: {market.slug} (ID: {market.id})")
-                return market
-
-        # Secondary: Try slug pattern matching
-        logger.info("Search failed, trying slug pattern matching...")
-        current_slug = generate_btc_15min_slug()
-
+        # Primary: Slug-based discovery (most reliable for 15-min markets)
         # Try current and adjacent intervals
+        current_slug = generate_btc_15min_slug()
         offsets = [0, -15, 15, -30, 30]
         now = datetime.now(timezone.utc)
 
@@ -173,13 +161,62 @@ class PolymarketClient:
             test_time = now + timedelta(minutes=offset_minutes)
             test_slug = generate_btc_15min_slug(test_time)
 
-            # Try to fetch by slug
-            markets = self._fetch_gamma_markets(search=test_slug, limit=1)
+            logger.debug(f"Trying slug: {test_slug}")
+            markets = self._fetch_gamma_markets(slug=test_slug, limit=1)
             if markets:
                 market = Market(**markets[0])
                 if market.is_tradeable():
-                    logger.info(f"Found BTC market via slug: {market.slug}")
+                    logger.info(f"Found BTC 15-min market via slug: {market.slug}")
                     return market
+
+        # Secondary: Search by query (may not include 15-min markets)
+        logger.info("Slug discovery failed, trying search query...")
+        markets = self._fetch_gamma_markets(
+            search="Bitcoin Up or Down",
+            limit=50,
+            active=True,
+            accepting_orders=True,
+        )
+
+        # Parse and filter - prioritize 15-minute BTC markets, then other BTC markets
+        btc_15min_market = None
+        other_btc_market = None
+
+        for market_data in markets:
+            market = Market(**market_data)
+            if not market.is_tradeable():
+                continue
+
+            question_lower = (market.question or "").lower()
+            slug_lower = (market.slug or "").lower()
+
+            # Check if this is a 15-minute BTC market (highest priority)
+            is_btc_15min = (
+                ("15m" in slug_lower or "15-minute" in question_lower or "15 min" in question_lower)
+                and ("btc" in slug_lower or "bitcoin" in question_lower)
+            )
+
+            # Check if this is any Bitcoin market
+            is_btc_market = (
+                "bitcoin" in question_lower
+                or "btc" in question_lower
+                or "bitcoin" in slug_lower
+                or "btc" in slug_lower
+            )
+
+            if is_btc_15min:
+                logger.info(f"Found BTC 15-min market: {market.slug} (ID: {market.id})")
+                return market
+            elif is_btc_market and other_btc_market is None:
+                other_btc_market = market
+
+        # If no 15-minute market found but we have another BTC market, warn and use it
+        if other_btc_market:
+            logger.warning(
+                f"No BTC 15-min market found. "
+                f"Using other BTC market: {other_btc_market.slug} (ID: {other_btc_market.id})"
+            )
+            return other_btc_market
 
         raise MarketDiscoveryError(
             "Could not discover active BTC 15-min market. "
