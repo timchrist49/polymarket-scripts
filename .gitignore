@@ -55,6 +55,7 @@ venv.bak/
 *.swp
 *.swo
 *~
+.claude/
 
 # Logs
 *.log
