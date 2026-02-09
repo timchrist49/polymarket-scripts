@@ -1,0 +1,45 @@
+# polymarket/exceptions.py
+"""Custom exceptions for Polymarket operations."""
+
+
+class PolymarketError(Exception):
+    """Base exception for all Polymarket errors."""
+
+    def __init__(self, message: str, details: dict | None = None):
+        self.message = message
+        self.details = details or {}
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        if self.details:
+            details_str = ", ".join(f"{k}={v}" for k, v in self.details.items())
+            return f"{self.message} ({details_str})"
+        return self.message
+
+
+class ConfigError(PolymarketError):
+    """Missing or invalid environment configuration."""
+
+
+class AuthError(PolymarketError):
+    """Authentication or authorization failure."""
+
+
+class ValidationError(PolymarketError):
+    """Input validation failed."""
+
+
+class RateLimitError(PolymarketError):
+    """HTTP 429 - rate limit exceeded."""
+
+
+class UpstreamAPIError(PolymarketError):
+    """5xx errors from Polymarket."""
+
+
+class NetworkError(PolymarketError):
+    """Network connectivity issues."""
+
+
+class MarketDiscoveryError(PolymarketError):
+    """Failed to discover active BTC 15-min market."""
