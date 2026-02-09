@@ -128,6 +128,7 @@ class PortfolioSummary(BaseModel):
     positions: dict[str, float]  # token_id -> quantity
     total_exposure: float
     trades: list[dict] = []  # Trade history for position tracking
+    usdc_balance: float = 0.0  # Available USDC for trading (CLOB balance)
 
 
 class BalanceInfo(BaseModel):

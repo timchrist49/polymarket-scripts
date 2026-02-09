@@ -400,6 +400,18 @@ class PolymarketClient:
             # Get trade history to calculate current positions
             trades = client.get_trades()
 
+            # Get USDC balance (CLOB collateral)
+            usdc_balance = 0.0
+            try:
+                from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+                params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+                client.update_balance_allowance(params=params)
+                balance_result = client.get_balance_allowance(params=params)
+                raw_balance = int(balance_result.get("balance", 0))
+                usdc_balance = raw_balance / 10**6  # USDC has 6 decimals
+            except Exception as e:
+                logger.debug(f"Could not fetch USDC balance: {e}")
+
             # Calculate summary
             total_notional = 0.0
             positions: dict[str, float] = {}
@@ -427,6 +439,7 @@ class PolymarketClient:
                 positions=positions,
                 total_exposure=total_notional,
                 trades=trades,  # Include raw trades for detailed display
+                usdc_balance=usdc_balance,
             )
 
         except Exception as e:

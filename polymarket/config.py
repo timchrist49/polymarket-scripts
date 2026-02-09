@@ -35,9 +35,16 @@ class Settings:
         default_factory=lambda: os.getenv("POLYMARKET_API_PASSPHRASE")
     )
 
-    # Funder address
+    # Funder address (proxy wallet that holds funds for Gmail/Magic accounts)
     funder: str | None = field(
         default_factory=lambda: os.getenv("POLYMARKET_FUNDER")
+    )
+
+    # Signature type for L2 operations
+    # 1 = Magic/email-based proxy wallet (Gmail accounts)
+    # 2 = Deployed Safe proxy wallet (Web3 wallets)
+    signature_type: int | None = field(
+        default_factory=lambda: int(os.getenv("POLYMARKET_SIGNATURE_TYPE", "1"))  # Default to 1 for Gmail
     )
 
     # Chain configuration

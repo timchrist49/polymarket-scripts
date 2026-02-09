@@ -141,8 +141,10 @@ class AuthManager:
                 derived = temp_client.create_or_derive_api_creds()
                 kwargs["creds"] = derived
 
-            # L2 requires signature_type=2 (Deployed Safe proxy wallet)
-            kwargs["signature_type"] = 2
+            # L2 requires signature_type
+            # signature_type=1: Magic/email-based proxy wallet (Gmail accounts)
+            # signature_type=2: Deployed Safe proxy wallet (Web3 wallet)
+            kwargs["signature_type"] = self._settings.signature_type or 1
 
             # Add funder if set (optional for some operations)
             if self._funder:
