@@ -103,6 +103,9 @@ class AuthManager:
         """
         Get kwargs for py-clob-client.ClobClient initialization.
 
+        For L2 operations, User API credentials are automatically derived from
+        the private key using create_or_derive_api_creds().
+
         Returns:
             Dictionary of keyword arguments for ClobClient
         """
@@ -114,15 +117,34 @@ class AuthManager:
         if self._mode == "trading":
             kwargs["key"] = self._private_key
 
-            # Add L2 credentials if available
+            # L2 credentials: Use env vars if provided, otherwise derive from private key
+            # For L2 operations, we need: signature_type=2 and optionally funder
             if self.has_api_credentials():
-                kwargs["creds"] = {
-                    "apiKey": self._api_key,
-                    "secret": self._api_secret,
-                    "passphrase": self._api_passphrase,
-                }
+                # Use provided L2 credentials (manual override)
+                from py_clob_client.clob_types import ApiCreds
+                kwargs["creds"] = ApiCreds(
+                    api_key=self._api_key,
+                    api_secret=self._api_secret,
+                    api_passphrase=self._api_passphrase,
+                )
+            else:
+                # Auto-derive User API credentials from private key
+                # This creates/derives the credentials needed for L2 operations
+                from py_clob_client.clob_types import ApiCreds
+                from py_clob_client.client import ClobClient
 
-            # Add funder if set
+                temp_client = ClobClient(
+                    host=self._settings.clob_url,
+                    chain_id=self._settings.chain_id,
+                    key=self._private_key,
+                )
+                derived = temp_client.create_or_derive_api_creds()
+                kwargs["creds"] = derived
+
+            # L2 requires signature_type=2 (Deployed Safe proxy wallet)
+            kwargs["signature_type"] = 2
+
+            # Add funder if set (optional for some operations)
             if self._funder:
                 kwargs["funder"] = self._funder
 

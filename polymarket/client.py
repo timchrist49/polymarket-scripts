@@ -395,7 +395,7 @@ class PolymarketClient:
             client = self._get_clob_client()
 
             # Get open orders
-            open_orders = client.get_open_orders()
+            open_orders = client.get_orders()
 
             # Calculate summary
             total_notional = 0.0
