@@ -36,8 +36,8 @@ class Market(BaseModel):
     clob_token_ids: str | None = Field(None, alias="clobTokenIds")
 
     # Trading constraints
-    order_price_min_tick_size: int | None = Field(None, alias="orderPriceMinTickSize")
-    order_min_size: int | None = Field(None, alias="orderMinSize")
+    order_price_min_tick_size: float | None = Field(None, alias="orderPriceMinTickSize")
+    order_min_size: float | None = Field(None, alias="orderMinSize")
 
     # Market data
     best_bid: float | None = Field(None, alias="bestBid")
