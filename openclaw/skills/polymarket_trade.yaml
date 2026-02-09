@@ -4,7 +4,7 @@ category: trading
 version: 1.0.0
 
 command:
-  template: "python scripts/place_order.py --btc-mode --side {side} --price {price} --size {size} --dry-run {dry_run}"
+  template: "python scripts/place_order.py --btc-mode --side {side} --price {price} --size {size} {live_flag}"
   timeout: 30
 
 inputs:
@@ -24,10 +24,10 @@ inputs:
     required: true
     min: 0.01
     description: Number of shares to trade
-  - name: dry_run
+  - name: live
     type: boolean
-    default: true
-    description: Test mode (true) or live trading (false)
+    default: false
+    description: Live trading mode (true) or dry-run mode (false, default)
 
 outputs:
   - name: order_id
@@ -43,13 +43,16 @@ requirements:
   - Valid Polymarket credentials in .env
 
 warnings:
-  - ALWAYS use dry_run=true first to verify
+  - ALWAYS test without --live flag first to verify
   - Market orders use FOK (Fill-Or-Kill) for immediate execution
   - Minimum order size applies
 
 examples:
-  - command: python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --dry-run true
-    description: Test buy order
+  - command: python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10
+    description: Test buy order (dry-run mode)
+
+  - command: python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --live
+    description: Live buy order
 
 errors:
   - code: INSUFFICIENT_BALANCE

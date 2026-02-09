@@ -40,15 +40,14 @@ Based on market data and portfolio:
 
 ### 4. Place Test Order (Dry Run)
 
-Always test first:
+Always test first (dry-run is default):
 
 ```bash
 python scripts/place_order.py \
   --btc-mode \
   --side buy \
   --price 0.55 \
-  --size 10 \
-  --dry-run true
+  --size 10
 ```
 
 Verify:
@@ -58,7 +57,7 @@ Verify:
 
 ### 5. Place Live Order
 
-If dry run succeeds:
+If dry run succeeds, add --live flag:
 
 ```bash
 python scripts/place_order.py \
@@ -66,7 +65,7 @@ python scripts/place_order.py \
   --side buy \
   --price 0.55 \
   --size 10 \
-  --dry-run false
+  --live
 ```
 
 ### 6. Verify Order
@@ -92,6 +91,6 @@ Confirm order appears in open orders.
 ## Risk Management
 
 - Never trade more than 10% of portfolio per trade
-- Always use dry-run mode before live orders
+- Always test without --live flag before live orders
 - Check market expiry before trading
 - Verify order was placed successfully

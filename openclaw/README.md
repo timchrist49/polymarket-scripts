@@ -55,8 +55,11 @@ python scripts/fetch_markets.py --btc-mode
 # Check portfolio
 python scripts/portfolio_status.py
 
-# Place order (dry run)
-python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --dry-run true
+# Place order (dry run - default)
+python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10
+
+# Place order (live)
+python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --live
 ```
 
 ## Troubleshooting

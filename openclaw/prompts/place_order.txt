@@ -4,16 +4,16 @@ First, determine the parameters:
 - side: "BUY" or "SELL"
 - price: Order price from 0 to 1
 - size: Number of shares
-- dry_run: Set to "true" for testing, "false" for live trading
+- live: Add --live flag for live trading (default is dry-run mode)
 
 Command template:
-python scripts/place_order.py --btc-mode --side {side} --price {price} --size {size} --dry-run {dry_run}
+python scripts/place_order.py --btc-mode --side {side} --price {price} --size {size} {live_flag}
 
 Examples:
-# Test buy order
-python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10 --dry-run true
+# Test buy order (dry-run is default)
+python scripts/place_order.py --btc-mode --side buy --price 0.55 --size 10
 
 # Live sell order
-python scripts/place_order.py --btc-mode --side sell --price 0.60 --size 5 --dry-run false
+python scripts/place_order.py --btc-mode --side sell --price 0.60 --size 5 --live
 
-ALWAYS use --dry-run true first to verify the order works.
+ALWAYS test without --live first to verify the order works.
