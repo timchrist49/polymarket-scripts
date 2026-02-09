@@ -349,12 +349,14 @@ class PolymarketClient:
 
         try:
             # Build order args for py-clob-client
-            order_args = {
-                "token_id": request.token_id,
-                "side": request.side,
-                "price": price,
-                "size": request.size,
-            }
+            # Must use OrderArgs dataclass, not a plain dict
+            from py_clob_client.clob_types import OrderArgs
+            order_args = OrderArgs(
+                token_id=request.token_id,
+                side=request.side,
+                price=price,
+                size=request.size,
+            )
 
             # Use create_and_post_order method
             result = client.create_and_post_order(order_args)
