@@ -127,6 +127,7 @@ class PortfolioSummary(BaseModel):
     total_notional: float
     positions: dict[str, float]  # token_id -> quantity
     total_exposure: float
+    trades: list[dict] = []  # Trade history for position tracking
 
 
 class BalanceInfo(BaseModel):

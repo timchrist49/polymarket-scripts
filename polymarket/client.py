@@ -397,19 +397,36 @@ class PolymarketClient:
             # Get open orders
             open_orders = client.get_orders()
 
+            # Get trade history to calculate current positions
+            trades = client.get_trades()
+
             # Calculate summary
             total_notional = 0.0
             positions: dict[str, float] = {}
 
             for order in open_orders:
-                # TODO: Parse order structure properly
                 total_notional += float(order.get("size", 0)) * float(order.get("price", 0))
+
+            # Calculate positions from trades (buy = +position, sell = -position)
+            for trade in trades:
+                asset_id = trade.get("asset_id", "")
+                side = trade.get("side", "").upper()
+                size = float(trade.get("size", 0))
+
+                if side == "BUY":
+                    positions[asset_id] = positions.get(asset_id, 0) + size
+                elif side == "SELL":
+                    positions[asset_id] = positions.get(asset_id, 0) - size
+
+            # Remove zero positions
+            positions = {k: v for k, v in positions.items() if abs(v) > 0.0001}
 
             return PortfolioSummary(
                 open_orders=open_orders,
                 total_notional=total_notional,
                 positions=positions,
                 total_exposure=total_notional,
+                trades=trades,  # Include raw trades for detailed display
             )
 
         except Exception as e:

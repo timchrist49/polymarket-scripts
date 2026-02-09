@@ -87,12 +87,13 @@ def main(
                 "total_notional": portfolio.total_notional,
                 "positions": portfolio.positions,
                 "total_exposure": portfolio.total_exposure,
+                "trades": portfolio.trades,
             }
             console.print_json(json.dumps(output))
         else:
             _print_portfolio_summary(portfolio, market_id)
 
-        logger.info(f"Portfolio summary: {len(portfolio.open_orders)} open orders")
+        logger.info(f"Portfolio summary: {len(portfolio.open_orders)} open orders, {len(portfolio.trades)} trades")
 
     except PolymarketError as e:
         logger.error(f"Polymarket error: {e}")
@@ -113,34 +114,64 @@ def _print_portfolio_summary(portfolio, market_filter: str | None = None) -> Non
     console.print(f"Total Notional: [cyan]${portfolio.total_notional:,.2f}[/cyan]")
     console.print(f"Total Exposure: [cyan]${portfolio.total_exposure:,.2f}[/cyan]")
 
+    # Positions
+    if portfolio.positions:
+        console.print(f"\n[bold]Current Positions:[/bold] ({len(portfolio.positions)} tokens)")
+        for token_id, quantity in portfolio.positions.items():
+            side_str = "[green]LONG[/green]" if quantity > 0 else "[red]SHORT[/red]"
+            console.print(f"  {side_str} {abs(quantity):.4f} shares (Token: {token_id[:20]}...)")
+    else:
+        console.print("\n[dim]No current positions[/dim]")
+
+    # Open orders
     if not portfolio.open_orders:
         console.print("\n[dim]No open orders[/dim]")
-        return
+    else:
+        # Open orders table
+        table = Table(title="\nOpen Orders")
+        table.add_column("Order ID", style="dim", max_width=12)
+        table.add_column("Token ID", max_width=12)
+        table.add_column("Side")
+        table.add_column("Price", justify="right")
+        table.add_column("Size", justify="right")
+        table.add_column("Status")
 
-    # Open orders table
-    table = Table(title="\nOpen Orders")
-    table.add_column("Order ID", style="dim", max_width=12)
-    table.add_column("Token ID", max_width=12)
-    table.add_column("Side")
-    table.add_column("Price", justify="right")
-    table.add_column("Size", justify="right")
-    table.add_column("Status")
+        for order in portfolio.open_orders:
+            # Filter by market if specified
+            if market_filter and order.get("marketId") != market_filter:
+                continue
 
-    for order in portfolio.open_orders:
-        # Filter by market if specified
-        if market_filter and order.get("marketId") != market_filter:
-            continue
+            table.add_row(
+                str(order.get("orderId", ""))[:10] + "...",
+                str(order.get("tokenId", ""))[:10] + "...",
+                order.get("side", ""),
+                f"{float(order.get('price', 0)):.4f}",
+                f"{float(order.get('size', 0)):.2f}",
+                order.get("status", ""),
+            )
 
-        table.add_row(
-            str(order.get("orderId", ""))[:10] + "...",
-            str(order.get("tokenId", ""))[:10] + "...",
-            order.get("side", ""),
-            f"{float(order.get('price', 0)):.4f}",
-            f"{float(order.get('size', 0)):.2f}",
-            order.get("status", ""),
-        )
+        console.print(table)
 
-    console.print(table)
+    # Trade history
+    if portfolio.trades:
+        console.print(f"\n[bold]Trade History:[/bold] ({len(portfolio.trades)} trades)")
+        trades_table = Table()
+        trades_table.add_column("Market", style="dim", max_width=20)
+        trades_table.add_column("Side")
+        trades_table.add_column("Size", justify="right")
+        trades_table.add_column("Price", justify="right")
+        trades_table.add_column("Status")
+
+        for trade in portfolio.trades:
+            trades_table.add_row(
+                str(trade.get("market", ""))[:20] + "...",
+                trade.get("side", ""),
+                f"{float(trade.get('size', 0)):.4f}",
+                f"${float(trade.get('price', 0)):.4f}",
+                trade.get("status", ""),
+            )
+
+        console.print(trades_table)
 
 
 if __name__ == "__main__":
