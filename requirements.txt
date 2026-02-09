@@ -1,0 +1,18 @@
+# Core dependencies
+py-clob-client==3.3.0
+pydantic>=2.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Logging and utilities
+structlog>=23.1.0
+colorama>=0.4.6
+
+# CLI and output
+typer>=0.9.0
+rich>=13.0.0
+tabulate>=0.9.0
+
+# Development
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
