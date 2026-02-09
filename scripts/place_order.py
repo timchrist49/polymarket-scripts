@@ -67,7 +67,8 @@ Important Notes:
     - Market orders use FOK (Fill-Or-Kill) - execute immediately or cancel
     - FOK is recommended for 15-min markets due to rapid price movement
     - Limit orders may not fill before market expiry
-    - Default is dry-run mode; use --live flag for actual trading
+    - Dry run mode is controlled by DRY_RUN in .env (default: true)
+    - Use --yes flag to skip confirmation for automation
     - Minimum order size applies (check market requirements)
     - Price must be between 0.0 and 1.0 for binary markets
 
@@ -147,10 +148,11 @@ def main(
         "-o",
         help="Order type: limit or market",
     ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--live",
-        help="Dry run mode (default: true)",
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt (for automation)",
     ),
 ) -> None:
     """Place an order on Polymarket.
@@ -175,6 +177,10 @@ def main(
     setup_logging(settings.log_level, settings.log_json)
 
     logger.info(f"Starting place_order in {settings.mode} mode")
+
+    # Dry run is controlled by DRY_RUN in .env (settings.dry_run)
+    # This overrides the default behavior for automation
+    dry_run = settings.dry_run
 
     try:
         # Validate trading mode
@@ -231,7 +237,7 @@ def main(
         console.print(f"  Price: {price:.4f}")
         console.print(f"  Size: {size}")
         console.print(f"  Type: {request.order_type}")
-        console.print(f"  Dry Run: {dry_run}")
+        console.print(f"  Dry Run: {dry_run} (controlled by DRY_RUN in .env)")
         console.print()
 
         if order_type == "market":
@@ -240,8 +246,8 @@ def main(
         if dry_run:
             console.print("[cyan]DRY RUN MODE - No order will be submitted[/cyan]\n")
 
-        # Confirm for live orders
-        if not dry_run:
+        # Confirm for live orders (only if not dry-run and not --yes)
+        if not dry_run and not yes:
             confirm = typer.confirm("Submit this order?")
             if not confirm:
                 console.print("[yellow]Order cancelled.[/yellow]")
