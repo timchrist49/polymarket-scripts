@@ -52,7 +52,7 @@ class AutoTrader:
         # Initialize services
         self.btc_service = BTCPriceService(settings)
         self.social_service = SocialSentimentService(settings)
-        self.market_service = MarketMicrostructureService(settings)
+        self.market_service = None  # Will initialize per cycle with condition_id
         self.aggregator = SignalAggregator()
         self.ai_service = AIDecisionService(settings)
         self.risk_manager = RiskManager(settings)
@@ -83,6 +83,16 @@ class AutoTrader:
                 return
 
             logger.info("Found markets", count=len(markets))
+
+            # Extract condition_id from discovered market
+            condition_id = getattr(markets[0], 'condition_id', None)
+            if not condition_id:
+                logger.warning("No condition_id found, using fallback")
+                condition_id = "unknown"
+
+            # Initialize market service with condition_id
+            if not self.market_service or self.market_service.condition_id != condition_id:
+                self.market_service = MarketMicrostructureService(self.settings, condition_id)
 
             # Step 2: Data Collection (parallel) - NEW: fetch social + market
             btc_data, social_sentiment, market_signals = await asyncio.gather(
@@ -387,7 +397,8 @@ class AutoTrader:
         # Cleanup
         await self.btc_service.close()
         await self.social_service.close()  # NEW
-        await self.market_service.close()  # NEW
+        if self.market_service:
+            await self.market_service.close()  # NEW
         logger.info("AutoTrader shutdown complete")
 
     async def run_once(self) -> None:
@@ -395,7 +406,8 @@ class AutoTrader:
         await self.run_cycle()
         await self.btc_service.close()
         await self.social_service.close()  # NEW
-        await self.market_service.close()  # NEW
+        if self.market_service:
+            await self.market_service.close()  # NEW
 
 
 @app.command()
