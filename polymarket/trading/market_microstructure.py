@@ -22,12 +22,11 @@ class MarketMicrostructureService:
     # Binance API base URL
     BASE_URL = "https://api.binance.com/api/v3"
 
-    # Weights for score calculation
+    # Weights for score calculation (Polymarket-specific)
     WEIGHTS = {
-        "order_book": 0.20,
-        "whales": 0.25,
-        "volume": 0.25,
-        "momentum": 0.30  # Highest - most predictive for 15-min
+        'momentum': 0.40,
+        'volume_flow': 0.35,
+        'whale': 0.25
     }
 
     # Thresholds
@@ -421,6 +420,59 @@ class MarketMicrostructureService:
         )
 
         return whale_score
+
+    def calculate_market_score(
+        self,
+        momentum: float,
+        volume_flow: float,
+        whale: float
+    ) -> float:
+        """
+        Combine three scores with weights.
+
+        Args:
+            momentum: Momentum score (-1.0 to +1.0)
+            volume_flow: Volume flow score (-1.0 to +1.0)
+            whale: Whale activity score (-1.0 to +1.0)
+
+        Returns:
+            -1.0 (strong bearish) to +1.0 (strong bullish)
+        """
+        market_score = (
+            momentum * self.WEIGHTS['momentum'] +
+            volume_flow * self.WEIGHTS['volume_flow'] +
+            whale * self.WEIGHTS['whale']
+        )
+
+        return market_score
+
+    def calculate_confidence(self, data: dict) -> float:
+        """
+        Calculate confidence based on data quality.
+
+        Args:
+            data: Collection data with 'trades' and 'collection_duration'
+
+        Returns:
+            0.0 to 1.0 confidence score
+        """
+        trade_count = len(data.get('trades', []))
+
+        # Base confidence from trade volume
+        # 50+ trades = full confidence, scales linearly
+        base_confidence = min(trade_count / 50, 1.0)
+
+        # Penalty if didn't collect full 2 minutes
+        collection_duration = data.get('collection_duration', 120)
+        if collection_duration < 120:
+            base_confidence *= (collection_duration / 120)
+
+        # Penalty for low liquidity
+        if trade_count < 10:
+            logger.warning("Low liquidity", trades=trade_count)
+            base_confidence *= 0.5
+
+        return base_confidence
 
     async def get_market_score(self) -> MarketSignals:
         """

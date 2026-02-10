@@ -236,3 +236,83 @@ def test_calculate_whale_activity_score():
     # Test: Empty trades → 0.0
     score = service.calculate_whale_activity_score([])
     assert score == 0.0
+
+
+def test_calculate_market_score():
+    """Test weighted combination of scores."""
+    service = MarketMicrostructureService(Settings(), "test-123")
+
+    # Test: All positive scores
+    score = service.calculate_market_score(
+        momentum=1.0,
+        volume_flow=1.0,
+        whale=1.0
+    )
+    assert score == 1.0  # 0.4 + 0.35 + 0.25 = 1.0
+
+    # Test: All negative scores
+    score = service.calculate_market_score(
+        momentum=-1.0,
+        volume_flow=-1.0,
+        whale=-1.0
+    )
+    assert score == -1.0
+
+    # Test: Mixed scores with weights
+    score = service.calculate_market_score(
+        momentum=0.5,   # 0.5 * 0.4 = 0.2
+        volume_flow=0.3,  # 0.3 * 0.35 = 0.105
+        whale=0.2     # 0.2 * 0.25 = 0.05
+    )
+    assert score == pytest.approx(0.355, abs=0.01)
+
+    # Test: Neutral scores
+    score = service.calculate_market_score(
+        momentum=0.0,
+        volume_flow=0.0,
+        whale=0.0
+    )
+    assert score == 0.0
+
+
+def test_calculate_confidence():
+    """Test confidence calculation based on data quality."""
+    service = MarketMicrostructureService(Settings(), "test-123")
+
+    # Test: 50+ trades, full duration → 1.0 confidence
+    data = {
+        'trades': [{'asset_id': 'YES_TOKEN', 'size': 100}] * 50,
+        'collection_duration': 120
+    }
+    confidence = service.calculate_confidence(data)
+    assert confidence == 1.0
+
+    # Test: 25 trades → 0.5 base confidence
+    data = {
+        'trades': [{'asset_id': 'YES_TOKEN', 'size': 100}] * 25,
+        'collection_duration': 120
+    }
+    confidence = service.calculate_confidence(data)
+    assert confidence == pytest.approx(0.5, abs=0.01)
+
+    # Test: 50 trades but only 60s collected → 0.5x penalty
+    data = {
+        'trades': [{'asset_id': 'YES_TOKEN', 'size': 100}] * 50,
+        'collection_duration': 60
+    }
+    confidence = service.calculate_confidence(data)
+    assert confidence == pytest.approx(0.5, abs=0.01)  # 1.0 * 0.5
+
+    # Test: <10 trades → 0.5x low liquidity penalty
+    data = {
+        'trades': [{'asset_id': 'YES_TOKEN', 'size': 100}] * 5,
+        'collection_duration': 120
+    }
+    confidence = service.calculate_confidence(data)
+    # (5/50) * 1.0 * 0.5 = 0.05
+    assert confidence == pytest.approx(0.05, abs=0.01)
+
+    # Test: Empty trades → 0.0
+    data = {'trades': [], 'collection_duration': 120}
+    confidence = service.calculate_confidence(data)
+    assert confidence == 0.0
