@@ -89,3 +89,25 @@ async def test_get_market_score():
     assert signals.whale_count >= 0
 
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_collect_market_data_structure():
+    """Test that collect_market_data returns expected structure."""
+    service = MarketMicrostructureService(
+        Settings(),
+        condition_id="test-condition-123"
+    )
+
+    # Mock WebSocket connection (will implement properly later)
+    data = await service.collect_market_data(
+        condition_id="test-condition-123",
+        duration_seconds=1  # Short duration for test
+    )
+
+    # Verify structure
+    assert isinstance(data, dict)
+    assert 'trades' in data
+    assert 'book_snapshots' in data
+    assert 'price_changes' in data
+    assert isinstance(data['trades'], list)

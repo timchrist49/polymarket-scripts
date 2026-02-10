@@ -34,8 +34,9 @@ class MarketMicrostructureService:
     WHALE_SIZE_BTC = 5.0  # Orders > 5 BTC considered "whale"
     LARGE_WALL_BTC = 10.0  # Walls > 10 BTC considered significant
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, condition_id: Optional[str] = None):
         self.settings = settings
+        self.condition_id = condition_id
         self._session: Optional[aiohttp.ClientSession] = None
         self._klines_cache: list = []  # Cache for momentum calculation
 
@@ -262,6 +263,46 @@ class MarketMicrostructureService:
         direction = "BULLISH" if score > 0.1 else "BEARISH" if score < -0.1 else "NEUTRAL"
         strength = "STRONG" if confidence >= 0.7 else "WEAK" if confidence >= 0.5 else "CONFLICTED"
         return f"{strength}_{direction}"
+
+    async def collect_market_data(
+        self,
+        condition_id: str,
+        duration_seconds: int = 60
+    ) -> dict:
+        """
+        Collect market data via WebSocket for the specified duration.
+
+        SKELETON: Currently returns empty structure. Will implement
+        real WebSocket connection to wss://ws-subscriptions-clob.polymarket.com/ws
+        in next iteration.
+
+        Args:
+            condition_id: Polymarket condition ID to monitor
+            duration_seconds: How long to collect data
+
+        Returns:
+            dict with keys:
+                - trades: list of trade events
+                - book_snapshots: list of order book snapshots
+                - price_changes: list of price change events
+        """
+        logger.info(
+            "collect_market_data called (skeleton)",
+            condition_id=condition_id,
+            duration=duration_seconds
+        )
+
+        # TODO: Implement real WebSocket connection
+        # Will connect to wss://ws-subscriptions-clob.polymarket.com/ws
+        # Subscribe to market channel for condition_id
+        # Collect data for duration_seconds
+
+        # For now, return empty structure
+        return {
+            'trades': [],
+            'book_snapshots': [],
+            'price_changes': []
+        }
 
     async def get_market_score(self) -> MarketSignals:
         """
