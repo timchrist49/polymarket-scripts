@@ -245,7 +245,7 @@ class ValidationResult:
 @dataclass
 class SocialSentiment:
     """Social sentiment from crypto-specific APIs."""
-    score: float                      # -1.0 (bearish) to +1.0 (bullish)
+    score: float                      # -0.7 to +0.85 (asymmetric: trending is one-sided)
     confidence: float                 # 0.0 to 1.0
     fear_greed: int                   # 0-100 from alternative.me
     is_trending: bool                 # BTC in top 3 trending

@@ -138,7 +138,12 @@ class SocialSentimentService:
         Get current social sentiment score.
 
         Returns:
-            SocialSentiment with score (-1 to +1), confidence (0 to 1), and metadata.
+            SocialSentiment with score (-0.7 to +0.85), confidence (0 to 1), and metadata.
+
+        Note:
+            Score range is asymmetric due to trending being one-sided (0 or +0.5).
+            - Maximum (+0.85): Greed=100, Trending=True, Votes=100% up
+            - Minimum (-0.7): Fear=0, Not trending, Votes=100% down
         """
         try:
             # Fetch all sources in parallel
