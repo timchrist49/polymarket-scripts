@@ -316,3 +316,41 @@ def test_calculate_confidence():
     data = {'trades': [], 'collection_duration': 120}
     confidence = service.calculate_confidence(data)
     assert confidence == 0.0
+
+
+@pytest.mark.asyncio
+async def test_get_market_score_with_mock_data():
+    """Test get_market_score with mocked collection data."""
+    service = MarketMicrostructureService(Settings(), "test-condition-123")
+
+    # Mock collect_market_data to return test data
+    async def mock_collect(condition_id, duration_seconds):
+        return {
+            'trades': [
+                {'asset_id': 'YES_TOKEN', 'price': 0.50, 'size': 1000},
+                {'asset_id': 'YES_TOKEN', 'price': 0.52, 'size': 1500},
+                {'asset_id': 'NO_TOKEN', 'price': 0.48, 'size': 500},
+            ] * 20,  # 60 trades total
+            'book_snapshots': [],
+            'price_changes': [],
+            'collection_duration': 120
+        }
+
+    # Replace method
+    service.collect_market_data = mock_collect
+
+    # Get market score
+    signals = await service.get_market_score()
+
+    # Verify structure
+    assert isinstance(signals, MarketSignals)
+    assert -1.0 <= signals.score <= 1.0
+    assert 0.0 <= signals.confidence <= 1.0
+
+    # Verify scores are calculated (not default 0.0)
+    assert signals.momentum_score != 0.0  # Price moved 0.50 → 0.52
+    assert signals.volume_score != 0.0    # More YES than NO volume
+    assert signals.whale_score != 0.0     # Has whale trades >$1k
+
+    # Confidence should be high (60 trades, full duration)
+    assert signals.confidence > 0.8

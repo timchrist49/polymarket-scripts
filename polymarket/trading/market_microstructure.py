@@ -482,59 +482,47 @@ class MarketMicrostructureService:
             MarketSignals with score, confidence, and detailed metrics.
         """
         try:
-            # Fetch all data in parallel
-            results = await asyncio.gather(
-                self._fetch_order_book(),
-                self._fetch_recent_trades(),
-                self._fetch_24hr_ticker(),
-                self._fetch_klines(limit=15),
-                return_exceptions=True
+            # Collect data for 2 minutes
+            data = await self.collect_market_data(
+                self.condition_id,
+                duration_seconds=120
             )
 
-            order_book, trades, ticker, klines = results
+            # Calculate individual scores
+            momentum_score = self.calculate_momentum_score(data['trades'])
+            volume_flow_score = self.calculate_volume_flow_score(data['trades'])
+            whale_score = self.calculate_whale_activity_score(data['trades'])
 
-            # Handle failures
-            if isinstance(order_book, Exception):
-                logger.error("Order book failed", error=str(order_book))
-                order_book = {"bids": [], "asks": []}
-
-            if isinstance(trades, Exception):
-                logger.error("Trades failed", error=str(trades))
-                trades = []
-
-            if isinstance(ticker, Exception):
-                logger.error("Ticker failed", error=str(ticker))
-                ticker = {"volume": "0", "count": 0}
-
-            if isinstance(klines, Exception):
-                logger.error("Klines failed", error=str(klines))
-                klines = self._klines_cache or []
-
-            # Score each metric
-            ob_score = self._score_order_book(order_book)
-            whale_score = self._score_whale_activity(trades)
-            volume_score = self._score_volume_spike(ticker, klines)
-            momentum_score = self._score_momentum(klines)
-
-            # Calculate weighted average
-            market_score = (
-                ob_score * self.WEIGHTS["order_book"] +
-                whale_score * self.WEIGHTS["whales"] +
-                volume_score * self.WEIGHTS["volume"] +
-                momentum_score * self.WEIGHTS["momentum"]
+            # Combine scores
+            market_score = self.calculate_market_score(
+                momentum_score,
+                volume_flow_score,
+                whale_score
             )
 
-            # Calculate confidence based on internal agreement
-            confidence = self._calculate_metric_agreement([ob_score, whale_score, volume_score, momentum_score])
+            # Calculate confidence
+            confidence = self.calculate_confidence(data)
+
+            # Classify signal
+            signal_type = self._classify_signal(market_score, confidence)
 
             # Extract metadata
-            order_book_bias = "BID_HEAVY" if ob_score > 0.3 else "ASK_HEAVY" if ob_score < -0.3 else "BALANCED"
-            whale_direction = "BUYING" if whale_score > 0.3 else "SELLING" if whale_score < -0.3 else "NEUTRAL"
-            whale_count = sum(1 for t in trades if float(t["qty"]) > self.WHALE_SIZE_BTC)
-            volume_ratio = 1.0 + volume_score  # Approximate
-            momentum_direction = "UP" if momentum_score > 0.1 else "DOWN" if momentum_score < -0.1 else "FLAT"
+            whale_count = sum(
+                1 for t in data['trades']
+                if t['size'] > self.WHALE_SIZE_USD
+            )
 
-            signal_type = self._classify_signal(market_score, confidence)
+            momentum_direction = (
+                "UP" if momentum_score > 0.1 else
+                "DOWN" if momentum_score < -0.1 else
+                "FLAT"
+            )
+
+            whale_direction = (
+                "BUYING" if whale_score > 0.3 else
+                "SELLING" if whale_score < -0.3 else
+                "NEUTRAL"
+            )
 
             logger.info(
                 "Market microstructure calculated",
@@ -547,14 +535,14 @@ class MarketMicrostructureService:
             return MarketSignals(
                 score=market_score,
                 confidence=confidence,
-                order_book_score=ob_score,
+                order_book_score=0.0,  # Not used in new version
                 whale_score=whale_score,
-                volume_score=volume_score,
+                volume_score=volume_flow_score,
                 momentum_score=momentum_score,
-                order_book_bias=order_book_bias,
+                order_book_bias="N/A",  # Not used
                 whale_direction=whale_direction,
                 whale_count=whale_count,
-                volume_ratio=volume_ratio,
+                volume_ratio=1.0 + volume_flow_score,  # Approximate
                 momentum_direction=momentum_direction,
                 signal_type=signal_type,
                 timestamp=datetime.now()
