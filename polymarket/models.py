@@ -255,6 +255,19 @@ class SocialSentiment:
     sources_available: list[str]      # Which APIs succeeded
     timestamp: datetime
 
+    def validate(self) -> None:
+        """Validate field constraints. Raises ValueError if invalid."""
+        if not -1.0 <= self.score <= 1.0:
+            raise ValueError(f"score must be in [-1.0, 1.0], got {self.score}")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
+        if not 0 <= self.fear_greed <= 100:
+            raise ValueError(f"fear_greed must be in [0, 100], got {self.fear_greed}")
+        if not 0.0 <= self.vote_up_pct <= 100.0:
+            raise ValueError(f"vote_up_pct must be in [0.0, 100.0], got {self.vote_up_pct}")
+        if not 0.0 <= self.vote_down_pct <= 100.0:
+            raise ValueError(f"vote_down_pct must be in [0.0, 100.0], got {self.vote_down_pct}")
+
 
 @dataclass
 class MarketSignals:
@@ -273,6 +286,25 @@ class MarketSignals:
     signal_type: str                  # "STRONG_BULLISH", etc.
     timestamp: datetime
 
+    def validate(self) -> None:
+        """Validate field constraints. Raises ValueError if invalid."""
+        if not -1.0 <= self.score <= 1.0:
+            raise ValueError(f"score must be in [-1.0, 1.0], got {self.score}")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
+        if not -1.0 <= self.order_book_score <= 1.0:
+            raise ValueError(f"order_book_score must be in [-1.0, 1.0], got {self.order_book_score}")
+        if not -1.0 <= self.whale_score <= 1.0:
+            raise ValueError(f"whale_score must be in [-1.0, 1.0], got {self.whale_score}")
+        if not -1.0 <= self.volume_score <= 1.0:
+            raise ValueError(f"volume_score must be in [-1.0, 1.0], got {self.volume_score}")
+        if not -1.0 <= self.momentum_score <= 1.0:
+            raise ValueError(f"momentum_score must be in [-1.0, 1.0], got {self.momentum_score}")
+        if self.whale_count < 0:
+            raise ValueError(f"whale_count must be >= 0, got {self.whale_count}")
+        if self.volume_ratio < 0:
+            raise ValueError(f"volume_ratio must be >= 0, got {self.volume_ratio}")
+
 
 @dataclass
 class AggregatedSentiment:
@@ -284,3 +316,15 @@ class AggregatedSentiment:
     agreement_multiplier: float       # 0.5 (conflict) to 1.5 (perfect agreement)
     signal_type: str                  # "STRONG_BULLISH", "CONFLICTED", etc.
     timestamp: datetime
+
+    def validate(self) -> None:
+        """Validate field constraints. Raises ValueError if invalid."""
+        if not -1.0 <= self.final_score <= 1.0:
+            raise ValueError(f"final_score must be in [-1.0, 1.0], got {self.final_score}")
+        if not 0.0 <= self.final_confidence <= 1.0:
+            raise ValueError(f"final_confidence must be in [0.0, 1.0], got {self.final_confidence}")
+        if not 0.5 <= self.agreement_multiplier <= 1.5:
+            raise ValueError(f"agreement_multiplier must be in [0.5, 1.5], got {self.agreement_multiplier}")
+        # Validate nested objects
+        self.social.validate()
+        self.market.validate()
