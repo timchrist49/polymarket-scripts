@@ -304,6 +304,45 @@ class MarketMicrostructureService:
             'price_changes': []
         }
 
+    def calculate_momentum_score(self, trades: list) -> float:
+        """
+        Calculate YES token price momentum over collection window.
+
+        Args:
+            trades: List of trade messages with asset_id, price, size
+
+        Returns:
+            -1.0 (strong bearish) to +1.0 (strong bullish)
+        """
+        if not trades:
+            return 0.0
+
+        # Filter YES token trades
+        yes_trades = [t for t in trades if t.get('asset_id') == 'YES_TOKEN']
+        if len(yes_trades) < 2:
+            return 0.0
+
+        # Get first and last YES price in window
+        initial_yes_price = yes_trades[0]['price']
+        final_yes_price = yes_trades[-1]['price']
+
+        # Calculate percentage change
+        price_change_pct = (final_yes_price - initial_yes_price) / initial_yes_price
+
+        # Normalize: ±10% change maps to ±1.0 score
+        # Clamp to [-1.0, 1.0] range
+        momentum_score = max(min(price_change_pct * 10, 1.0), -1.0)
+
+        logger.debug(
+            "Momentum calculated",
+            initial=initial_yes_price,
+            final=final_yes_price,
+            change_pct=f"{price_change_pct*100:+.2f}%",
+            score=f"{momentum_score:+.2f}"
+        )
+
+        return momentum_score
+
     async def get_market_score(self) -> MarketSignals:
         """
         Get current market microstructure score.

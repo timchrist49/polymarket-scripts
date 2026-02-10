@@ -111,3 +111,36 @@ async def test_collect_market_data_structure():
     assert 'book_snapshots' in data
     assert 'price_changes' in data
     assert isinstance(data['trades'], list)
+
+
+def test_calculate_momentum_score():
+    """Test YES price momentum calculation."""
+    service = MarketMicrostructureService(Settings(), "test-123")
+
+    # Test: YES price rising 5%
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'price': 0.50, 'size': 100},
+        {'asset_id': 'YES_TOKEN', 'price': 0.525, 'size': 200},
+    ]
+    score = service.calculate_momentum_score(trades)
+    assert score == pytest.approx(0.5, abs=0.01)  # 5% / 10% = 0.5
+
+    # Test: YES price falling 10% → -1.0 (clamped)
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'price': 0.50, 'size': 100},
+        {'asset_id': 'YES_TOKEN', 'price': 0.45, 'size': 200},
+    ]
+    score = service.calculate_momentum_score(trades)
+    assert score == pytest.approx(-1.0, abs=0.01)
+
+    # Test: No price change → 0.0
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'price': 0.50, 'size': 100},
+        {'asset_id': 'YES_TOKEN', 'price': 0.50, 'size': 200},
+    ]
+    score = service.calculate_momentum_score(trades)
+    assert score == pytest.approx(0.0, abs=0.01)
+
+    # Test: Empty trades → 0.0
+    score = service.calculate_momentum_score([])
+    assert score == pytest.approx(0.0, abs=0.01)
