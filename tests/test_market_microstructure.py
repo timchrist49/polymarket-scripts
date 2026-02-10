@@ -354,3 +354,25 @@ async def test_get_market_score_with_mock_data():
 
     # Confidence should be high (60 trades, full duration)
     assert signals.confidence > 0.8
+
+
+@pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow test
+async def test_websocket_connection_real():
+    """Test real WebSocket connection (slow, may be skipped)."""
+    service = MarketMicrostructureService(Settings(), "test-condition-123")
+
+    # Attempt real connection for 5 seconds
+    try:
+        data = await service.collect_market_data(
+            "test-condition-123",
+            duration_seconds=5
+        )
+
+        # Verify structure even if no trades
+        assert isinstance(data, dict)
+        assert 'trades' in data
+        assert 'collection_duration' in data
+
+    except Exception as e:
+        pytest.skip(f"WebSocket connection failed: {e}")

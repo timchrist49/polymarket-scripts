@@ -9,6 +9,9 @@ from datetime import datetime
 from typing import Optional
 import structlog
 import aiohttp
+import websockets
+import json
+import time
 
 from polymarket.models import MarketSignals
 from polymarket.config import Settings
@@ -21,6 +24,9 @@ class MarketMicrostructureService:
 
     # Binance API base URL
     BASE_URL = "https://api.binance.com/api/v3"
+
+    # Polymarket CLOB WebSocket URL
+    WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws"
 
     # Weights for score calculation (Polymarket-specific)
     WEIGHTS = {
@@ -267,42 +273,91 @@ class MarketMicrostructureService:
     async def collect_market_data(
         self,
         condition_id: str,
-        duration_seconds: int = 60
+        duration_seconds: int = 120
     ) -> dict:
         """
-        Collect market data via WebSocket for the specified duration.
-
-        SKELETON: Currently returns empty structure. Will implement
-        real WebSocket connection to wss://ws-subscriptions-clob.polymarket.com/ws
-        in next iteration.
+        Connect to WebSocket and collect market data for specified duration.
 
         Args:
-            condition_id: Polymarket condition ID to monitor
-            duration_seconds: How long to collect data
+            condition_id: Market condition ID to subscribe to
+            duration_seconds: How long to collect data (default 2 minutes)
 
         Returns:
-            dict with keys:
-                - trades: list of trade events
-                - book_snapshots: list of order book snapshots
-                - price_changes: list of price change events
+            {
+                'trades': [...],           # last_trade_price messages
+                'book_snapshots': [...],   # book messages
+                'price_changes': [...],    # price_change messages
+                'collection_duration': int # Actual seconds collected
+            }
         """
+        accumulated_data = {
+            'trades': [],
+            'book_snapshots': [],
+            'price_changes': [],
+            'collection_duration': 0
+        }
+
         logger.info(
-            "collect_market_data called (skeleton)",
+            "Connecting to Polymarket CLOB WebSocket",
             condition_id=condition_id,
             duration=duration_seconds
         )
 
-        # TODO: Implement real WebSocket connection
-        # Will connect to wss://ws-subscriptions-clob.polymarket.com/ws
-        # Subscribe to market channel for condition_id
-        # Collect data for duration_seconds
+        try:
+            async with websockets.connect(
+                self.WS_URL,
+                ping_interval=20,
+                ping_timeout=10
+            ) as ws:
+                # Send subscription message
+                subscribe_msg = {
+                    "action": "subscribe",
+                    "subscriptions": [
+                        {
+                            "topic": "market",
+                            "condition_id": condition_id
+                        }
+                    ]
+                }
+                await ws.send(json.dumps(subscribe_msg))
+                logger.debug("Sent subscription", condition_id=condition_id)
 
-        # For now, return empty structure
-        return {
-            'trades': [],
-            'book_snapshots': [],
-            'price_changes': []
-        }
+                # Collect data for specified duration
+                start_time = time.time()
+                while time.time() - start_time < duration_seconds:
+                    try:
+                        # Wait for message with 5s timeout
+                        msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                        data = json.loads(msg)
+
+                        # Accumulate based on message type
+                        msg_type = data.get('type')
+                        if msg_type == 'last_trade_price':
+                            accumulated_data['trades'].append(data.get('payload', {}))
+                        elif msg_type == 'book':
+                            accumulated_data['book_snapshots'].append(data.get('payload', {}))
+                        elif msg_type == 'price_change':
+                            accumulated_data['price_changes'].append(data.get('payload', {}))
+
+                    except asyncio.TimeoutError:
+                        # No message in 5s, continue waiting
+                        continue
+
+                # Record actual collection time
+                accumulated_data['collection_duration'] = int(time.time() - start_time)
+
+                logger.info(
+                    "Data collection complete",
+                    trades=len(accumulated_data['trades']),
+                    duration=accumulated_data['collection_duration']
+                )
+
+        except Exception as e:
+            logger.error("WebSocket collection failed", error=str(e))
+            # Return empty data on failure
+            accumulated_data['collection_duration'] = 0
+
+        return accumulated_data
 
     def calculate_momentum_score(self, trades: list) -> float:
         """

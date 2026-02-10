@@ -25,3 +25,4 @@ aiohttp>=3.9.0           # Async HTTP
 # Development
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
+websockets>=12.0
