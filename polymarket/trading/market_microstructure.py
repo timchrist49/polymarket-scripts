@@ -343,6 +343,45 @@ class MarketMicrostructureService:
 
         return momentum_score
 
+    def calculate_volume_flow_score(self, trades: list) -> float:
+        """
+        Calculate net buying pressure (YES volume - NO volume).
+
+        Args:
+            trades: List of trade messages with asset_id and size
+
+        Returns:
+            -1.0 (all NO buying) to +1.0 (all YES buying)
+        """
+        if not trades:
+            return 0.0
+
+        yes_volume = sum(
+            trade['size'] for trade in trades
+            if trade.get('asset_id') == 'YES_TOKEN'
+        )
+
+        no_volume = sum(
+            trade['size'] for trade in trades
+            if trade.get('asset_id') == 'NO_TOKEN'
+        )
+
+        total_volume = yes_volume + no_volume
+        if total_volume == 0:
+            return 0.0
+
+        # Already normalized to -1.0 to +1.0
+        volume_flow_score = (yes_volume - no_volume) / total_volume
+
+        logger.debug(
+            "Volume flow calculated",
+            yes_volume=yes_volume,
+            no_volume=no_volume,
+            score=f"{volume_flow_score:+.2f}"
+        )
+
+        return volume_flow_score
+
     async def get_market_score(self) -> MarketSignals:
         """
         Get current market microstructure score.

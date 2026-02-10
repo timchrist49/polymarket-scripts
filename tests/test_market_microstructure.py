@@ -144,3 +144,43 @@ def test_calculate_momentum_score():
     # Test: Empty trades → 0.0
     score = service.calculate_momentum_score([])
     assert score == pytest.approx(0.0, abs=0.01)
+
+
+def test_calculate_volume_flow_score():
+    """Test volume flow calculation."""
+    service = MarketMicrostructureService(Settings(), "test-123")
+
+    # Test: Pure YES volume → +1.0
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 1000},
+        {'asset_id': 'YES_TOKEN', 'size': 500},
+    ]
+    score = service.calculate_volume_flow_score(trades)
+    assert score == 1.0
+
+    # Test: Pure NO volume → -1.0
+    trades = [
+        {'asset_id': 'NO_TOKEN', 'size': 1000},
+    ]
+    score = service.calculate_volume_flow_score(trades)
+    assert score == -1.0
+
+    # Test: Equal volume → 0.0
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 500},
+        {'asset_id': 'NO_TOKEN', 'size': 500},
+    ]
+    score = service.calculate_volume_flow_score(trades)
+    assert score == 0.0
+
+    # Test: 60% YES, 40% NO → +0.2
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 600},
+        {'asset_id': 'NO_TOKEN', 'size': 400},
+    ]
+    score = service.calculate_volume_flow_score(trades)
+    assert score == pytest.approx(0.2, abs=0.01)
+
+    # Test: Empty trades → 0.0
+    score = service.calculate_volume_flow_score([])
+    assert score == 0.0
