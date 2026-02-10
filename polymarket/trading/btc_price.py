@@ -1,0 +1,159 @@
+"""
+BTC Price Service
+
+Fetches real-time BTC prices from Binance (primary) with CoinGecko fallback.
+Provides current price, historical data, and price change calculations.
+"""
+
+import asyncio
+import decimal
+from datetime import datetime, timedelta
+from typing import Optional
+import structlog
+
+import ccxt.async_support as ccxt
+import aiohttp
+
+from polymarket.models import BTCPriceData, PricePoint, PriceChange
+from polymarket.config import Settings
+
+logger = structlog.get_logger()
+
+
+class BTCPriceService:
+    """Real-time BTC price data from multiple sources."""
+
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self._cache: Optional[BTCPriceData] = None
+        self._cache_time: Optional[datetime] = None
+        self._binance: ccxt.binance = ccxt.binance()
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Lazy init of HTTP session."""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def get_current_price(self) -> BTCPriceData:
+        """Get current BTC price with caching."""
+        # Check cache
+        if self._cache and self._cache_time:
+            age = (datetime.now() - self._cache_time).total_seconds()
+            if age < self.settings.btc_price_cache_seconds:
+                logger.debug("Using cached BTC price", age_seconds=age)
+                return self._cache
+
+        # Fetch from source
+        try:
+            if self.settings.btc_price_source in ("binance", "both"):
+                data = await self._fetch_binance()
+            elif self.settings.btc_price_source == "coingecko":
+                data = await self._fetch_coingecko()
+            else:
+                raise ValueError(f"Unknown price source: {self.settings.btc_price_source}")
+        except Exception as e:
+            logger.error("Failed to fetch price", source=self.settings.btc_price_source, error=str(e))
+            # Return stale cache if available
+            if self._cache:
+                logger.warning("Returning stale cache", age_seconds=(datetime.now() - self._cache_time).total_seconds())
+                return self._cache
+            raise
+
+        # Update cache
+        self._cache = data
+        self._cache_time = datetime.now()
+        return data
+
+    async def _fetch_binance(self) -> BTCPriceData:
+        """Fetch from Binance API."""
+        try:
+            ticker = await self._binance.fetch_ticker("BTC/USDT")
+            return BTCPriceData(
+                price=decimal.Decimal(str(ticker["last"])),
+                timestamp=datetime.fromtimestamp(ticker["timestamp"] / 1000),
+                source="binance",
+                volume_24h=decimal.Decimal(str(ticker["baseVolume"]))
+            )
+        except Exception as e:
+            logger.error("Binance fetch failed", error=str(e))
+            raise
+
+    async def _fetch_coingecko(self) -> BTCPriceData:
+        """Fetch from CoinGecko API (fallback)."""
+        session = await self._get_session()
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            "ids": "bitcoin",
+            "vs_currencies": "usd",
+            "include_last_updated_at": "true",
+            "include_24hr_vol": "true"
+        }
+
+        async with session.get(url, params=params) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            btc = data["bitcoin"]
+
+            return BTCPriceData(
+                price=decimal.Decimal(str(btc["usd"])),
+                timestamp=datetime.fromtimestamp(btc["last_updated_at"]),
+                source="coingecko",
+                volume_24h=decimal.Decimal(str(btc.get("usd_24h_vol", 0)))
+            )
+
+    async def get_price_history(self, minutes: int = 60) -> list[PricePoint]:
+        """Get historical price points for technical analysis."""
+        # Use direct HTTP request to Binance API instead of ccxt
+        # to avoid the derivatives API timeout issue
+        try:
+            session = await self._get_session()
+            url = "https://api.binance.com/api/v3/klines"
+            params = {
+                "symbol": "BTCUSDT",
+                "interval": "1m",
+                "limit": str(minutes)
+            }
+
+            async with session.get(url, params=params, timeout=10) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                return [
+                    PricePoint(
+                        price=decimal.Decimal(str(candle[4])),  # Close price
+                        volume=decimal.Decimal(str(candle[5])),  # Volume
+                        timestamp=datetime.fromtimestamp(candle[0] / 1000)
+                    )
+                    for candle in data
+                ]
+        except Exception as e:
+            logger.error("Failed to fetch price history", error=str(e))
+            raise
+
+    async def get_price_change(self, window_minutes: int = 5) -> PriceChange:
+        """Calculate price change over a time window."""
+        history = await self.get_price_history(minutes=window_minutes)
+        if len(history) < 2:
+            raise ValueError("Not enough price history")
+
+        old = history[0]
+        current = await self.get_current_price()
+
+        change_amount = current.price - old.price
+        change_percent = float(change_amount / old.price * 100)
+        velocity = change_amount / decimal.Decimal(window_minutes)
+
+        return PriceChange(
+            current_price=current.price,
+            change_percent=change_percent,
+            change_amount=change_amount,
+            velocity=velocity
+        )
+
+    async def close(self):
+        """Clean up resources."""
+        await self._binance.close()
+        if self._session and not self._session.closed:
+            await self._session.close()

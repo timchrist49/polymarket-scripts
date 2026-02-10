@@ -103,6 +103,57 @@ class Settings:
         default_factory=lambda: os.getenv("LOG_JSON", "false").lower() == "true"
     )
 
+    # === OpenAI Configuration ===
+    openai_api_key: str | None = field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY")
+    )
+    openai_model: str = field(
+        default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    )
+
+    # === Tavily Configuration ===
+    tavily_api_key: str | None = field(
+        default_factory=lambda: os.getenv("TAVILY_API_KEY")
+    )
+
+    # === BTC Price Service ===
+    btc_price_source: str = field(
+        default_factory=lambda: os.getenv("BTC_PRICE_SOURCE", "binance")
+    )
+    btc_price_cache_seconds: int = field(
+        default_factory=lambda: int(os.getenv("BTC_PRICE_CACHE_SECONDS", "30"))
+    )
+
+    # === Trading Bot Configuration ===
+    bot_interval_seconds: int = field(
+        default_factory=lambda: int(os.getenv("BOT_INTERVAL_SECONDS", "180"))
+    )
+    bot_confidence_threshold: float = field(
+        default_factory=lambda: float(os.getenv("BOT_CONFIDENCE_THRESHOLD", "0.75"))
+    )
+    bot_max_position_percent: float = field(
+        default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_PERCENT", "0.10"))
+    )
+    bot_max_exposure_percent: float = field(
+        default_factory=lambda: float(os.getenv("BOT_MAX_EXPOSURE_PERCENT", "0.50"))
+    )
+
+    # === Stop-Loss Configuration ===
+    stop_loss_odds_threshold: float = field(
+        default_factory=lambda: float(os.getenv("STOP_LOSS_ODDS_THRESHOLD", "0.40"))
+    )
+    stop_loss_force_exit_minutes: int = field(
+        default_factory=lambda: int(os.getenv("STOP_LOSS_FORCE_EXIT_MINUTES", "5"))
+    )
+
+    # === Bot Logging ===
+    bot_log_decisions: bool = field(
+        default_factory=lambda: os.getenv("BOT_LOG_DECISIONS", "true").lower() == "true"
+    )
+    bot_log_file: str = field(
+        default_factory=lambda: os.getenv("BOT_LOG_FILE", "logs/auto_trade.log")
+    )
+
     def __post_init__(self):
         """Validate settings based on mode."""
         if self.mode == "trading":
