@@ -22,6 +22,8 @@ Example:
 
 from datetime import datetime
 from typing import Literal
+from dataclasses import dataclass
+from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 import json
 
@@ -158,3 +160,127 @@ class BalanceInfo(BaseModel):
     token_id: str
     balance: float
     allowance: float | None = None
+
+
+# === BTC Price Models ===
+
+@dataclass
+class BTCPriceData:
+    """Current BTC price data."""
+    price: Decimal
+    timestamp: datetime
+    source: str
+    volume_24h: Decimal
+
+
+@dataclass
+class PricePoint:
+    """Historical price point for technical analysis."""
+    price: Decimal
+    volume: Decimal
+    timestamp: datetime
+
+
+@dataclass
+class PriceChange:
+    """Price change over a time window."""
+    current_price: Decimal
+    change_percent: float
+    change_amount: Decimal
+    velocity: Decimal  # $/minute
+
+
+# === Sentiment Models ===
+
+@dataclass
+class SentimentAnalysis:
+    """Market sentiment analysis from Tavily."""
+    score: float           # -1.0 (bearish) to +1.0 (bullish)
+    confidence: float      # 0.0 to 1.0
+    key_factors: list[str]
+    sources_analyzed: int
+    timestamp: datetime
+
+
+# === Technical Analysis Models ===
+
+@dataclass
+class TechnicalIndicators:
+    """Technical analysis indicators."""
+    rsi: float
+    macd_value: float
+    macd_signal: float
+    macd_histogram: float
+    ema_short: float
+    ema_long: float
+    sma_50: float
+    volume_change: float
+    price_velocity: float
+    trend: Literal["BULLISH", "BEARISH", "NEUTRAL"]
+
+
+# === Trading Decision Models ===
+
+@dataclass
+class TradingDecision:
+    """AI-generated trading decision."""
+    action: Literal["YES", "NO", "HOLD"]
+    confidence: float
+    reasoning: str
+    token_id: str
+    position_size: Decimal
+    stop_loss_threshold: float
+
+
+@dataclass
+class ValidationResult:
+    """Risk validation result."""
+    approved: bool
+    reason: str
+    adjusted_position: Decimal | None
+
+
+# === New Sentiment Models ===
+
+@dataclass
+class SocialSentiment:
+    """Social sentiment from crypto-specific APIs."""
+    score: float                      # -1.0 (bearish) to +1.0 (bullish)
+    confidence: float                 # 0.0 to 1.0
+    fear_greed: int                   # 0-100 from alternative.me
+    is_trending: bool                 # BTC in top 3 trending
+    vote_up_pct: float                # CoinGecko sentiment votes up %
+    vote_down_pct: float              # CoinGecko sentiment votes down %
+    signal_type: str                  # "STRONG_BULLISH", "WEAK_BEARISH", etc.
+    sources_available: list[str]      # Which APIs succeeded
+    timestamp: datetime
+
+
+@dataclass
+class MarketSignals:
+    """Market microstructure signals from Binance."""
+    score: float                      # -1.0 (bearish) to +1.0 (bullish)
+    confidence: float                 # 0.0 to 1.0
+    order_book_score: float           # Bid vs ask wall strength
+    whale_score: float                # Large buy vs sell orders
+    volume_score: float               # Volume spike vs average
+    momentum_score: float             # Price velocity
+    order_book_bias: str              # "BID_HEAVY", "ASK_HEAVY", "BALANCED"
+    whale_direction: str              # "BUYING", "SELLING", "NEUTRAL"
+    whale_count: int                  # Number of large orders
+    volume_ratio: float               # Current volume / 24h average
+    momentum_direction: str           # "UP", "DOWN", "FLAT"
+    signal_type: str                  # "STRONG_BULLISH", etc.
+    timestamp: datetime
+
+
+@dataclass
+class AggregatedSentiment:
+    """Final aggregated sentiment with agreement-based confidence."""
+    social: SocialSentiment
+    market: MarketSignals
+    final_score: float                # Weighted: market 60% + social 40%
+    final_confidence: float           # Base confidence * agreement multiplier
+    agreement_multiplier: float       # 0.5 (conflict) to 1.5 (perfect agreement)
+    signal_type: str                  # "STRONG_BULLISH", "CONFLICTED", etc.
+    timestamp: datetime
