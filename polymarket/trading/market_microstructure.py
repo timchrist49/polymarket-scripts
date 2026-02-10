@@ -42,7 +42,7 @@ class MarketMicrostructureService:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Lazy init of aiohttp session."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5))
+            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))  # Increased from 5 to 15s
         return self._session
 
     async def close(self):
@@ -52,56 +52,88 @@ class MarketMicrostructureService:
 
     async def _fetch_order_book(self) -> dict:
         """Fetch Binance order book (top 100 levels)."""
-        try:
-            session = await self._get_session()
-            url = f"{self.BASE_URL}/depth?symbol=BTCUSDT&limit=100"
-            async with session.get(url) as response:
-                data = await response.json()
-                logger.debug("Order book fetched", bids=len(data["bids"]), asks=len(data["asks"]))
-                return data
-        except Exception as e:
-            logger.error("Order book fetch failed", error=str(e))
-            return {"bids": [], "asks": []}
+        session = await self._get_session()
+        url = f"{self.BASE_URL}/depth?symbol=BTCUSDT&limit=100"
+
+        # Retry up to 2 times on failure
+        for attempt in range(2):
+            try:
+                async with session.get(url) as response:
+                    data = await response.json()
+                    logger.debug("Order book fetched", bids=len(data["bids"]), asks=len(data["asks"]))
+                    return data
+            except Exception as e:
+                if attempt == 1:  # Last attempt
+                    logger.error("Order book fetch failed after retries", error=str(e))
+                    return {"bids": [], "asks": []}
+                logger.warning(f"Order book fetch attempt {attempt+1} failed, retrying...", error=str(e))
+                await asyncio.sleep(1)  # Wait 1s before retry
+
+        return {"bids": [], "asks": []}
 
     async def _fetch_recent_trades(self) -> list:
         """Fetch last 100 trades from Binance."""
-        try:
-            session = await self._get_session()
-            url = f"{self.BASE_URL}/trades?symbol=BTCUSDT&limit=100"
-            async with session.get(url) as response:
-                data = await response.json()
-                logger.debug("Trades fetched", count=len(data))
-                return data
-        except Exception as e:
-            logger.error("Trades fetch failed", error=str(e))
-            return []
+        session = await self._get_session()
+        url = f"{self.BASE_URL}/trades?symbol=BTCUSDT&limit=100"
+
+        # Retry up to 2 times on failure
+        for attempt in range(2):
+            try:
+                async with session.get(url) as response:
+                    data = await response.json()
+                    logger.debug("Trades fetched", count=len(data))
+                    return data
+            except Exception as e:
+                if attempt == 1:  # Last attempt
+                    logger.error("Trades fetch failed after retries", error=str(e))
+                    return []
+                logger.warning(f"Trades fetch attempt {attempt+1} failed, retrying...", error=str(e))
+                await asyncio.sleep(1)  # Wait 1s before retry
+
+        return []
 
     async def _fetch_24hr_ticker(self) -> dict:
         """Fetch 24hr ticker data."""
-        try:
-            session = await self._get_session()
-            url = f"{self.BASE_URL}/ticker/24hr?symbol=BTCUSDT"
-            async with session.get(url) as response:
-                data = await response.json()
-                logger.debug("Ticker fetched", volume=data.get("volume"))
-                return data
-        except Exception as e:
-            logger.error("Ticker fetch failed", error=str(e))
-            return {"volume": "0", "count": 0}
+        session = await self._get_session()
+        url = f"{self.BASE_URL}/ticker/24hr?symbol=BTCUSDT"
+
+        # Retry up to 2 times on failure
+        for attempt in range(2):
+            try:
+                async with session.get(url) as response:
+                    data = await response.json()
+                    logger.debug("Ticker fetched", volume=data.get("volume"))
+                    return data
+            except Exception as e:
+                if attempt == 1:  # Last attempt
+                    logger.error("Ticker fetch failed after retries", error=str(e))
+                    return {"volume": "0", "count": 0}
+                logger.warning(f"Ticker fetch attempt {attempt+1} failed, retrying...", error=str(e))
+                await asyncio.sleep(1)  # Wait 1s before retry
+
+        return {"volume": "0", "count": 0}
 
     async def _fetch_klines(self, limit: int = 15) -> list:
         """Fetch 1-minute klines for momentum calculation."""
-        try:
-            session = await self._get_session()
-            url = f"{self.BASE_URL}/klines?symbol=BTCUSDT&interval=1m&limit={limit}"
-            async with session.get(url) as response:
-                data = await response.json()
-                self._klines_cache = data
-                logger.debug("Klines fetched", count=len(data))
-                return data
-        except Exception as e:
-            logger.error("Klines fetch failed", error=str(e))
-            return self._klines_cache  # Use cached if available
+        session = await self._get_session()
+        url = f"{self.BASE_URL}/klines?symbol=BTCUSDT&interval=1m&limit={limit}"
+
+        # Retry up to 2 times on failure
+        for attempt in range(2):
+            try:
+                async with session.get(url) as response:
+                    data = await response.json()
+                    self._klines_cache = data
+                    logger.debug("Klines fetched", count=len(data))
+                    return data
+            except Exception as e:
+                if attempt == 1:  # Last attempt
+                    logger.error("Klines fetch failed after retries", error=str(e))
+                    return self._klines_cache or []  # Use cached if available
+                logger.warning(f"Klines fetch attempt {attempt+1} failed, retrying...", error=str(e))
+                await asyncio.sleep(1)  # Wait 1s before retry
+
+        return self._klines_cache or []
 
     def _score_order_book(self, order_book: dict) -> float:
         """
