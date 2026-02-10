@@ -7,7 +7,7 @@ The sentiment analysis system combines multiple real-time signals to predict BTC
 ## Architecture
 
 ```
-Social APIs          Binance APIs
+Social APIs          Polymarket CLOB WebSocket
      ↓                    ↓
 Social Scorer      Market Scorer
      ↓                    ↓
@@ -39,21 +39,21 @@ Social Scorer      Market Scorer
 
 ### 2. Market Microstructure Scorer (`polymarket/trading/market_microstructure.py`)
 
-**Data Sources (Binance Public APIs):**
-- Order book depth (bid/ask walls)
-- Recent trades (whale detection >5 BTC)
-- 24hr ticker (volume spike detection)
-- Klines (price momentum/velocity)
+**Data Source (Polymarket CLOB WebSocket):**
+- Connects for 2 minutes per trading cycle
+- Subscribes to specific BTC 15-min prediction market
+- Collects: Trade executions, price updates, order book snapshots
 
-**Weights:**
-- Order book: 20%
-- Whales: 25%
-- Volume: 25%
-- Momentum: 30% (highest - most predictive for 15-min)
+**Analysis:**
+- **YES Price Momentum** (40% weight): Track YES token price movement
+- **Volume Flow** (35% weight): Net buying pressure (YES volume - NO volume)
+- **Whale Activity** (25% weight): Large trades (>$1,000) directional signal
 
 **Output:**
 - Score: -1.0 to +1.0
-- Confidence: Based on metric agreement (0.0 to 1.0)
+- Confidence: Based on trade count and collection quality (0.0 to 1.0)
+
+**Key Insight:** Analyzes the **exact market we're betting on**, not external BTC spot price.
 
 ### 3. Signal Aggregator (`polymarket/trading/signal_aggregator.py`)
 
@@ -101,7 +101,7 @@ final_confidence = base_confidence * agreement
 
 **Graceful Degradation:**
 1. If social APIs fail → Use market microstructure only (0.7x confidence penalty)
-2. If Binance APIs fail → Use social only (0.7x confidence penalty)
+2. If Polymarket WebSocket fails → Use social only (0.7x confidence penalty)
 3. If both fail → Fall back to technical indicators (confidence = 0.0)
 
 ## Usage Example
