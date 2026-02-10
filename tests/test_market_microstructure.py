@@ -184,3 +184,55 @@ def test_calculate_volume_flow_score():
     # Test: Empty trades → 0.0
     score = service.calculate_volume_flow_score([])
     assert score == 0.0
+
+
+def test_calculate_whale_activity_score():
+    """Test whale detection and scoring."""
+    service = MarketMicrostructureService(Settings(), "test-123")
+
+    # Test: All YES whales → +1.0
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 1500},
+        {'asset_id': 'YES_TOKEN', 'size': 2000},
+        {'asset_id': 'NO_TOKEN', 'size': 100},  # Not a whale
+    ]
+    score = service.calculate_whale_activity_score(trades)
+    assert score == 1.0
+
+    # Test: All NO whales → -1.0
+    trades = [
+        {'asset_id': 'NO_TOKEN', 'size': 1500},
+        {'asset_id': 'NO_TOKEN', 'size': 2000},
+        {'asset_id': 'YES_TOKEN', 'size': 100},  # Not a whale
+    ]
+    score = service.calculate_whale_activity_score(trades)
+    assert score == -1.0
+
+    # Test: Balanced whales → 0.0
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 1500},
+        {'asset_id': 'NO_TOKEN', 'size': 1200},
+    ]
+    score = service.calculate_whale_activity_score(trades)
+    assert score == 0.0
+
+    # Test: 2 YES whales, 1 NO whale → +0.33
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 1500},
+        {'asset_id': 'YES_TOKEN', 'size': 2000},
+        {'asset_id': 'NO_TOKEN', 'size': 1200},
+    ]
+    score = service.calculate_whale_activity_score(trades)
+    assert score == pytest.approx(0.333, abs=0.01)
+
+    # Test: No whales → 0.0 (handle division by zero)
+    trades = [
+        {'asset_id': 'YES_TOKEN', 'size': 500},
+        {'asset_id': 'NO_TOKEN', 'size': 800},
+    ]
+    score = service.calculate_whale_activity_score(trades)
+    assert score == 0.0
+
+    # Test: Empty trades → 0.0
+    score = service.calculate_whale_activity_score([])
+    assert score == 0.0

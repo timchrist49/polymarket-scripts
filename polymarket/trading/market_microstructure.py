@@ -33,6 +33,7 @@ class MarketMicrostructureService:
     # Thresholds
     WHALE_SIZE_BTC = 5.0  # Orders > 5 BTC considered "whale"
     LARGE_WALL_BTC = 10.0  # Walls > 10 BTC considered significant
+    WHALE_SIZE_USD = 1000  # Trades > $1,000 considered whale
 
     def __init__(self, settings: Settings, condition_id: Optional[str] = None):
         self.settings = settings
@@ -381,6 +382,45 @@ class MarketMicrostructureService:
         )
 
         return volume_flow_score
+
+    def calculate_whale_activity_score(self, trades: list) -> float:
+        """
+        Calculate directional signal from whale trades (>$1,000).
+
+        Args:
+            trades: List of trade messages with asset_id and size
+
+        Returns:
+            -1.0 (all NO whales) to +1.0 (all YES whales)
+        """
+        if not trades:
+            return 0.0
+
+        # Identify whale trades (size > $1,000)
+        yes_whales = sum(
+            1 for trade in trades
+            if trade['size'] > self.WHALE_SIZE_USD and trade.get('asset_id') == 'YES_TOKEN'
+        )
+
+        no_whales = sum(
+            1 for trade in trades
+            if trade['size'] > self.WHALE_SIZE_USD and trade.get('asset_id') == 'NO_TOKEN'
+        )
+
+        total_whales = yes_whales + no_whales
+        if total_whales == 0:
+            return 0.0
+
+        whale_score = (yes_whales - no_whales) / total_whales
+
+        logger.debug(
+            "Whale activity calculated",
+            yes_whales=yes_whales,
+            no_whales=no_whales,
+            score=f"{whale_score:+.2f}"
+        )
+
+        return whale_score
 
     async def get_market_score(self) -> MarketSignals:
         """
