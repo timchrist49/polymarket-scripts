@@ -78,6 +78,16 @@ class AutoTrader:
         logger.info("Initialized Polymarket WebSocket for BTC prices")
         logger.info("Performance tracking enabled")
 
+    def _check_emergency_pause(self) -> bool:
+        """Check if emergency pause flag is set."""
+        # Check environment variable
+        if self.settings.emergency_pause_enabled:
+            return True
+
+        # Check for emergency pause file
+        pause_file = Path(__file__).parent.parent / ".emergency_pause"
+        return pause_file.exists()
+
     async def _get_btc_momentum(
         self,
         btc_service,
@@ -150,6 +160,13 @@ class AutoTrader:
             cycle=self.cycle_count,
             timestamp=datetime.now().isoformat()
         )
+
+        # Emergency pause check
+        if self._check_emergency_pause():
+            logger.critical("Emergency pause is enabled - stopping trading")
+            logger.critical("Review parameter adjustments and delete .emergency_pause file to resume")
+            self.running = False
+            return
 
         try:
             # Step 1: Market Discovery - Find BTC 15-min markets

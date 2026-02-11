@@ -197,3 +197,42 @@ Timeout: {timeout_hours} hours
                     parameter=parameter_name,
                     approved=approved
                 )
+
+    async def send_emergency_alert(
+        self,
+        parameter_name: str,
+        old_value: float,
+        new_value: float,
+        reason: str,
+        change_pct: float
+    ):
+        """Send urgent emergency alert for dangerous adjustment."""
+        if not self._bot:
+            return
+
+        message = f"""🚨 **EMERGENCY PAUSE TRIGGERED** 🚨
+
+⚠️ **Dangerous parameter adjustment detected**
+
+Parameter: `{parameter_name}`
+Current: {old_value:.4f}
+Proposed: {new_value:.4f}
+Change: {change_pct:+.1f}%
+
+Reason: {reason}
+
+🛑 **BOT HAS BEEN PAUSED**
+
+This change exceeds the ±20% safety threshold.
+Manual review required before resuming trading.
+
+To resume:
+1. Review the recommendation carefully
+2. Manually adjust parameters if needed
+3. Set EMERGENCY_PAUSE_ENABLED=false
+4. Restart the bot
+
+**Do not resume without understanding why this was triggered.**
+"""
+
+        await self._send_message(message)

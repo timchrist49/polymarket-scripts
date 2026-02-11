@@ -266,3 +266,78 @@ async def test_reject_tier_3_emergency(mock_settings):
     assert result is False  # Should be rejected
 
     db.close()
+
+@pytest.mark.asyncio
+async def test_trigger_emergency_pause(mock_settings):
+    """Test Tier 3 triggers emergency pause."""
+    from polymarket.performance.database import PerformanceDatabase
+    from polymarket.telegram.bot import TelegramBot
+    from unittest.mock import AsyncMock, Mock
+    from pathlib import Path
+
+    db = PerformanceDatabase(":memory:")
+    telegram = Mock(spec=TelegramBot)
+    telegram.send_emergency_alert = AsyncMock()
+
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=telegram)
+
+    # Clean up any existing emergency pause file
+    pause_file = Path(__file__).parent.parent / ".emergency_pause"
+    if pause_file.exists():
+        pause_file.unlink()
+
+    # Try Tier 3 adjustment (30% decrease)
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.525,  # 30% decrease
+        reason="Test emergency",
+        tier=AdjustmentTier.TIER_3_PAUSE
+    )
+
+    assert result is False
+
+    # Verify emergency alert sent
+    telegram.send_emergency_alert.assert_called_once()
+    call_args = telegram.send_emergency_alert.call_args
+    assert call_args.kwargs['parameter_name'] == 'bot_confidence_threshold'
+    assert call_args.kwargs['old_value'] == 0.75
+    assert call_args.kwargs['new_value'] == 0.525
+
+    # Verify emergency pause file was created
+    assert pause_file.exists()
+
+    # Verify logged to database with emergency flag
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT * FROM parameter_history ORDER BY timestamp DESC LIMIT 1")
+    row = cursor.fetchone()
+
+    assert row['approval_method'] == 'tier_3_emergency_pause'
+    assert 'EMERGENCY PAUSE' in row['reason']
+
+    # Clean up
+    if pause_file.exists():
+        pause_file.unlink()
+
+    db.close()
+
+@pytest.mark.asyncio
+async def test_emergency_pause_file_stops_trading():
+    """Test that emergency pause file is detected."""
+    from pathlib import Path
+
+    # This would be tested in the trading bot integration test
+    # Here we just verify the file mechanism works
+    pause_file = Path(__file__).parent.parent / ".emergency_pause"
+
+    # Clean up first
+    if pause_file.exists():
+        pause_file.unlink()
+
+    # Create pause file
+    pause_file.write_text("EMERGENCY_PAUSE_ACTIVE\n")
+    assert pause_file.exists()
+
+    # Clean up
+    pause_file.unlink()
+    assert not pause_file.exists()

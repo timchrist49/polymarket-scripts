@@ -185,8 +185,41 @@ class ParameterAdjuster:
 
             approval_method = "tier_2_approved"
         else:
-            # Tier 3 - requires emergency handling
-            logger.warning("Tier 3 adjustment attempted", parameter=parameter_name)
+            # Tier 3 - Emergency pause
+            change_pct = self.calculate_change_percent(old_value, new_value)
+
+            logger.critical(
+                "Emergency pause triggered - dangerous adjustment",
+                parameter=parameter_name,
+                old_value=old_value,
+                new_value=new_value,
+                change_percent=change_pct
+            )
+
+            # Write emergency pause flag to file
+            self._set_emergency_pause()
+
+            # Send urgent alert
+            if self.telegram:
+                await self.telegram.send_emergency_alert(
+                    parameter_name=parameter_name,
+                    old_value=old_value,
+                    new_value=new_value,
+                    reason=reason,
+                    change_pct=change_pct
+                )
+
+            # Log to database with emergency flag
+            if self.db:
+                self._log_adjustment(
+                    parameter_name=parameter_name,
+                    old_value=old_value,
+                    new_value=new_value,
+                    reason=f"EMERGENCY PAUSE: {reason}",
+                    approval_method="tier_3_emergency_pause"
+                )
+
+            logger.critical("Emergency pause activated - bot should stop trading")
             return False
 
         # Apply adjustment
@@ -267,3 +300,17 @@ Reason: {reason}
             await self.telegram._send_message(message)
         except Exception as e:
             logger.error("Failed to send adjustment notification", error=str(e))
+
+    def _set_emergency_pause(self):
+        """Write emergency pause flag to file for trading bot to check."""
+        import os
+        from pathlib import Path
+
+        # Write to .emergency_pause file in project root
+        pause_file = Path(__file__).parent.parent.parent / ".emergency_pause"
+
+        try:
+            pause_file.write_text("EMERGENCY_PAUSE_ACTIVE\n")
+            logger.critical("Emergency pause flag written", file=str(pause_file))
+        except Exception as e:
+            logger.error("Failed to write emergency pause flag", error=str(e))

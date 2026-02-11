@@ -172,6 +172,11 @@ class Settings:
         default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID")
     )
 
+    # === Emergency Pause Configuration ===
+    emergency_pause_enabled: bool = field(
+        default_factory=lambda: os.getenv("EMERGENCY_PAUSE_ENABLED", "false").lower() == "true"
+    )
+
     def __post_init__(self):
         """Validate settings based on mode."""
         if self.mode == "trading":
