@@ -165,7 +165,7 @@ def test_calculate_market_score():
         volume_flow=1.0,
         whale=1.0
     )
-    assert score == 1.0  # 0.4 + 0.35 + 0.25 = 1.0
+    assert score == 1.0  # 0.2 + 0.5 + 0.3 = 1.0
 
     # Test: All negative scores
     score = service.calculate_market_score(
@@ -177,11 +177,11 @@ def test_calculate_market_score():
 
     # Test: Mixed scores with weights
     score = service.calculate_market_score(
-        momentum=0.5,   # 0.5 * 0.4 = 0.2
-        volume_flow=0.3,  # 0.3 * 0.35 = 0.105
-        whale=0.2     # 0.2 * 0.25 = 0.05
+        momentum=0.5,   # 0.5 * 0.2 = 0.1
+        volume_flow=0.3,  # 0.3 * 0.5 = 0.15
+        whale=0.2     # 0.2 * 0.3 = 0.06
     )
-    assert score == pytest.approx(0.355, abs=0.01)
+    assert score == pytest.approx(0.31, abs=0.01)
 
     # Test: Neutral scores
     score = service.calculate_market_score(
