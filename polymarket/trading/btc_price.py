@@ -153,8 +153,11 @@ class BTCPriceService:
                     )
                     for candle in data
                 ]
+        except asyncio.TimeoutError:
+            logger.error("Failed to fetch price history", error="Binance API timeout after 10s")
+            raise
         except Exception as e:
-            logger.error("Failed to fetch price history", error=str(e))
+            logger.error("Failed to fetch price history", error=str(e) or type(e).__name__)
             raise
 
     async def get_price_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
@@ -197,8 +200,11 @@ class BTCPriceService:
                 )
                 return price
 
+        except asyncio.TimeoutError:
+            logger.error("Failed to fetch historical price", timestamp=timestamp, error="Binance API timeout after 10s")
+            return None
         except Exception as e:
-            logger.error("Failed to fetch historical price", timestamp=timestamp, error=str(e))
+            logger.error("Failed to fetch historical price", timestamp=timestamp, error=str(e) or type(e).__name__)
             return None
 
     async def get_price_change(self, window_minutes: int = 5) -> PriceChange:

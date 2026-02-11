@@ -74,7 +74,7 @@ class AIDecisionService:
                     max_completion_tokens=8000,  # Increased for reasoning tokens (medium effort ~2k-4k reasoning + 1k output)
                     response_format={"type": "json_object"}
                 ),
-                timeout=30.0  # Increased timeout for reasoning
+                timeout=60.0  # Increased timeout for reasoning (gpt-5-nano with medium effort needs ~40s)
             )
 
             # Parse response (handle GPT-5-Nano reasoning format)
