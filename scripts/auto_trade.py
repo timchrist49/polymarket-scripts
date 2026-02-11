@@ -292,6 +292,20 @@ class AutoTrader:
     ) -> None:
         """Process a single market for trading decision."""
         try:
+            # Calculate actual BTC momentum (last 5 minutes)
+            btc_momentum = await self._get_btc_momentum(
+                self.btc_service,
+                btc_data.price
+            )
+
+            # Log momentum if available
+            if btc_momentum:
+                logger.info(
+                    "BTC actual movement",
+                    direction=btc_momentum['direction'],
+                    change_pct=f"{btc_momentum['momentum_pct']:+.2f}%"
+                )
+
             # Get token IDs
             token_ids = market.get_token_ids()
             if not token_ids:
@@ -355,7 +369,9 @@ class AutoTrader:
                 # NEW: Price-to-beat and timing context
                 "price_to_beat": price_to_beat,
                 "time_remaining_seconds": time_remaining or 900,  # Default to 15 min if None
-                "is_end_of_market": is_end_of_market
+                "is_end_of_market": is_end_of_market,
+                # NEW: BTC momentum data
+                "btc_momentum": btc_momentum,  # Will be None if unavailable
             }
 
             # Step 1: AI Decision - CHANGED: pass aggregated_sentiment
