@@ -157,6 +157,29 @@ MARKET TIMING:
 - Still require full analysis - no rushed decisions
 """
 
+        # NEW: BTC Actual Momentum context
+        btc_momentum = market.get("btc_momentum")
+        has_momentum = btc_momentum is not None
+
+        if has_momentum:
+            momentum_pct = btc_momentum['momentum_pct']
+            momentum_dir = btc_momentum['direction']
+            price_5min = btc_momentum['price_5min_ago']
+
+            momentum_context = f"""
+ACTUAL BTC MOMENTUM (last 5 minutes):
+- 5 minutes ago: ${price_5min:,.2f}
+- Current: ${btc_price.price:,.2f}
+- Change: {momentum_pct:+.2f}% ({momentum_dir})
+
+⚠️ COMPARE WITH MARKET SIGNALS:
+- If market sentiment is BEARISH but BTC is UP → market is LAGGING
+- If market sentiment is BULLISH but BTC is DOWN → market is LAGGING
+- Lagging signals often lead to losing trades - consider HOLD
+"""
+        else:
+            momentum_context = "ACTUAL BTC MOMENTUM: Not available (insufficient price history)"
+
         # Extract social and market details
         social = aggregated.social
         mkt = aggregated.market
@@ -167,6 +190,8 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 {price_context}
 
 {timing_context}
+
+{momentum_context}
 
 CURRENT MARKET DATA:
 - BTC Current Price: ${btc_price.price:,.2f} (source: {btc_price.source})
