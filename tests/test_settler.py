@@ -1,7 +1,9 @@
 """Tests for trade settlement service."""
 
 import pytest
+from unittest.mock import AsyncMock, Mock
 from datetime import datetime, timedelta
+from decimal import Decimal
 from polymarket.performance.settler import TradeSettler
 from polymarket.performance.database import PerformanceDatabase
 
@@ -320,3 +322,104 @@ class TestDatabaseQuery:
 
         # Should only return 3 trades
         assert len(trades) == 3
+
+
+class TestSettlementOrchestration:
+    """Test end-to-end settlement process."""
+
+    @pytest.mark.asyncio
+    async def test_settle_pending_trades_success(self):
+        """Should settle trades successfully."""
+        db = PerformanceDatabase(":memory:")
+
+        # Mock BTC fetcher
+        mock_btc_fetcher = Mock()
+        mock_btc_fetcher.get_price_at_timestamp = AsyncMock(return_value=Decimal("72000.0"))
+
+        settler = TradeSettler(db, mock_btc_fetcher)
+
+        # Insert test trade
+        cursor = db.conn.cursor()
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, action, confidence, position_size,
+                btc_price, price_to_beat, executed_price, is_win
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now() - timedelta(minutes=20),
+            "btc-updown-15m-1770828300",
+            "YES",
+            0.75,
+            10.0,
+            70000.0,
+            70000.0,
+            0.65,
+            None
+        ))
+        db.conn.commit()
+
+        # Mock tracker to avoid circular dependency
+        mock_tracker = Mock()
+        mock_tracker.update_trade_outcome = Mock()
+        settler._tracker = mock_tracker
+
+        # Run settlement
+        stats = await settler.settle_pending_trades(batch_size=10)
+
+        # Verify stats
+        assert stats['success'] is True
+        assert stats['settled_count'] == 1
+        assert stats['wins'] == 1
+        assert stats['losses'] == 0
+        assert stats['pending_count'] == 0
+
+        # Verify BTC price was fetched
+        mock_btc_fetcher.get_price_at_timestamp.assert_called_once_with(1770828300)
+
+        # Verify database was updated
+        mock_tracker.update_trade_outcome.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_settle_skips_on_price_fetch_failure(self):
+        """Should skip trade if BTC price unavailable."""
+        db = PerformanceDatabase(":memory:")
+
+        # Mock BTC fetcher that returns None
+        mock_btc_fetcher = Mock()
+        mock_btc_fetcher.get_price_at_timestamp = AsyncMock(return_value=None)
+
+        settler = TradeSettler(db, mock_btc_fetcher)
+
+        # Insert test trade
+        cursor = db.conn.cursor()
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, action, confidence, position_size,
+                btc_price, price_to_beat, executed_price, is_win
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now() - timedelta(minutes=20),
+            "btc-updown-15m-1770828300",
+            "YES",
+            0.75,
+            10.0,
+            70000.0,
+            70000.0,
+            0.65,
+            None
+        ))
+        db.conn.commit()
+
+        mock_tracker = Mock()
+        mock_tracker.update_trade_outcome = Mock()
+        settler._tracker = mock_tracker
+
+        # Run settlement
+        stats = await settler.settle_pending_trades(batch_size=10)
+
+        # Should skip (not settle)
+        assert stats['settled_count'] == 0
+        assert stats['pending_count'] == 1
+
+        # Should not update database
+        mock_tracker.update_trade_outcome.assert_not_called()

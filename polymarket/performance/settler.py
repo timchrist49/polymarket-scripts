@@ -152,3 +152,131 @@ class TradeSettler:
             })
 
         return trades
+
+    async def settle_pending_trades(self, batch_size: int = 50) -> Dict:
+        """
+        Settle all pending trades that have closed.
+
+        Args:
+            batch_size: Max trades to process per cycle
+
+        Returns:
+            Settlement statistics
+        """
+        stats = {
+            "success": True,
+            "settled_count": 0,
+            "wins": 0,
+            "losses": 0,
+            "total_profit": 0.0,
+            "pending_count": 0,
+            "errors": []
+        }
+
+        try:
+            # Get unsettled trades
+            trades = self._get_unsettled_trades(batch_size)
+
+            logger.info(
+                "Starting settlement cycle",
+                pending_trades=len(trades)
+            )
+
+            for trade in trades:
+                try:
+                    # Parse close timestamp
+                    close_timestamp = self._parse_market_close_timestamp(trade['market_slug'])
+
+                    if close_timestamp is None:
+                        error_msg = f"Failed to parse timestamp from {trade['market_slug']}"
+                        logger.error(error_msg, trade_id=trade['id'])
+                        stats['errors'].append(error_msg)
+                        # Mark as UNKNOWN but don't count in win rate
+                        if hasattr(self, '_tracker'):
+                            self._tracker.update_trade_outcome(
+                                trade_id=trade['id'],
+                                actual_outcome="UNKNOWN",
+                                profit_loss=0.0,
+                                is_win=False
+                            )
+                        continue
+
+                    # Fetch BTC price at close
+                    btc_close_price = await self.btc_fetcher.get_price_at_timestamp(close_timestamp)
+
+                    if btc_close_price is None:
+                        # Skip - will retry next cycle
+                        logger.warning(
+                            "BTC price unavailable, will retry",
+                            trade_id=trade['id'],
+                            timestamp=close_timestamp
+                        )
+                        stats['pending_count'] += 1
+                        continue
+
+                    # Convert Decimal to float for comparison
+                    btc_close_price = float(btc_close_price)
+
+                    # Determine outcome
+                    actual_outcome = self._determine_outcome(
+                        btc_close_price=btc_close_price,
+                        price_to_beat=trade['price_to_beat']
+                    )
+
+                    # Calculate profit/loss
+                    profit_loss, is_win = self._calculate_profit_loss(
+                        action=trade['action'],
+                        actual_outcome=actual_outcome,
+                        position_size=trade['position_size'],
+                        executed_price=trade['executed_price']
+                    )
+
+                    # Update database (via tracker if available, otherwise direct)
+                    if hasattr(self, '_tracker'):
+                        self._tracker.update_trade_outcome(
+                            trade_id=trade['id'],
+                            actual_outcome=actual_outcome,
+                            profit_loss=profit_loss,
+                            is_win=is_win
+                        )
+                    else:
+                        # Direct update for testing
+                        cursor = self.db.conn.cursor()
+                        cursor.execute("""
+                            UPDATE trades
+                            SET actual_outcome = ?,
+                                profit_loss = ?,
+                                is_win = ?
+                            WHERE id = ?
+                        """, (actual_outcome, profit_loss, is_win, trade['id']))
+                        self.db.conn.commit()
+
+                    # Update stats
+                    stats['settled_count'] += 1
+                    if is_win:
+                        stats['wins'] += 1
+                    else:
+                        stats['losses'] += 1
+                    stats['total_profit'] += profit_loss
+
+                    logger.info(
+                        "Trade settled",
+                        trade_id=trade['id'],
+                        action=trade['action'],
+                        outcome=actual_outcome,
+                        is_win=is_win,
+                        profit_loss=f"${profit_loss:.2f}"
+                    )
+
+                except Exception as e:
+                    error_msg = f"Failed to settle trade {trade.get('id', '?')}: {str(e)}"
+                    logger.error(error_msg)
+                    stats['errors'].append(error_msg)
+                    continue
+
+        except Exception as e:
+            logger.error("Settlement cycle failed", error=str(e))
+            stats['success'] = False
+            stats['errors'].append(str(e))
+
+        return stats
