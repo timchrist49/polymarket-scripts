@@ -182,6 +182,42 @@ class PerformanceTracker:
         except Exception as e:
             logger.error("Failed to update execution metrics", trade_id=trade_id, error=str(e))
 
+    def update_trade_outcome(
+        self,
+        trade_id: int,
+        actual_outcome: str,
+        profit_loss: float,
+        is_win: bool
+    ) -> None:
+        """
+        Update trade record with settlement outcome.
+
+        Args:
+            trade_id: Trade ID to update
+            actual_outcome: "YES" or "NO"
+            profit_loss: Dollar profit/loss
+            is_win: Whether trade won
+        """
+        cursor = self.db.conn.cursor()
+
+        cursor.execute("""
+            UPDATE trades
+            SET actual_outcome = ?,
+                profit_loss = ?,
+                is_win = ?
+            WHERE id = ?
+        """, (actual_outcome, profit_loss, is_win, trade_id))
+
+        self.db.conn.commit()
+
+        logger.info(
+            "Trade outcome updated",
+            trade_id=trade_id,
+            outcome=actual_outcome,
+            is_win=is_win,
+            profit_loss=f"${profit_loss:.2f}"
+        )
+
     def close(self):
         """Close database connection."""
         if self._owns_db:
