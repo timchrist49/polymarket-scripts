@@ -42,6 +42,7 @@ from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
 from polymarket.performance.adjuster import ParameterAdjuster, AdjustmentTier
+from polymarket.performance.settler import TradeSettler
 from polymarket.telegram.bot import TelegramBot
 
 app = typer.Typer(help="Autonomous Polymarket Trading Bot")
@@ -84,6 +85,14 @@ class AutoTrader:
             telegram=self.telegram_bot
         )
 
+        # Trade settlement
+        self.trade_settler = TradeSettler(
+            db=self.performance_tracker.db,
+            btc_fetcher=self.btc_service
+        )
+        # Give settler access to tracker for updates
+        self.trade_settler._tracker = self.performance_tracker
+
         # State tracking
         self.cycle_count = 0
         self.trades_today = 0
@@ -107,6 +116,10 @@ class AutoTrader:
         asyncio.create_task(self.cleanup_scheduler.start())
         logger.info("Cleanup scheduler started (runs weekly)")
         logger.info("Self-reflection system enabled (triggers: 10 trades, 3 consecutive losses)")
+
+        # Start settlement loop
+        settlement_task = asyncio.create_task(self._run_settlement_loop())
+        logger.info("Settlement loop started")
 
     async def _trigger_reflection(self, trigger_type: str) -> None:
         """
@@ -212,6 +225,51 @@ class AutoTrader:
 
             except Exception as e:
                 logger.error("Failed to process recommendation", error=str(e), rec=rec)
+
+    async def _run_settlement_loop(self):
+        """Background loop for settling trades."""
+        interval_seconds = self.settings.settlement_interval_minutes * 60
+
+        logger.info(
+            "Settlement loop started",
+            interval_minutes=self.settings.settlement_interval_minutes
+        )
+
+        while True:
+            try:
+                stats = await self.trade_settler.settle_pending_trades(
+                    batch_size=self.settings.settlement_batch_size
+                )
+
+                if stats["settled_count"] > 0:
+                    logger.info(
+                        "Settlement cycle complete",
+                        settled=stats["settled_count"],
+                        wins=stats["wins"],
+                        losses=stats["losses"],
+                        total_profit=f"${stats['total_profit']:.2f}",
+                        pending=stats["pending_count"]
+                    )
+
+                # Check for stuck trades
+                if stats["pending_count"] > 0 and stats["settled_count"] == 0:
+                    logger.warning(
+                        "No trades settled but pending exist",
+                        pending_count=stats["pending_count"]
+                    )
+
+                # Alert if errors
+                if stats["errors"]:
+                    logger.error(
+                        "Settlement errors occurred",
+                        error_count=len(stats["errors"]),
+                        errors=stats["errors"][:3]  # First 3 errors
+                    )
+
+            except Exception as e:
+                logger.error("Settlement loop error", error=str(e))
+
+            await asyncio.sleep(interval_seconds)
 
     async def _check_consecutive_losses(self) -> None:
         """Check if we have 3 consecutive losses and trigger reflection."""
