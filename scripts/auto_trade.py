@@ -38,6 +38,7 @@ from polymarket.trading.technical import TechnicalAnalysis
 from polymarket.trading.ai_decision import AIDecisionService
 from polymarket.trading.risk import RiskManager
 from polymarket.trading.market_tracker import MarketTracker
+from polymarket.performance.tracker import PerformanceTracker
 
 app = typer.Typer(help="Autonomous Polymarket Trading Bot")
 logger = structlog.get_logger()
@@ -59,6 +60,7 @@ class AutoTrader:
         self.ai_service = AIDecisionService(settings)
         self.risk_manager = RiskManager(settings)
         self.market_tracker = MarketTracker(settings)
+        self.performance_tracker = PerformanceTracker()
 
         # State tracking
         self.cycle_count = 0
@@ -74,6 +76,7 @@ class AutoTrader:
         # Start BTC price WebSocket stream
         await self.btc_service.start()
         logger.info("Initialized Polymarket WebSocket for BTC prices")
+        logger.info("Performance tracking enabled")
 
     async def _get_btc_momentum(
         self,
@@ -426,6 +429,22 @@ class AutoTrader:
                 portfolio_value=portfolio_value
             )
 
+            # Log decision to performance tracker
+            try:
+                await self.performance_tracker.log_decision(
+                    market=market,
+                    decision=decision,
+                    btc_data=btc_data,
+                    technical=indicators,
+                    aggregated=aggregated_sentiment,
+                    price_to_beat=price_to_beat,
+                    time_remaining_seconds=time_remaining,
+                    is_end_phase=is_end_of_market
+                )
+            except Exception as e:
+                logger.error("Performance logging failed", error=str(e))
+                # Continue trading - don't block on logging failures
+
             # Map AI decision to correct token based on outcomes
             # Outcomes are typically ["Up", "Down"] or ["Yes", "No"]
             # AI returns "YES" to buy first outcome, "NO" to buy second outcome
@@ -630,6 +649,8 @@ class AutoTrader:
         await self.social_service.close()
         if self.market_service:
             await self.market_service.close()
+        self.performance_tracker.close()
+        logger.info("Performance tracker closed")
         logger.info("AutoTrader shutdown complete")
 
     async def run_once(self) -> None:
@@ -640,6 +661,7 @@ class AutoTrader:
         await self.social_service.close()
         if self.market_service:
             await self.market_service.close()
+        self.performance_tracker.close()
 
 
 @app.command()
