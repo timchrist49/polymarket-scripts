@@ -447,6 +447,36 @@ TRADE_MAX_FAVORABLE_WARN_PCT=5.0     # Warn if price moved 5%+ better
 - Protection against stale price orders
 - Self-tuning thresholds via reflection system
 
+### Trade Settlement System
+
+**Background Service (Active)**
+- Automatically determines if trades won or lost
+- Runs every 10 minutes (configurable)
+- Compares BTC price at market close vs price to beat
+- Calculates profit/loss based on Polymarket mechanics
+- Updates database with outcomes
+
+**How It Works:**
+1. Queries unsettled trades older than 15 minutes
+2. Parses market close timestamp from market slug
+3. Fetches historical BTC price at that timestamp
+4. Determines outcome: UP won (YES) or DOWN won (NO)
+5. Calculates profit/loss: (shares × $1 - position) if win, -position if loss
+6. Updates trade record with outcome data
+
+**Configuration:**
+```bash
+SETTLEMENT_INTERVAL_MINUTES=10  # How often to run
+SETTLEMENT_BATCH_SIZE=50        # Max trades per cycle
+SETTLEMENT_ALERT_LAG_HOURS=1    # Alert if stuck
+```
+
+**Benefits:**
+- Enables self-reflection analysis (requires trade outcomes)
+- Tracks win rate and profit/loss automatically
+- Detects consecutive losses for reflection triggers
+- Provides performance metrics for AI optimization
+
 ### When to Use
 
 **Use daemon script (recommended):**
@@ -645,6 +675,12 @@ tail -100 logs/bot_daemon.log | grep -i "error"
 # Restart bot
 ./start_bot.sh restart
 ```
+
+**Trades not settling:**
+- Check logs for settlement errors
+- Verify BTC price service is working
+- Ensure trades are >15 minutes old
+- Run manual settlement: `python3 scripts/test_settlement.py`
 
 ## Safety Features
 
