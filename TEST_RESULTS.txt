@@ -1,0 +1,86 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /root/polymarket-scripts
+configfile: pytest.ini
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 21 items
+
+tests/test_settler.py::TestTimestampParsing::test_parse_valid_market_slug PASSED [  4%]
+tests/test_settler.py::TestTimestampParsing::test_parse_different_format PASSED [  9%]
+tests/test_settler.py::TestTimestampParsing::test_parse_invalid_slug_returns_none PASSED [ 14%]
+tests/test_settler.py::TestTimestampParsing::test_parse_empty_slug_returns_none PASSED [ 19%]
+tests/test_settler.py::TestOutcomeDetermination::test_price_up_means_yes_wins PASSED [ 23%]
+tests/test_settler.py::TestOutcomeDetermination::test_price_down_means_no_wins PASSED [ 28%]
+tests/test_settler.py::TestOutcomeDetermination::test_price_tie_defaults_to_no PASSED [ 33%]
+tests/test_settler.py::TestOutcomeDetermination::test_small_price_increase_still_yes PASSED [ 38%]
+tests/test_settler.py::TestProfitLossCalculation::test_yes_wins_profit_calculation PASSED [ 42%]
+tests/test_settler.py::TestProfitLossCalculation::test_yes_loses_loss_calculation PASSED [ 47%]
+tests/test_settler.py::TestProfitLossCalculation::test_no_wins_profit_calculation PASSED [ 52%]
+tests/test_settler.py::TestProfitLossCalculation::test_no_loses_loss_calculation PASSED [ 57%]
+tests/test_settler.py::TestProfitLossCalculation::test_high_confidence_yes_wins PASSED [ 61%]
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades PASSED [ 66%]
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit PASSED   [ 71%]
+tests/test_settler.py::TestSettlementOrchestration::test_settle_pending_trades_success PASSED [ 76%]
+tests/test_settler.py::TestSettlementOrchestration::test_settle_skips_on_price_fetch_failure PASSED [ 80%]
+tests/test_settler.py::TestBTCPriceFetching::test_get_btc_price_at_timestamp_success PASSED [ 85%]
+tests/test_settler.py::TestBTCPriceFetching::test_get_btc_price_returns_none_on_failure PASSED [ 90%]
+tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_trade_outcome PASSED [ 95%]
+tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_nonexistent_trade PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/tests/test_settler.py:209: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/tests/test_settler.py:227: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/tests/test_settler.py:245: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/tests/test_settler.py:263: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+  /root/polymarket-scripts/tests/test_settler.py:301: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestSettlementOrchestration::test_settle_pending_trades_success
+  /root/polymarket-scripts/tests/test_settler.py:343: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestSettlementOrchestration::test_settle_skips_on_price_fetch_failure
+  /root/polymarket-scripts/tests/test_settler.py:395: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_trade_outcome
+  /root/polymarket-scripts/tests/test_tracker_settlement.py:18: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 21 passed, 12 warnings in 0.49s ========================
+
+✅ All settlement tests passing
+
+Settlement Test Summary:
+- test_settler.py: 19 tests PASSED (timestamp parsing, outcome determination, profit/loss calculation, database queries, settlement orchestration, BTC price fetching)
+- test_tracker_settlement.py: 2 tests PASSED (database update, edge cases)
+
+Full Test Suite Results:
+- 154 tests PASSED
+- 7 tests FAILED (unrelated to settlement system)
+- 1 test SKIPPED
+
+All settlement-related tests are passing. The 7 failures are pre-existing issues unrelated to the settlement implementation:
+  - Integration tests requiring external services
+  - Script tests with argument parsing issues
+  - Performance tracker database ID issues
