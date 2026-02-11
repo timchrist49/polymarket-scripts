@@ -365,17 +365,9 @@ class PolymarketClient:
         # Validate market exists (preflight)
         # TODO: Add market validation
 
-        # Handle market order emulation
+        # For market orders, we use true FOK (Fill-or-Kill) orders
+        # Price is used for dry-run display only
         price = request.price
-        if request.order_type == "market":
-            logger.warning("Emulating MARKET order with aggressive LIMIT price")
-            # For BUY: bid higher than current ask
-            # For SELL: ask lower than current bid
-            if request.side == "BUY":
-                price = min(0.99, request.price + 0.05)
-            else:  # SELL
-                price = max(0.01, request.price - 0.05)
-            logger.info(f"Adjusted price for MARKET emulation: {price}")
 
         if dry_run:
             logger.info("[DRY RUN] Would submit order:")
@@ -401,26 +393,26 @@ class PolymarketClient:
             from py_clob_client.clob_types import OrderArgs, MarketOrderArgs, OrderType
 
             if request.order_type == "market":
-                # Market order - use LIMIT order with GTC instead to avoid decimal precision issues
-                # GTC orders with aggressive pricing act like market orders
-                from py_clob_client.clob_types import OrderArgs
-
-                price = round(price, 4)
+                # True FOK (Fill-or-Kill) market order for guaranteed immediate execution
                 size = round(request.size, 2)  # Use 2 decimals for size
 
-                logger.info(f"Placing GTC limit order: side={request.side}, size={size}, price={price}")
+                logger.info(f"Placing FOK market order: side={request.side}, size={size}")
 
-                order_args = OrderArgs(
+                # Create market order arguments
+                market_order_args = MarketOrderArgs(
                     token_id=request.token_id,
+                    amount=float(size),  # Amount in USDC
                     side=request.side,
-                    price=price,
-                    size=size,
                 )
 
-                result = client.create_and_post_order(order_args)
+                # Sign the market order
+                signed_order = client.create_market_order(market_order_args)
+
+                # Post with FOK (Fill-or-Kill) - fills immediately or cancels
+                result = client.post_order(signed_order, OrderType.FOK)
                 order_id = result.get("orderID", "") if isinstance(result, dict) else ""
 
-                logger.info(f"Order placed successfully: {order_id}")
+                logger.info(f"FOK market order placed successfully: {order_id}")
 
                 return OrderResponse(
                     order_id=order_id,
