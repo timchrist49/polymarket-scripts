@@ -589,6 +589,78 @@ class AutoTrader:
             logger.error("Failed to fetch fresh market data", market_id=market_id, error=str(e))
             raise
 
+    def _analyze_price_movement(
+        self,
+        analysis_price: float,
+        execution_price: float,
+        token_name: str
+    ) -> tuple[bool, str]:
+        """
+        Analyze price movement between analysis and execution.
+
+        For YES token: Lower price = better for buyer (favorable)
+        For NO token: Higher price = worse for buyer (unfavorable)
+
+        Args:
+            analysis_price: Price when analysis was done
+            execution_price: Current price at execution
+            token_name: Either "YES" or "NO"
+
+        Returns:
+            Tuple of (should_execute: bool, reason: str)
+        """
+        # Calculate price change percentage
+        price_change_pct = ((execution_price - analysis_price) / analysis_price) * 100
+
+        # Determine if movement is favorable based on token type
+        # For YES token: price decreased = favorable (better for buyer)
+        # For NO token: price increased = unfavorable (worse for buyer)
+        is_favorable = (price_change_pct < 0)
+
+        # Get thresholds from settings
+        unfavorable_threshold = self.settings.trade_max_unfavorable_move_pct
+        favorable_warn_threshold = self.settings.trade_max_favorable_warn_pct
+
+        # Check unfavorable movement
+        if not is_favorable and abs(price_change_pct) > unfavorable_threshold:
+            reason = (
+                f"Price moved {price_change_pct:+.2f}% worse "
+                f"(threshold: {unfavorable_threshold}%)"
+            )
+            logger.warning(
+                "Skipping trade due to unfavorable price movement",
+                token=token_name,
+                analysis_price=f"{analysis_price:.3f}",
+                execution_price=f"{execution_price:.3f}",
+                change_pct=f"{price_change_pct:+.2f}%",
+                threshold=f"{unfavorable_threshold}%"
+            )
+            return False, reason
+
+        # Check favorable movement (warning only)
+        if is_favorable and abs(price_change_pct) > favorable_warn_threshold:
+            reason = (
+                f"Price moved {price_change_pct:+.2f}% better "
+                f"(unexpected opportunity)"
+            )
+            logger.warning(
+                "Executing with surprisingly favorable price movement",
+                token=token_name,
+                analysis_price=f"{analysis_price:.3f}",
+                execution_price=f"{execution_price:.3f}",
+                change_pct=f"{price_change_pct:+.2f}%"
+            )
+            return True, reason
+
+        # Normal execution
+        reason = f"Price movement acceptable ({price_change_pct:+.2f}%)"
+        logger.info(
+            "Price movement check passed",
+            token=token_name,
+            change_pct=f"{price_change_pct:+.2f}%"
+        )
+        return True, reason
+
     async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str, market_price: float) -> None:
         """Execute a trade order."""
         try:
