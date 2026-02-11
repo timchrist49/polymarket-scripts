@@ -75,6 +75,70 @@ class AutoTrader:
         await self.btc_service.start()
         logger.info("Initialized Polymarket WebSocket for BTC prices")
 
+    async def _get_btc_momentum(
+        self,
+        btc_service,
+        current_price: Decimal
+    ) -> dict | None:
+        """
+        Calculate actual BTC momentum over last 5 minutes.
+
+        Compares current price to 5 minutes ago to detect actual BTC direction,
+        independent of Polymarket sentiment.
+
+        Args:
+            btc_service: BTCPriceService instance
+            current_price: Current BTC price
+
+        Returns:
+            {
+                'price_5min_ago': Decimal,
+                'momentum_pct': float,
+                'direction': 'UP' | 'DOWN' | 'FLAT'
+            }
+            or None if history unavailable (graceful fallback)
+        """
+        try:
+            # Use existing BTCPriceService.get_price_history()
+            # Note: This may return empty if insufficient data
+            history = await btc_service.get_price_history(minutes=5)
+
+            if not history or len(history) < 2:
+                logger.info("BTC price history unavailable for momentum calc")
+                return None
+
+            # Get oldest price in 5-minute window
+            price_5min_ago = Decimal(str(history[0]['price']))
+
+            # Calculate percentage change
+            momentum_pct = float((current_price - price_5min_ago) / price_5min_ago * 100)
+
+            # Classify direction (>0.1% threshold to filter noise)
+            if momentum_pct > 0.1:
+                direction = 'UP'
+            elif momentum_pct < -0.1:
+                direction = 'DOWN'
+            else:
+                direction = 'FLAT'
+
+            logger.info(
+                "BTC momentum calculated",
+                price_5min_ago=f"${price_5min_ago:,.2f}",
+                current=f"${current_price:,.2f}",
+                change=f"{momentum_pct:+.2f}%",
+                direction=direction
+            )
+
+            return {
+                'price_5min_ago': price_5min_ago,
+                'momentum_pct': momentum_pct,
+                'direction': direction
+            }
+
+        except Exception as e:
+            logger.warning("BTC momentum calculation failed", error=str(e))
+            return None  # Graceful fallback
+
     async def run_cycle(self) -> None:
         """Execute one trading cycle."""
         self.cycle_count += 1
