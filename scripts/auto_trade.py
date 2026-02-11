@@ -168,10 +168,11 @@ class AutoTrader:
     async def run_cycle(self) -> None:
         """Execute one trading cycle."""
         self.cycle_count += 1
+        cycle_start_time = datetime.now()
         logger.info(
             "Starting trading cycle",
             cycle=self.cycle_count,
-            timestamp=datetime.now().isoformat()
+            timestamp=cycle_start_time.isoformat()
         )
 
         # Emergency pause check
@@ -302,7 +303,8 @@ class AutoTrader:
                     market, btc_data, indicators,
                     aggregated_sentiment,  # CHANGED: pass aggregated instead of social
                     portfolio_value,
-                    btc_momentum  # NEW: pass momentum calculated once per loop
+                    btc_momentum,  # NEW: pass momentum calculated once per loop
+                    cycle_start_time  # NEW: pass cycle start time for JIT metrics
                 )
 
             # Step 7: Stop-loss check
@@ -347,7 +349,8 @@ class AutoTrader:
         indicators,
         aggregated_sentiment,  # CHANGED from sentiment
         portfolio_value: Decimal,
-        btc_momentum: dict | None  # NEW: momentum calculated once per loop
+        btc_momentum: dict | None,  # NEW: momentum calculated once per loop
+        cycle_start_time: datetime  # NEW: for JIT execution metrics
     ) -> None:
         """Process a single market for trading decision."""
         try:
@@ -460,8 +463,9 @@ class AutoTrader:
             )
 
             # Log decision to performance tracker
+            trade_id = -1
             try:
-                await self.performance_tracker.log_decision(
+                trade_id = await self.performance_tracker.log_decision(
                     market=market,
                     decision=decision,
                     btc_data=btc_data,
@@ -535,7 +539,11 @@ class AutoTrader:
                 else:  # NO
                     market_price = 1 - (market.best_bid if market.best_bid else 0.50)  # DOWN = 1 - UP
 
-                await self._execute_trade(market, decision, validation.adjusted_position, token_id, token_name, market_price)
+                await self._execute_trade(
+                    market, decision, validation.adjusted_position,
+                    token_id, token_name, market_price,
+                    trade_id, cycle_start_time
+                )
             else:
                 logger.info(
                     "Dry run - would execute trade",
@@ -661,7 +669,17 @@ class AutoTrader:
         )
         return True, reason
 
-    async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str, market_price: float) -> None:
+    async def _execute_trade(
+        self,
+        market,
+        decision,
+        amount: Decimal,
+        token_id: str,
+        token_name: str,
+        market_price: float,
+        trade_id: int,
+        cycle_start_time: datetime
+    ) -> None:
         """Execute a trade order with JIT price fetching and safety checks."""
         try:
             from polymarket.models import OrderRequest
@@ -681,6 +699,16 @@ class AutoTrader:
                 fresh_market = await self._get_fresh_market_data(market.id)
             except Exception as e:
                 logger.error("Failed to fetch fresh market data, aborting trade", error=str(e))
+                # Update metrics with failure
+                if trade_id > 0:
+                    await self.performance_tracker.update_execution_metrics(
+                        trade_id=trade_id,
+                        analysis_price=analysis_price,
+                        execution_price=None,
+                        price_staleness_seconds=None,
+                        price_movement_favorable=None,
+                        skipped_unfavorable_move=True
+                    )
                 return
 
             # Calculate fresh execution price from fresh market
@@ -689,6 +717,10 @@ class AutoTrader:
             else:  # NO
                 execution_price = 1 - (fresh_market.best_bid if fresh_market.best_bid else 0.50)
 
+            # Calculate price staleness
+            execution_time = datetime.now()
+            price_staleness_seconds = int((execution_time - cycle_start_time).total_seconds())
+
             # Run adaptive safety check
             should_execute, reason = self._analyze_price_movement(
                 analysis_price=analysis_price,
@@ -696,13 +728,26 @@ class AutoTrader:
                 token_name=token_name
             )
 
+            # Determine if movement was favorable (price decreased for buyer)
+            price_movement_favorable = (execution_price < analysis_price)
+
             if not should_execute:
                 logger.warning(
                     "Trade skipped due to safety check",
                     token=token_name,
-                    reason=reason
+                    reason=reason,
+                    staleness_seconds=price_staleness_seconds
                 )
-                # Track skipped trade in performance system (will be added in Task 6)
+                # Track skipped trade in performance system
+                if trade_id > 0:
+                    await self.performance_tracker.update_execution_metrics(
+                        trade_id=trade_id,
+                        analysis_price=analysis_price,
+                        execution_price=execution_price,
+                        price_staleness_seconds=price_staleness_seconds,
+                        price_movement_favorable=price_movement_favorable,
+                        skipped_unfavorable_move=True
+                    )
                 return
 
             # Log final execution price
@@ -754,6 +799,20 @@ class AutoTrader:
                 "entry_odds": 0.50,  # Approximate entry
                 "timestamp": datetime.now().isoformat()
             })
+
+            # Update execution metrics in performance tracker
+            if trade_id > 0:
+                try:
+                    await self.performance_tracker.update_execution_metrics(
+                        trade_id=trade_id,
+                        analysis_price=analysis_price,
+                        execution_price=execution_price,
+                        price_staleness_seconds=price_staleness_seconds,
+                        price_movement_favorable=price_movement_favorable,
+                        skipped_unfavorable_move=False
+                    )
+                except Exception as e:
+                    logger.warning("Failed to update execution metrics", error=str(e))
 
             self.trades_today += 1
 

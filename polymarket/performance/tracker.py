@@ -7,7 +7,7 @@ from typing import Optional
 import structlog
 
 from polymarket.performance.database import PerformanceDatabase
-from polymarket.models import TradingDecision, BTCPriceData, TechnicalIndicators, AggregatedSentiment
+from polymarket.models import TradingDecision, BTCPriceData, TechnicalIndicators, AggregatedSentiment, Market
 
 logger = structlog.get_logger()
 
@@ -29,7 +29,7 @@ class PerformanceTracker:
 
     async def log_decision(
         self,
-        market: dict,
+        market: Market,
         decision: TradingDecision,
         btc_data: BTCPriceData,
         technical: TechnicalIndicators,
@@ -42,7 +42,7 @@ class PerformanceTracker:
         Log a trading decision to the database.
 
         Args:
-            market: Market data dict
+            market: Market object
             decision: Trading decision
             btc_data: BTC price data
             technical: Technical indicators
@@ -55,14 +55,14 @@ class PerformanceTracker:
             Trade ID
         """
         try:
-            # Extract market slug from question or ID
-            market_slug = self._extract_market_slug(market)
+            # Extract market slug
+            market_slug = market.slug or market.id
 
             # Build trade data dict
             trade_data = {
                 "timestamp": datetime.now(),
                 "market_slug": market_slug,
-                "market_id": market.get("id"),
+                "market_id": market.id,
 
                 # Decision
                 "action": decision.action,
@@ -89,10 +89,10 @@ class PerformanceTracker:
                 "trend": technical.trend,
 
                 # Pricing
-                "yes_price": market.get("best_ask"),
-                "no_price": 1 - market.get("best_bid", 0.5),
-                "executed_price": market.get("best_ask") if decision.action == "YES"
-                                else 1 - market.get("best_bid", 0.5) if decision.action == "NO"
+                "yes_price": market.best_ask,
+                "no_price": 1 - market.best_bid if market.best_bid else 0.5,
+                "executed_price": market.best_ask if decision.action == "YES"
+                                else (1 - market.best_bid if market.best_bid else 0.5) if decision.action == "NO"
                                 else None
             }
 
@@ -123,6 +123,64 @@ class PerformanceTracker:
         # Simplified slug generation
         slug = question.lower().replace(" ", "-").replace("?", "")[:50]
         return slug
+
+    async def update_execution_metrics(
+        self,
+        trade_id: int,
+        analysis_price: float,
+        execution_price: Optional[float] = None,
+        price_staleness_seconds: Optional[int] = None,
+        price_movement_favorable: Optional[bool] = None,
+        skipped_unfavorable_move: bool = False
+    ) -> None:
+        """
+        Update trade record with execution metrics from JIT price fetching.
+
+        Args:
+            trade_id: Trade record ID to update
+            analysis_price: Price from cycle start (when analysis was done)
+            execution_price: Fresh price at execution time (None if skipped)
+            price_staleness_seconds: Time between analysis and execution
+            price_movement_favorable: Whether price moved favorably
+            skipped_unfavorable_move: Whether trade was skipped due to safety check
+        """
+        try:
+            # Calculate slippage if we have both prices
+            price_slippage_pct = None
+            if execution_price is not None and analysis_price is not None:
+                price_slippage_pct = ((execution_price - analysis_price) / analysis_price) * 100
+
+            # Update the database record
+            cursor = self.db.conn.cursor()
+            cursor.execute("""
+                UPDATE trades
+                SET analysis_price = ?,
+                    price_staleness_seconds = ?,
+                    price_slippage_pct = ?,
+                    price_movement_favorable = ?,
+                    skipped_unfavorable_move = ?
+                WHERE id = ?
+            """, (
+                analysis_price,
+                price_staleness_seconds,
+                price_slippage_pct,
+                price_movement_favorable,
+                skipped_unfavorable_move,
+                trade_id
+            ))
+
+            self.db.conn.commit()
+
+            logger.debug(
+                "Execution metrics updated",
+                trade_id=trade_id,
+                staleness_seconds=price_staleness_seconds,
+                slippage_pct=f"{price_slippage_pct:+.2f}%" if price_slippage_pct else None,
+                skipped=skipped_unfavorable_move
+            )
+
+        except Exception as e:
+            logger.error("Failed to update execution metrics", trade_id=trade_id, error=str(e))
 
     def close(self):
         """Close database connection."""

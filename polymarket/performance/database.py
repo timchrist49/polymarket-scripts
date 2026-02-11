@@ -31,6 +31,7 @@ class PerformanceDatabase:
         # Create schema
         self._create_tables()
         self._create_indexes()
+        self._migrate_schema()
 
         logger.info("Performance database initialized", db_path=db_path)
 
@@ -131,6 +132,33 @@ class PerformanceDatabase:
 
         self.conn.commit()
 
+    def _migrate_schema(self):
+        """Add new columns for JIT price fetching metrics."""
+        cursor = self.conn.cursor()
+
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(trades)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Add new columns if they don't exist
+        new_columns = [
+            ("analysis_price", "REAL"),  # Price from cycle start
+            ("price_staleness_seconds", "INTEGER"),  # Time between analysis and execution
+            ("price_slippage_pct", "REAL"),  # Percentage change
+            ("price_movement_favorable", "BOOLEAN"),  # Was movement favorable?
+            ("skipped_unfavorable_move", "BOOLEAN"),  # Was trade skipped due to safety check?
+        ]
+
+        for column_name, column_type in new_columns:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE trades ADD COLUMN {column_name} {column_type}")
+                    logger.info(f"Added column: {column_name}")
+                except sqlite3.OperationalError as e:
+                    logger.warning(f"Could not add column {column_name}: {e}")
+
+        self.conn.commit()
+
     def log_trade(self, trade_data: dict) -> int:
         """
         Log a trade decision to the database.
@@ -150,8 +178,10 @@ class PerformanceDatabase:
                 btc_price, price_to_beat, time_remaining_seconds, is_end_phase,
                 social_score, market_score, final_score, final_confidence, signal_type,
                 rsi, macd, trend,
-                yes_price, no_price, executed_price
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                yes_price, no_price, executed_price,
+                analysis_price, price_staleness_seconds, price_slippage_pct,
+                price_movement_favorable, skipped_unfavorable_move
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade_data["timestamp"],
             trade_data["market_slug"],
@@ -174,7 +204,12 @@ class PerformanceDatabase:
             trade_data.get("trend"),
             trade_data.get("yes_price"),
             trade_data.get("no_price"),
-            trade_data.get("executed_price")
+            trade_data.get("executed_price"),
+            trade_data.get("analysis_price"),
+            trade_data.get("price_staleness_seconds"),
+            trade_data.get("price_slippage_pct"),
+            trade_data.get("price_movement_favorable"),
+            trade_data.get("skipped_unfavorable_move", False)
         ))
 
         self.conn.commit()
