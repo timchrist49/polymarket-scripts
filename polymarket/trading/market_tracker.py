@@ -5,7 +5,7 @@ Tracks market timing, calculates time remaining, and manages price-to-beat.
 """
 
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict
 import structlog
 
@@ -40,7 +40,7 @@ class MarketTracker:
             timestamp_str = parts[-1]  # Last part is epoch
             timestamp = int(timestamp_str)
 
-            return datetime.fromtimestamp(timestamp)
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
         except (ValueError, IndexError) as e:
             logger.error("Failed to parse market slug", slug=slug, error=str(e))
             return None
@@ -57,7 +57,7 @@ class MarketTracker:
             Seconds remaining (0 if market expired)
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
 
         elapsed = (current_time - start_time).total_seconds()
         remaining = self.MARKET_DURATION_SECONDS - elapsed
@@ -78,7 +78,7 @@ class MarketTracker:
         remaining = self.calculate_time_remaining(start_time, current_time)
         return remaining <= self.END_OF_MARKET_THRESHOLD
 
-    async def set_price_to_beat(self, slug: str, price: Decimal):
+    def set_price_to_beat(self, slug: str, price: Decimal):
         """Store starting price for market."""
         self._price_to_beat[slug] = price
         logger.info(
@@ -87,7 +87,7 @@ class MarketTracker:
             price=f"${price:,.2f}"
         )
 
-    async def get_price_to_beat(self, slug: str) -> Optional[Decimal]:
+    def get_price_to_beat(self, slug: str) -> Optional[Decimal]:
         """Get starting price for market."""
         return self._price_to_beat.get(slug)
 
