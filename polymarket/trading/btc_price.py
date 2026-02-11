@@ -1,7 +1,7 @@
 """
 BTC Price Service
 
-Fetches real-time BTC prices from Binance (primary) with CoinGecko fallback.
+Fetches real-time BTC prices from Polymarket WebSocket (primary) with Binance fallback.
 Provides current price, historical data, and price change calculations.
 """
 
@@ -16,6 +16,7 @@ import aiohttp
 
 from polymarket.models import BTCPriceData, PricePoint, PriceChange
 from polymarket.config import Settings
+from polymarket.trading.crypto_price_stream import CryptoPriceStream
 
 logger = structlog.get_logger()
 
@@ -29,6 +30,18 @@ class BTCPriceService:
         self._cache_time: Optional[datetime] = None
         self._binance: ccxt.binance = ccxt.binance()
         self._session: Optional[aiohttp.ClientSession] = None
+
+        # Polymarket WebSocket stream
+        self._stream: Optional[CryptoPriceStream] = None
+        self._stream_task: Optional[asyncio.Task] = None
+
+    async def start(self):
+        """Start Polymarket WebSocket stream."""
+        if self._stream is None:
+            self._stream = CryptoPriceStream(self.settings)
+            self._stream_task = asyncio.create_task(self._stream.start())
+            await asyncio.sleep(1)  # Wait for connection
+            logger.info("BTCPriceService started with Polymarket WebSocket")
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Lazy init of HTTP session."""
@@ -45,16 +58,21 @@ class BTCPriceService:
                 logger.debug("Using cached BTC price", age_seconds=age)
                 return self._cache
 
-        # Fetch from source
-        try:
-            if self.settings.btc_price_source in ("binance", "both"):
-                data = await self._fetch_binance()
-            elif self.settings.btc_price_source == "coingecko":
-                data = await self._fetch_coingecko()
+        # Try Polymarket WebSocket first
+        if self._stream:
+            data = await self._stream.get_current_price()
+            if data:
+                self._cache = data
+                self._cache_time = datetime.now()
+                return data
             else:
-                raise ValueError(f"Unknown price source: {self.settings.btc_price_source}")
+                logger.warning("No price from Polymarket WebSocket, falling back to Binance")
+
+        # Fallback to Binance if WebSocket unavailable
+        try:
+            data = await self._fetch_binance()
         except Exception as e:
-            logger.error("Failed to fetch price", source=self.settings.btc_price_source, error=str(e))
+            logger.error("Failed to fetch price from Binance", error=str(e))
             # Return stale cache if available
             if self._cache:
                 logger.warning("Returning stale cache", age_seconds=(datetime.now() - self._cache_time).total_seconds())
@@ -154,6 +172,14 @@ class BTCPriceService:
 
     async def close(self):
         """Clean up resources."""
+        if self._stream:
+            await self._stream.stop()
+        if self._stream_task:
+            self._stream_task.cancel()
+            try:
+                await self._stream_task
+            except asyncio.CancelledError:
+                pass
         await self._binance.close()
         if self._session and not self._session.closed:
             await self._session.close()

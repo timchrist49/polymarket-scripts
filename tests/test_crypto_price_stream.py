@@ -37,3 +37,23 @@ async def test_receive_btc_price():
     assert price.source == "polymarket"
 
     await stream.stop()
+
+
+@pytest.mark.asyncio
+async def test_btc_price_service_with_polymarket():
+    """Test BTCPriceService uses Polymarket WebSocket."""
+    from polymarket.trading.btc_price import BTCPriceService
+
+    settings = Settings()
+    service = BTCPriceService(settings)
+
+    # Start service (initializes WebSocket)
+    await service.start()
+    await asyncio.sleep(2)  # Wait for price
+
+    # Get current price
+    price = await service.get_current_price()
+    assert price.source == "polymarket"
+    assert price.price > Decimal("0")
+
+    await service.close()
