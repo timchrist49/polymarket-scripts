@@ -113,6 +113,138 @@ python scripts/auto_trade.py
 python scripts/auto_trade.py --once
 ```
 
+## Risk Management Configuration
+
+The bot supports two position sizing strategies that work together to protect your capital:
+
+### Position Sizing Strategies
+
+**1. Dollar Cap (Absolute Limit) - RECOMMENDED FOR TESTING**
+
+Set a hard dollar limit per bet, regardless of portfolio size:
+
+```bash
+# .env
+BOT_MAX_POSITION_DOLLARS=5.00  # Max $5 per bet
+```
+
+**Use this when:**
+- Testing the bot with real money for the first time
+- You want predictable, fixed bet sizes
+- Conservative risk management (start with $5-$10)
+
+**Example:**
+- Portfolio: $100 → Bet: $5 (capped)
+- Portfolio: $1,000 → Bet: $5 (capped)
+- Portfolio: $10,000 → Bet: $5 (capped) ✓
+
+**2. Percentage-Based (Portfolio Proportional)**
+
+Bet a percentage of your portfolio value:
+
+```bash
+# .env
+BOT_MAX_POSITION_PERCENT=0.10  # Max 10% of portfolio
+BOT_MAX_POSITION_DOLLARS=999999  # Set very high to disable cap
+```
+
+**Use this when:**
+- You want bets to scale with your portfolio
+- More aggressive growth strategy
+- You trust the bot's performance
+
+**Example (10% strategy):**
+- Portfolio: $100 → Bet: $10
+- Portfolio: $1,000 → Bet: $100
+- Portfolio: $10,000 → Bet: $1,000
+
+### How They Work Together
+
+**The bot always uses the SMALLER of the two limits:**
+
+```bash
+# Example config
+BOT_MAX_POSITION_PERCENT=0.10   # 10% of portfolio
+BOT_MAX_POSITION_DOLLARS=50.00  # Max $50 per bet
+
+# Results:
+Portfolio: $100   → 10% = $10   → Bet: $10  (percent wins)
+Portfolio: $1,000 → 10% = $100  → Bet: $50  (dollar cap wins)
+Portfolio: $5,000 → 10% = $500  → Bet: $50  (dollar cap wins)
+```
+
+### Confidence-Based Scaling
+
+Position size is further scaled by AI confidence:
+
+- **75-80% confidence** → 50% of max position
+- **80-90% confidence** → 75% of max position
+- **90%+ confidence** → 100% of max position
+
+**Example with $50 dollar cap:**
+- 90% confidence → Bet $50 (full size)
+- 85% confidence → Bet $37.50 (75% of max)
+- 78% confidence → Bet $25 (50% of max)
+
+### Recommended Starting Configuration
+
+```bash
+# Conservative testing (RECOMMENDED)
+BOT_CONFIDENCE_THRESHOLD=0.75
+BOT_MAX_POSITION_PERCENT=0.10
+BOT_MAX_POSITION_DOLLARS=5.00    # ← Start here
+BOT_MAX_EXPOSURE_PERCENT=0.50
+
+# After 50+ successful trades, consider:
+BOT_MAX_POSITION_DOLLARS=10.00   # Increase cap to $10
+
+# After 200+ successful trades, consider percentage-based:
+BOT_MAX_POSITION_DOLLARS=100.00  # Raise cap high
+# Now 10% of portfolio will control sizing
+```
+
+### Updating Your Configuration
+
+**To change max bet amount:**
+
+1. Edit `.env` file:
+   ```bash
+   nano .env  # or vim .env
+   ```
+
+2. Update the value:
+   ```bash
+   BOT_MAX_POSITION_DOLLARS=10.00  # Change to $10
+   ```
+
+3. Restart the bot:
+   ```bash
+   ./start_bot.sh restart
+   ```
+
+**To switch to percentage-based:**
+
+1. Set dollar cap very high:
+   ```bash
+   BOT_MAX_POSITION_DOLLARS=999999
+   ```
+
+2. Adjust percentage:
+   ```bash
+   BOT_MAX_POSITION_PERCENT=0.05  # 5% of portfolio
+   ```
+
+3. Restart bot
+
+**To verify your configuration:**
+
+```bash
+# Test without placing trades
+python test_dollar_cap.py
+
+# Shows how much bot would bet at different portfolio sizes
+```
+
 ## Architecture
 
 ```
