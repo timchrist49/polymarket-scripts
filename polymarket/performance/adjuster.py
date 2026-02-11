@@ -160,13 +160,33 @@ class ParameterAdjuster:
             )
             return False
 
-        # Only auto-apply Tier 1
-        if tier != AdjustmentTier.TIER_1_AUTO:
-            logger.info(
-                "Adjustment requires approval",
-                parameter=parameter_name,
-                tier=tier.value
+        # Handle by tier
+        if tier == AdjustmentTier.TIER_1_AUTO:
+            approval_method = "tier_1_auto"
+        elif tier == AdjustmentTier.TIER_2_APPROVAL:
+            # Request approval via Telegram
+            if not self.telegram:
+                logger.warning("Telegram not configured, rejecting Tier 2 adjustment")
+                return False
+
+            change_pct = self.calculate_change_percent(old_value, new_value)
+            approved = await self.telegram.request_approval(
+                parameter_name=parameter_name,
+                old_value=old_value,
+                new_value=new_value,
+                reason=reason,
+                change_pct=change_pct,
+                timeout_hours=4
             )
+
+            if not approved:
+                logger.info("Tier 2 adjustment rejected", parameter=parameter_name)
+                return False
+
+            approval_method = "tier_2_approved"
+        else:
+            # Tier 3 - requires emergency handling
+            logger.warning("Tier 3 adjustment attempted", parameter=parameter_name)
             return False
 
         # Apply adjustment
@@ -179,7 +199,7 @@ class ParameterAdjuster:
                 old_value=old_value,
                 new_value=new_value,
                 reason=reason,
-                approval_method="tier_1_auto"
+                approval_method=approval_method
             )
 
         # Notify via Telegram

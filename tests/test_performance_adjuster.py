@@ -161,3 +161,108 @@ async def test_reject_out_of_bounds(mock_settings):
     assert result is False  # Should be rejected
 
     db.close()
+
+@pytest.mark.asyncio
+async def test_apply_tier_2_with_approval(mock_settings):
+    """Test applying Tier 2 adjustment with approval."""
+    from polymarket.performance.database import PerformanceDatabase
+    from polymarket.telegram.bot import TelegramBot
+    from unittest.mock import AsyncMock, Mock
+
+    db = PerformanceDatabase(":memory:")
+    telegram = Mock(spec=TelegramBot)
+    telegram._send_message = AsyncMock()
+
+    # Mock request_approval to return True (approved)
+    telegram.request_approval = AsyncMock(return_value=True)
+
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=telegram)
+
+    # Apply Tier 2 adjustment (10% decrease from 0.75 to 0.675)
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.675,
+        reason="Win rate trending up, can reduce threshold",
+        tier=AdjustmentTier.TIER_2_APPROVAL
+    )
+
+    assert result is True
+
+    # Verify request_approval was called
+    telegram.request_approval.assert_called_once()
+    call_args = telegram.request_approval.call_args
+    assert call_args.kwargs['parameter_name'] == 'bot_confidence_threshold'
+    assert call_args.kwargs['old_value'] == 0.75
+    assert call_args.kwargs['new_value'] == 0.675
+
+    # Verify logged to database with tier_2_approved
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT * FROM parameter_history ORDER BY timestamp DESC LIMIT 1")
+    row = cursor.fetchone()
+
+    assert row['parameter_name'] == 'bot_confidence_threshold'
+    assert row['old_value'] == 0.75
+    assert row['new_value'] == 0.675
+    assert row['approval_method'] == 'tier_2_approved'
+
+    db.close()
+
+@pytest.mark.asyncio
+async def test_apply_tier_2_with_rejection(mock_settings):
+    """Test Tier 2 adjustment rejected by user."""
+    from polymarket.performance.database import PerformanceDatabase
+    from polymarket.telegram.bot import TelegramBot
+    from unittest.mock import AsyncMock, Mock
+
+    db = PerformanceDatabase(":memory:")
+    telegram = Mock(spec=TelegramBot)
+    telegram._send_message = AsyncMock()
+
+    # Mock request_approval to return False (rejected)
+    telegram.request_approval = AsyncMock(return_value=False)
+
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=telegram)
+
+    # Try to apply Tier 2 adjustment
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.675,
+        reason="Test rejection",
+        tier=AdjustmentTier.TIER_2_APPROVAL
+    )
+
+    assert result is False
+
+    # Verify request_approval was called
+    telegram.request_approval.assert_called_once()
+
+    # Verify NOT logged to database (rejected)
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT COUNT(*) as count FROM parameter_history")
+    row = cursor.fetchone()
+    assert row['count'] == 0  # No entries
+
+    db.close()
+
+@pytest.mark.asyncio
+async def test_reject_tier_3_emergency(mock_settings):
+    """Test that Tier 3 adjustments are rejected (emergency pause required)."""
+    from polymarket.performance.database import PerformanceDatabase
+
+    db = PerformanceDatabase(":memory:")
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=None)
+
+    # Try to apply Tier 3 adjustment (>20% change)
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.50,  # 33% decrease
+        reason="Test emergency",
+        tier=AdjustmentTier.TIER_3_PAUSE
+    )
+
+    assert result is False  # Should be rejected
+
+    db.close()
