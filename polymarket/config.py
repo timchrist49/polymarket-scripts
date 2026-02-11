@@ -110,6 +110,10 @@ class Settings:
     openai_model: str = field(
         default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
+    # === OpenAI GPT-5-Nano Configuration ===
+    openai_reasoning_effort: str = field(
+        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "medium")
+    )
 
     # === Tavily Configuration ===
     tavily_api_key: str | None = field(
