@@ -131,6 +131,58 @@ class PerformanceDatabase:
 
         self.conn.commit()
 
+    def log_trade(self, trade_data: dict) -> int:
+        """
+        Log a trade decision to the database.
+
+        Args:
+            trade_data: Dictionary with trade information
+
+        Returns:
+            Trade ID of inserted record
+        """
+        cursor = self.conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, market_id,
+                action, confidence, position_size, reasoning,
+                btc_price, price_to_beat, time_remaining_seconds, is_end_phase,
+                social_score, market_score, final_score, final_confidence, signal_type,
+                rsi, macd, trend,
+                yes_price, no_price, executed_price
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            trade_data["timestamp"],
+            trade_data["market_slug"],
+            trade_data.get("market_id"),
+            trade_data["action"],
+            trade_data["confidence"],
+            trade_data["position_size"],
+            trade_data.get("reasoning"),
+            trade_data["btc_price"],
+            trade_data.get("price_to_beat"),
+            trade_data.get("time_remaining_seconds"),
+            trade_data.get("is_end_phase", False),
+            trade_data.get("social_score"),
+            trade_data.get("market_score"),
+            trade_data.get("final_score"),
+            trade_data.get("final_confidence"),
+            trade_data.get("signal_type"),
+            trade_data.get("rsi"),
+            trade_data.get("macd"),
+            trade_data.get("trend"),
+            trade_data.get("yes_price"),
+            trade_data.get("no_price"),
+            trade_data.get("executed_price")
+        ))
+
+        self.conn.commit()
+        trade_id = cursor.lastrowid
+
+        logger.debug("Trade logged", trade_id=trade_id, action=trade_data["action"])
+        return trade_id
+
     def close(self):
         """Close database connection."""
         self.conn.close()
