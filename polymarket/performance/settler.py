@@ -109,3 +109,46 @@ class TradeSettler:
             is_win = False
 
         return profit_loss, is_win
+
+    def _get_unsettled_trades(self, batch_size: int = 50) -> list[dict]:
+        """
+        Query unsettled trades from database.
+
+        Args:
+            batch_size: Maximum number of trades to return
+
+        Returns:
+            List of trade records as dicts
+        """
+        cursor = self.db.conn.cursor()
+
+        # Query trades that:
+        # 1. Have action YES or NO (not HOLD)
+        # 2. Are not yet settled (is_win IS NULL)
+        # 3. Are old enough (>15 minutes old)
+        cursor.execute("""
+            SELECT
+                id, timestamp, market_slug, action,
+                position_size, executed_price, price_to_beat
+            FROM trades
+            WHERE action IN ('YES', 'NO')
+              AND is_win IS NULL
+              AND datetime(timestamp) < datetime('now', '-15 minutes')
+            ORDER BY timestamp ASC
+            LIMIT ?
+        """, (batch_size,))
+
+        # Convert to list of dicts
+        trades = []
+        for row in cursor.fetchall():
+            trades.append({
+                'id': row[0],
+                'timestamp': row[1],
+                'market_slug': row[2],
+                'action': row[3],
+                'position_size': row[4],
+                'executed_price': row[5],
+                'price_to_beat': row[6]
+            })
+
+        return trades

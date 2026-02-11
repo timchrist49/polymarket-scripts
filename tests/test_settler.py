@@ -1,6 +1,7 @@
 """Tests for trade settlement service."""
 
 import pytest
+from datetime import datetime, timedelta
 from polymarket.performance.settler import TradeSettler
 from polymarket.performance.database import PerformanceDatabase
 
@@ -189,3 +190,133 @@ class TestProfitLossCalculation:
 
         assert is_win is True
         assert abs(profit_loss - 1.24) < 0.01
+
+
+class TestDatabaseQuery:
+    """Test querying unsettled trades from database."""
+
+    def test_query_unsettled_trades(self):
+        """Should return trades that need settlement."""
+        db = PerformanceDatabase(":memory:")
+        settler = TradeSettler(db, btc_fetcher=None)
+
+        # Insert test trades
+        cursor = db.conn.cursor()
+
+        # Trade 1: Old YES trade, not settled
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, action, confidence, position_size,
+                btc_price, price_to_beat, executed_price, is_win
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now() - timedelta(minutes=20),
+            "btc-updown-15m-1770828300",
+            "YES",
+            0.75,
+            10.0,
+            70000.0,
+            70000.0,
+            0.65,
+            None  # Not settled
+        ))
+
+        # Trade 2: Recent trade, too new to settle
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, action, confidence, position_size,
+                btc_price, price_to_beat, executed_price, is_win
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now() - timedelta(minutes=5),
+            "btc-updown-15m-1770829000",
+            "NO",
+            0.80,
+            15.0,
+            71000.0,
+            71000.0,
+            0.35,
+            None
+        ))
+
+        # Trade 3: HOLD action, should be skipped
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, action, confidence, position_size,
+                btc_price, price_to_beat, executed_price, is_win
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now() - timedelta(minutes=20),
+            "btc-updown-15m-1770828400",
+            "HOLD",
+            0.50,
+            0.0,
+            70500.0,
+            70500.0,
+            None,
+            None
+        ))
+
+        # Trade 4: Already settled
+        cursor.execute("""
+            INSERT INTO trades (
+                timestamp, market_slug, action, confidence, position_size,
+                btc_price, price_to_beat, executed_price, is_win, profit_loss, actual_outcome
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now() - timedelta(minutes=30),
+            "btc-updown-15m-1770828000",
+            "YES",
+            0.70,
+            12.0,
+            69000.0,
+            69000.0,
+            0.60,
+            True,
+            8.0,
+            "YES"
+        ))
+
+        db.conn.commit()
+
+        # Query unsettled trades
+        trades = settler._get_unsettled_trades(batch_size=10)
+
+        # Should only return Trade 1 (old enough, not settled, not HOLD)
+        assert len(trades) == 1
+        assert trades[0]['action'] == "YES"
+        assert trades[0]['market_slug'] == "btc-updown-15m-1770828300"
+
+    def test_batch_size_limit(self):
+        """Should respect batch size limit."""
+        db = PerformanceDatabase(":memory:")
+        settler = TradeSettler(db, btc_fetcher=None)
+
+        cursor = db.conn.cursor()
+
+        # Insert 5 old unsettled trades
+        for i in range(5):
+            cursor.execute("""
+                INSERT INTO trades (
+                    timestamp, market_slug, action, confidence, position_size,
+                    btc_price, price_to_beat, executed_price, is_win
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now() - timedelta(minutes=20 + i),
+                f"btc-updown-15m-177082{i}000",
+                "YES",
+                0.75,
+                10.0,
+                70000.0,
+                70000.0,
+                0.65,
+                None
+            ))
+
+        db.conn.commit()
+
+        # Query with batch_size=3
+        trades = settler._get_unsettled_trades(batch_size=3)
+
+        # Should only return 3 trades
+        assert len(trades) == 3
