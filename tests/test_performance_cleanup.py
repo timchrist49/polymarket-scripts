@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, AsyncMock, patch
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.database import PerformanceDatabase
+import shutil
 
 @pytest.fixture
 def db_with_old_data():
@@ -68,3 +69,53 @@ async def test_scheduler_interval():
     scheduler = CleanupScheduler(db, telegram=None, interval_hours=168)  # Weekly
 
     assert scheduler.interval_seconds == 168 * 3600  # 7 days in seconds
+
+@pytest.mark.asyncio
+async def test_check_emergency_triggers_database_size():
+    """Test emergency trigger for large database."""
+    db = PerformanceDatabase(":memory:")
+    scheduler = CleanupScheduler(db, telegram=None)
+
+    # Mock database size check
+    with patch.object(scheduler, '_get_database_size_mb', return_value=600):
+        needs_emergency = await scheduler.check_emergency_triggers()
+        assert needs_emergency is not False
+        assert "database_size" in needs_emergency
+
+@pytest.mark.asyncio
+async def test_check_emergency_triggers_disk_space():
+    """Test emergency trigger for low disk space."""
+    db = PerformanceDatabase(":memory:")
+    scheduler = CleanupScheduler(db, telegram=None)
+
+    # Mock disk usage check to return 95% used
+    with patch.object(scheduler, '_get_disk_usage_percent', return_value=95.0):
+        needs_emergency = await scheduler.check_emergency_triggers()
+        assert needs_emergency is not False
+        assert "disk_space" in needs_emergency
+
+@pytest.mark.asyncio
+async def test_emergency_cleanup_aggressive():
+    """Test emergency cleanup archives more aggressively."""
+    db = PerformanceDatabase(":memory:")
+
+    # Add recent trades that wouldn't normally be archived
+    now = datetime.now()
+    for i in range(10):
+        trade_data = {
+            "timestamp": now - timedelta(days=15 + i),  # 15-25 days old
+            "market_slug": f"recent-{i}",
+            "action": "YES",
+            "confidence": 0.8,
+            "position_size": 5.0,
+            "btc_price": 66000.0,
+        }
+        db.log_trade(trade_data)
+
+    scheduler = CleanupScheduler(db, telegram=None)
+
+    # Run emergency cleanup (threshold 7 days instead of 30)
+    result = await scheduler.run_emergency_cleanup()
+
+    assert result["archived_count"] > 0
+    assert result["emergency"] is True
