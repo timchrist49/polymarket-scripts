@@ -145,6 +145,14 @@ class Settings:
         default_factory=lambda: float(os.getenv("BOT_MAX_EXPOSURE_PERCENT", "0.50"))
     )
 
+    # === Trade Execution Safety ===
+    trade_max_unfavorable_move_pct: float = field(
+        default_factory=lambda: float(os.getenv("TRADE_MAX_UNFAVORABLE_MOVE_PCT", "10.0"))
+    )
+    trade_max_favorable_warn_pct: float = field(
+        default_factory=lambda: float(os.getenv("TRADE_MAX_FAVORABLE_WARN_PCT", "5.0"))
+    )
+
     # === Stop-Loss Configuration ===
     stop_loss_odds_threshold: float = field(
         default_factory=lambda: float(os.getenv("STOP_LOSS_ODDS_THRESHOLD", "0.40"))
