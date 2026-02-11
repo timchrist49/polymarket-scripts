@@ -662,22 +662,62 @@ class AutoTrader:
         return True, reason
 
     async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str, market_price: float) -> None:
-        """Execute a trade order."""
+        """Execute a trade order with JIT price fetching and safety checks."""
         try:
             from polymarket.models import OrderRequest
 
+            # Store analysis price (from cycle start)
+            analysis_price = market_price
+
             logger.info(
-                "Order pricing",
+                "Pre-execution pricing",
                 token=token_name,
-                market_price=f"{market_price:.3f}",
+                analysis_price=f"{analysis_price:.3f}",
                 action=decision.action
             )
 
-            # Create order request
+            # Fetch fresh market data immediately before execution
+            try:
+                fresh_market = await self._get_fresh_market_data(market.id)
+            except Exception as e:
+                logger.error("Failed to fetch fresh market data, aborting trade", error=str(e))
+                return
+
+            # Calculate fresh execution price from fresh market
+            if decision.action == "YES":
+                execution_price = fresh_market.best_ask if fresh_market.best_ask else 0.50
+            else:  # NO
+                execution_price = 1 - (fresh_market.best_bid if fresh_market.best_bid else 0.50)
+
+            # Run adaptive safety check
+            should_execute, reason = self._analyze_price_movement(
+                analysis_price=analysis_price,
+                execution_price=execution_price,
+                token_name=token_name
+            )
+
+            if not should_execute:
+                logger.warning(
+                    "Trade skipped due to safety check",
+                    token=token_name,
+                    reason=reason
+                )
+                # Track skipped trade in performance system (will be added in Task 6)
+                return
+
+            # Log final execution price
+            logger.info(
+                "Executing with fresh price",
+                token=token_name,
+                execution_price=f"{execution_price:.3f}",
+                price_change_pct=f"{((execution_price - analysis_price) / analysis_price * 100):+.2f}%"
+            )
+
+            # Create order request with fresh execution price
             order_request = OrderRequest(
                 token_id=token_id,
                 side="BUY",  # Always BUY for our decision (YES or NO token)
-                price=market_price,  # Use actual market price
+                price=execution_price,  # Use fresh execution price
                 size=float(amount),
                 order_type="market"
             )
@@ -700,7 +740,7 @@ class AutoTrader:
                     action=decision.action,
                     confidence=decision.confidence,
                     position_size=float(amount),
-                    price=market_price,
+                    price=execution_price,  # Use fresh execution price
                     reasoning=decision.reasoning
                 )
             except Exception as e:
