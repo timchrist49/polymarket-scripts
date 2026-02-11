@@ -175,6 +175,38 @@ The `start_bot.sh` script manages the bot as a background daemon process that su
    - Disconnect network
    - Exit Claude Code session
 
+## Enhanced Features (v2.0)
+
+### GPT-5-Nano with Reasoning Tokens
+- Uses OpenAI's GPT-5-Nano model with reasoning tokens for better analysis
+- Temperature locked at 1 (model requirement)
+- Configurable reasoning effort: low/medium/high
+- More thorough signal analysis before decisions
+
+### Polymarket WebSocket Integration
+- Real-time BTC prices from Polymarket's `crypto_prices` WebSocket feed
+- Ensures price consistency with market resolution
+- Falls back to Binance if WebSocket unavailable
+- Eliminates polling delays
+
+### Price-to-Beat Tracking
+- Tracks BTC price at market start (15-minute interval)
+- Compares current price vs starting price
+- AI receives full context: "Current: $95,234, Start: $95,000, Diff: +$234 (+0.25%)"
+- More accurate directional signals
+
+### Time-Aware Strategy
+- Bot knows how much time remains in 15-minute market
+- Last 3 minutes = "end-of-market" phase
+- Established trends near end are more reliable
+- AI can boost confidence when signals align + time is low
+
+### Enhanced AI Prompt
+- Comprehensive context: price-to-beat + timing + all signals
+- End-of-market strategy guidance
+- Reasoning token optimization
+- Clearer signal interpretation
+
 ### When to Use
 
 **Use daemon script (recommended):**
