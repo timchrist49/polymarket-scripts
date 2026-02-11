@@ -423,3 +423,40 @@ class TestSettlementOrchestration:
 
         # Should not update database
         mock_tracker.update_trade_outcome.assert_not_called()
+
+
+class TestBTCPriceFetching:
+    """Test BTC price fetching integration."""
+
+    @pytest.mark.asyncio
+    async def test_get_btc_price_at_timestamp_success(self):
+        """Should fetch BTC price at timestamp."""
+        db = PerformanceDatabase(":memory:")
+
+        # Mock BTC fetcher
+        mock_btc_fetcher = Mock()
+        mock_btc_fetcher.get_price_at_timestamp = AsyncMock(return_value=Decimal("71500.0"))
+
+        settler = TradeSettler(db, mock_btc_fetcher)
+
+        # Fetch price
+        price = await settler._get_btc_price_at_timestamp(1770828300)
+
+        assert price == 71500.0
+        mock_btc_fetcher.get_price_at_timestamp.assert_called_once_with(1770828300)
+
+    @pytest.mark.asyncio
+    async def test_get_btc_price_returns_none_on_failure(self):
+        """Should return None if price unavailable."""
+        db = PerformanceDatabase(":memory:")
+
+        # Mock BTC fetcher that returns None
+        mock_btc_fetcher = Mock()
+        mock_btc_fetcher.get_price_at_timestamp = AsyncMock(return_value=None)
+
+        settler = TradeSettler(db, mock_btc_fetcher)
+
+        # Fetch price
+        price = await settler._get_btc_price_at_timestamp(1770828300)
+
+        assert price is None

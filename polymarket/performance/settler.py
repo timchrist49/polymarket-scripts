@@ -110,6 +110,32 @@ class TradeSettler:
 
         return profit_loss, is_win
 
+    async def _get_btc_price_at_timestamp(self, timestamp: int) -> Optional[float]:
+        """
+        Fetch BTC price at specific timestamp.
+
+        Args:
+            timestamp: Unix timestamp
+
+        Returns:
+            BTC price as float, or None if unavailable
+        """
+        try:
+            price_decimal = await self.btc_fetcher.get_price_at_timestamp(timestamp)
+
+            if price_decimal is None:
+                return None
+
+            return float(price_decimal)
+
+        except Exception as e:
+            logger.error(
+                "Failed to fetch BTC price at timestamp",
+                timestamp=timestamp,
+                error=str(e)
+            )
+            return None
+
     def _get_unsettled_trades(self, batch_size: int = 50) -> list[dict]:
         """
         Query unsettled trades from database.
