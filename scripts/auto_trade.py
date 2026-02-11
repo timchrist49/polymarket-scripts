@@ -386,11 +386,16 @@ class AutoTrader:
                 )
 
             # Build market data dict with ALL context
+            # Note: Polymarket returns prices for UP/YES token only
+            # DOWN/NO price is complementary: 1 - UP_price
+            up_bid = market.best_bid or 0.50
+            up_ask = market.best_ask or 0.50
+
             market_dict = {
                 "token_id": token_ids[0],  # Temporary, for logging only
                 "question": market.question,
-                "yes_price": market.best_bid or 0.50,
-                "no_price": market.best_ask or 0.50,
+                "yes_price": up_ask,           # UP token ask price (to buy UP)
+                "no_price": 1 - up_bid,        # DOWN = 1 - UP (complementary)
                 "active": market.active,
                 "outcomes": market.outcomes if hasattr(market, 'outcomes') else ["Yes", "No"],
                 # NEW: Price-to-beat and timing context
@@ -402,11 +407,14 @@ class AutoTrader:
             }
 
             logger.info(
-                "Market prices",
+                "Market prices (complementary)",
                 market_id=market.id,
+                up_bid=f"{up_bid:.3f}",
+                up_ask=f"{up_ask:.3f}",
                 yes_price=f"{market_dict['yes_price']:.3f}",
                 no_price=f"{market_dict['no_price']:.3f}",
-                outcomes=market_dict["outcomes"]
+                outcomes=market_dict["outcomes"],
+                note="DOWN price = 1 - UP bid"
             )
 
             # Step 1: AI Decision - CHANGED: pass aggregated_sentiment
@@ -470,9 +478,14 @@ class AutoTrader:
 
             # Step 3: Execute Trade
             if self.settings.mode == "trading":
-                # Determine market price based on decision
-                # For BUY orders, use ask price (what sellers want)
-                market_price = market.best_ask if market.best_ask else 0.50
+                # Determine market price based on which token we're buying
+                # UP/YES token: use ask price from market
+                # DOWN/NO token: use complement (1 - UP bid)
+                if decision.action == "YES":
+                    market_price = market.best_ask if market.best_ask else 0.50  # UP ask
+                else:  # NO
+                    market_price = 1 - (market.best_bid if market.best_bid else 0.50)  # DOWN = 1 - UP
+
                 await self._execute_trade(market, decision, validation.adjusted_position, token_id, token_name, market_price)
             else:
                 logger.info(
