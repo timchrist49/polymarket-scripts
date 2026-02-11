@@ -247,10 +247,20 @@ class AutoTrader:
             # Step 5: Get portfolio value
             try:
                 portfolio = self.client.get_portfolio_summary()
-                portfolio_value = Decimal(str(portfolio.total_value))
+                # FIX: Use only USDC balance (not total_value which includes phantom resolved positions)
+                portfolio_value = Decimal(str(portfolio.usdc_balance))
+                logger.info(
+                    "Portfolio fetched",
+                    total_value=f"${portfolio.total_value:.2f}",
+                    usdc_balance=f"${portfolio.usdc_balance:.2f}",
+                    positions_value=f"${portfolio.positions_value:.2f}",
+                    using_balance=f"${portfolio_value:.2f}"
+                )
                 if portfolio_value == 0:
+                    logger.warning("Portfolio value is 0, using default $1000")
                     portfolio_value = Decimal("1000")  # Default for read_only mode
-            except:
+            except Exception as e:
+                logger.error("Failed to fetch portfolio, using default $1000", error=str(e))
                 portfolio_value = Decimal("1000")  # Fallback
 
             # Step 6: Process each market
