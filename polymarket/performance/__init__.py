@@ -6,6 +6,7 @@ from polymarket.performance.metrics import MetricsCalculator
 from polymarket.performance.reflection import ReflectionEngine
 from polymarket.performance.adjuster import ParameterAdjuster, ParameterBounds, AdjustmentTier
 from polymarket.performance.archival import ArchivalManager
+from polymarket.performance.cleanup import CleanupScheduler
 
 __all__ = [
     "PerformanceDatabase",
@@ -15,5 +16,6 @@ __all__ = [
     "ParameterAdjuster",
     "ParameterBounds",
     "AdjustmentTier",
-    "ArchivalManager"
+    "ArchivalManager",
+    "CleanupScheduler"
 ]

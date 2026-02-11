@@ -39,6 +39,7 @@ from polymarket.trading.ai_decision import AIDecisionService
 from polymarket.trading.risk import RiskManager
 from polymarket.trading.market_tracker import MarketTracker
 from polymarket.performance.tracker import PerformanceTracker
+from polymarket.performance.cleanup import CleanupScheduler
 
 app = typer.Typer(help="Autonomous Polymarket Trading Bot")
 logger = structlog.get_logger()
@@ -61,6 +62,12 @@ class AutoTrader:
         self.risk_manager = RiskManager(settings)
         self.market_tracker = MarketTracker(settings)
         self.performance_tracker = PerformanceTracker()
+        self.cleanup_scheduler = CleanupScheduler(
+            db=self.performance_tracker.db,
+            telegram=None,  # No telegram integration yet
+            interval_hours=168,  # Weekly
+            days_threshold=30
+        )
 
         # State tracking
         self.cycle_count = 0
@@ -77,6 +84,10 @@ class AutoTrader:
         await self.btc_service.start()
         logger.info("Initialized Polymarket WebSocket for BTC prices")
         logger.info("Performance tracking enabled")
+
+        # Start cleanup scheduler in background
+        asyncio.create_task(self.cleanup_scheduler.start())
+        logger.info("Cleanup scheduler started (runs weekly)")
 
     def _check_emergency_pause(self) -> bool:
         """Check if emergency pause flag is set."""
@@ -666,6 +677,8 @@ class AutoTrader:
         await self.social_service.close()
         if self.market_service:
             await self.market_service.close()
+        self.cleanup_scheduler.stop()
+        logger.info("Cleanup scheduler stopped")
         self.performance_tracker.close()
         logger.info("Performance tracker closed")
         logger.info("AutoTrader shutdown complete")
@@ -678,6 +691,7 @@ class AutoTrader:
         await self.social_service.close()
         if self.market_service:
             await self.market_service.close()
+        self.cleanup_scheduler.stop()
         self.performance_tracker.close()
 
 
