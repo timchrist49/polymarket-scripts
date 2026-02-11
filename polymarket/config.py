@@ -138,6 +138,9 @@ class Settings:
     bot_max_position_percent: float = field(
         default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_PERCENT", "0.10"))
     )
+    bot_max_position_dollars: float = field(
+        default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_DOLLARS", "10.0"))
+    )
     bot_max_exposure_percent: float = field(
         default_factory=lambda: float(os.getenv("BOT_MAX_EXPOSURE_PERCENT", "0.50"))
     )

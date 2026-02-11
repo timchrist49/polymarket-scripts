@@ -44,6 +44,7 @@ TAVILY_API_KEY=tvly-...
 BOT_INTERVAL_SECONDS=180
 BOT_CONFIDENCE_THRESHOLD=0.75
 BOT_MAX_POSITION_PERCENT=0.10
+BOT_MAX_POSITION_DOLLARS=5.00  # Absolute dollar cap
 ```
 
 ### 3. Test in dry-run mode
@@ -451,6 +452,7 @@ python scripts/auto_trade.py --interval 60
 | `BOT_INTERVAL_SECONDS` | `180` | Cycle interval |
 | `BOT_CONFIDENCE_THRESHOLD` | `0.75` | Min confidence to trade |
 | `BOT_MAX_POSITION_PERCENT` | `0.10` | Max position (% of portfolio) |
+| `BOT_MAX_POSITION_DOLLARS` | `10.0` | Absolute dollar cap per bet |
 | `BOT_MAX_EXPOSURE_PERCENT` | `0.50` | Max total exposure |
 | `STOP_LOSS_ODDS_THRESHOLD` | `0.40` | Exit if odds drop below |
 | `STOP_LOSS_FORCE_EXIT_MINUTES` | `5` | Force exit before expiry |

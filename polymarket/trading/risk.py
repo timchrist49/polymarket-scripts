@@ -128,6 +128,11 @@ class RiskManager:
 
         calculated = base_size * multiplier
 
+        # Apply absolute dollar cap
+        dollar_cap = Decimal(str(self.settings.bot_max_position_dollars))
+        calculated = min(calculated, dollar_cap)
+        max_position = min(max_position, dollar_cap)
+
         # Use AI-suggested size if provided and reasonable
         if decision.position_size > 0:
             ai_size = min(decision.position_size, max_position)
