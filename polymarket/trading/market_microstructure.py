@@ -30,9 +30,9 @@ class MarketMicrostructureService:
 
     # Weights for score calculation (Polymarket-specific)
     WEIGHTS = {
-        'momentum': 0.40,
-        'volume_flow': 0.35,
-        'whale': 0.25
+        'momentum': 0.20,      # Reduced from 0.40 (less lag)
+        'volume_flow': 0.50,   # Increased from 0.35 (more current)
+        'whale': 0.30          # Increased from 0.25 (behavioral)
     }
 
     # Thresholds
