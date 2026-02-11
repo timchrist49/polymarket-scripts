@@ -82,3 +82,60 @@ def test_log_trade(db):
     assert row['action'] == 'NO'
     assert row['confidence'] == 1.0
     assert row['market_slug'] == 'btc-updown-15m-1234567890'
+
+def test_update_outcome(db):
+    """Test updating trade outcome after market closes."""
+    # First log a trade
+    trade_data = {
+        "timestamp": datetime(2026, 2, 11, 10, 30, 0),
+        "market_slug": "btc-updown-15m-1234567890",
+        "market_id": 1362391,
+        "action": "NO",
+        "confidence": 1.0,
+        "position_size": 5.0,
+        "btc_price": 66940.0,
+    }
+    trade_id = db.log_trade(trade_data)
+
+    # Update with outcome
+    db.update_outcome(
+        market_slug="btc-updown-15m-1234567890",
+        actual_outcome="DOWN",
+        profit_loss=4.50
+    )
+
+    # Verify outcome was stored
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT * FROM trades WHERE id = ?", (trade_id,))
+    row = cursor.fetchone()
+
+    assert row['actual_outcome'] == 'DOWN'
+    assert row['profit_loss'] == 4.50
+    assert row['is_win'] == True  # NO bet + DOWN outcome = win
+
+def test_update_outcome_missed_opportunity(db):
+    """Test HOLD decision marked as missed opportunity."""
+    trade_data = {
+        "timestamp": datetime(2026, 2, 11, 10, 30, 0),
+        "market_slug": "btc-updown-15m-1234567890",
+        "action": "HOLD",
+        "confidence": 0.85,
+        "position_size": 0.0,
+        "btc_price": 66940.0,
+        "price_to_beat": 66826.14,
+    }
+    trade_id = db.log_trade(trade_data)
+
+    # Update - price went up, would have won YES
+    db.update_outcome(
+        market_slug="btc-updown-15m-1234567890",
+        actual_outcome="UP",
+        profit_loss=0.0  # Didn't trade
+    )
+
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT * FROM trades WHERE id = ?", (trade_id,))
+    row = cursor.fetchone()
+
+    assert row['actual_outcome'] == 'UP'
+    assert row['is_missed_opportunity'] == True

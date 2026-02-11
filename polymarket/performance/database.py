@@ -183,6 +183,68 @@ class PerformanceDatabase:
         logger.debug("Trade logged", trade_id=trade_id, action=trade_data["action"])
         return trade_id
 
+    def update_outcome(self, market_slug: str, actual_outcome: str, profit_loss: float):
+        """
+        Update trade outcome after market closes.
+
+        Args:
+            market_slug: Market identifier
+            actual_outcome: 'UP' or 'DOWN'
+            profit_loss: Profit/loss amount (0 for HOLD)
+        """
+        cursor = self.conn.cursor()
+
+        # Get the trade
+        cursor.execute("""
+            SELECT id, action, position_size
+            FROM trades
+            WHERE market_slug = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (market_slug,))
+
+        row = cursor.fetchone()
+        if not row:
+            logger.warning("No trade found for outcome update", market_slug=market_slug)
+            return
+
+        trade_id = row['id']
+        action = row['action']
+        position_size = row['position_size']
+
+        # Determine if win
+        is_win = None
+        is_missed_opportunity = False
+
+        if action == "HOLD":
+            is_win = None  # Didn't trade
+            is_missed_opportunity = (position_size == 0)  # Would have won
+        elif action == "YES":
+            is_win = (actual_outcome == "UP")
+        elif action == "NO":
+            is_win = (actual_outcome == "DOWN")
+
+        # Update database
+        cursor.execute("""
+            UPDATE trades
+            SET actual_outcome = ?,
+                profit_loss = ?,
+                is_win = ?,
+                is_missed_opportunity = ?
+            WHERE id = ?
+        """, (actual_outcome, profit_loss, is_win, is_missed_opportunity, trade_id))
+
+        self.conn.commit()
+
+        logger.info(
+            "Outcome updated",
+            trade_id=trade_id,
+            action=action,
+            actual_outcome=actual_outcome,
+            is_win=is_win,
+            profit_loss=profit_loss
+        )
+
     def close(self):
         """Close database connection."""
         self.conn.close()
