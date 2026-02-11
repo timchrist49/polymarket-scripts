@@ -438,14 +438,16 @@ python scripts/auto_trade.py --interval 60
 
 ### Environment Variables
 
+**Note:** Default values shown below. For production setup with GPT-5-Nano and Polymarket WebSocket, see recommended configuration in `.env.example`.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENAI_API_KEY` | - | OpenAI API key (required) |
-| `OPENAI_MODEL` | `gpt-5-nano` | Model for decisions |
-| `OPENAI_REASONING_EFFORT` | `medium` | Reasoning depth (low/medium/high) |
+| `OPENAI_MODEL` | `gpt-4o-mini` | AI model for decisions (see .env.example for GPT-5-Nano setup) |
+| `OPENAI_REASONING_EFFORT` | `low` | Reasoning depth (low/medium/high) |
 | `TAVILY_API_KEY` | - | Tavily API key (required) |
-| `BTC_PRICE_SOURCE` | `polymarket` | Price source (polymarket/binance/coingecko) |
-| `BTC_PRICE_CACHE_SECONDS` | `10` | Cache TTL for BTC price |
+| `BTC_PRICE_SOURCE` | `binance` | Price source (polymarket/binance/coingecko) |
+| `BTC_PRICE_CACHE_SECONDS` | `30` | Cache TTL for BTC price |
 | `BOT_INTERVAL_SECONDS` | `180` | Cycle interval |
 | `BOT_CONFIDENCE_THRESHOLD` | `0.75` | Min confidence to trade |
 | `BOT_MAX_POSITION_PERCENT` | `0.10` | Max position (% of portfolio) |
