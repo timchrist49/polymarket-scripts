@@ -161,6 +161,17 @@ class Settings:
         default_factory=lambda: os.getenv("BOT_LOG_FILE", "logs/auto_trade.log")
     )
 
+    # === Telegram Configuration ===
+    telegram_enabled: bool = field(
+        default_factory=lambda: os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
+    )
+    telegram_bot_token: str | None = field(
+        default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN")
+    )
+    telegram_chat_id: str | None = field(
+        default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID")
+    )
+
     def __post_init__(self):
         """Validate settings based on mode."""
         if self.mode == "trading":
