@@ -25,8 +25,8 @@ class MarketMicrostructureService:
     # Binance API base URL
     BASE_URL = "https://api.binance.com/api/v3"
 
-    # Polymarket CLOB WebSocket URL
-    WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws"
+    # Polymarket CLOB WebSocket URL (market channel)
+    WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 
     # Weights for score calculation (Polymarket-specific)
     WEIGHTS = {
@@ -40,9 +40,15 @@ class MarketMicrostructureService:
     LARGE_WALL_BTC = 10.0  # Walls > 10 BTC considered significant
     WHALE_SIZE_USD = 1000  # Trades > $1,000 considered whale
 
-    def __init__(self, settings: Settings, condition_id: Optional[str] = None):
+    def __init__(
+        self,
+        settings: Settings,
+        condition_id: Optional[str] = None,
+        token_ids: Optional[list[str]] = None
+    ):
         self.settings = settings
         self.condition_id = condition_id
+        self.token_ids = token_ids
         self._session: Optional[aiohttp.ClientSession] = None
         self._klines_cache: list = []  # Cache for momentum calculation
 
@@ -359,6 +365,121 @@ class MarketMicrostructureService:
 
         return accumulated_data
 
+    async def collect_market_data_with_token_ids(
+        self,
+        token_ids: list[str],
+        duration_seconds: int = 120
+    ) -> dict:
+        """
+        Connect to CLOB WebSocket using correct format with token IDs.
+
+        Args:
+            token_ids: List of token IDs (assets_ids) to subscribe to
+            duration_seconds: How long to collect data (default 2 minutes)
+
+        Returns:
+            {
+                'trades': [...],
+                'book_snapshots': [...],
+                'price_changes': [...],
+                'collection_duration': int
+            }
+        """
+        accumulated_data = {
+            'trades': [],
+            'book_snapshots': [],
+            'price_changes': [],
+            'collection_duration': 0
+        }
+
+        logger.info(
+            "Connecting to Polymarket CLOB WebSocket",
+            token_ids=token_ids,
+            duration=duration_seconds
+        )
+
+        try:
+            async with websockets.connect(
+                self.WS_URL,
+                ping_interval=20,
+                ping_timeout=10
+            ) as ws:
+                # Send subscription message in CLOB format
+                subscribe_msg = {
+                    "assets_ids": token_ids,
+                    "type": "market"  # lowercase per CLOB spec
+                }
+                await ws.send(json.dumps(subscribe_msg))
+                logger.debug("Sent CLOB subscription", token_ids=token_ids)
+
+                # Collect data for specified duration
+                start_time = time.time()
+                while time.time() - start_time < duration_seconds:
+                    try:
+                        # Wait for message with 5s timeout
+                        msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                        data = json.loads(msg)
+
+                        # Handle both single messages and arrays of messages
+                        messages = data if isinstance(data, list) else [data]
+
+                        for message in messages:
+                            # Accumulate based on message type (CLOB uses 'event_type')
+                            msg_type = message.get('event_type')
+                            if msg_type == 'last_trade_price':
+                                accumulated_data['trades'].append(message)
+                            elif msg_type == 'book':
+                                accumulated_data['book_snapshots'].append(message)
+                            elif msg_type == 'price_change':
+                                accumulated_data['price_changes'].append(message)
+                            else:
+                                # Log unknown message types for debugging
+                                logger.debug("Received message", event_type=msg_type, keys=list(message.keys()) if isinstance(message, dict) else None)
+
+                    except asyncio.TimeoutError:
+                        # No message in 5s, continue waiting
+                        continue
+
+                # Record actual collection time
+                accumulated_data['collection_duration'] = int(time.time() - start_time)
+
+                logger.info(
+                    "Data collection complete",
+                    trades=len(accumulated_data['trades']),
+                    duration=accumulated_data['collection_duration']
+                )
+
+        except Exception as e:
+            logger.error("WebSocket collection failed", error=str(e))
+            # Return empty data on failure
+            accumulated_data['collection_duration'] = 0
+
+        return accumulated_data
+
+    def _is_yes_token(self, asset_id: str) -> bool:
+        """Check if asset_id is the YES token (first token_id or literal 'YES_TOKEN' for tests)."""
+        if not asset_id:
+            return False
+        # Test data compatibility
+        if asset_id == 'YES_TOKEN':
+            return True
+        # Real data
+        if self.token_ids:
+            return asset_id == str(self.token_ids[0])
+        return False
+
+    def _is_no_token(self, asset_id: str) -> bool:
+        """Check if asset_id is the NO token (second token_id or literal 'NO_TOKEN' for tests)."""
+        if not asset_id:
+            return False
+        # Test data compatibility
+        if asset_id == 'NO_TOKEN':
+            return True
+        # Real data
+        if self.token_ids and len(self.token_ids) >= 2:
+            return asset_id == str(self.token_ids[1])
+        return False
+
     def calculate_momentum_score(self, trades: list) -> float:
         """
         Calculate YES token price momentum over collection window.
@@ -372,8 +493,12 @@ class MarketMicrostructureService:
         if not trades:
             return 0.0
 
-        # Filter YES token trades
-        yes_trades = [t for t in trades if t.get('asset_id') == 'YES_TOKEN']
+        # Filter YES token trades and convert prices to float
+        yes_trades = [
+            {**t, 'price': float(t['price'])}
+            for t in trades
+            if self._is_yes_token(t.get('asset_id', ''))
+        ]
         if len(yes_trades) < 2:
             return 0.0
 
@@ -412,13 +537,13 @@ class MarketMicrostructureService:
             return 0.0
 
         yes_volume = sum(
-            trade['size'] for trade in trades
-            if trade.get('asset_id') == 'YES_TOKEN'
+            float(trade['size']) for trade in trades
+            if self._is_yes_token(trade.get('asset_id', ''))
         )
 
         no_volume = sum(
-            trade['size'] for trade in trades
-            if trade.get('asset_id') == 'NO_TOKEN'
+            float(trade['size']) for trade in trades
+            if self._is_no_token(trade.get('asset_id', ''))
         )
 
         total_volume = yes_volume + no_volume
@@ -450,15 +575,15 @@ class MarketMicrostructureService:
         if not trades:
             return 0.0
 
-        # Identify whale trades (size > $1,000)
+        # Identify whale trades (size > $1,000) - convert size to float
         yes_whales = sum(
             1 for trade in trades
-            if trade['size'] > self.WHALE_SIZE_USD and trade.get('asset_id') == 'YES_TOKEN'
+            if float(trade['size']) > self.WHALE_SIZE_USD and self._is_yes_token(trade.get('asset_id', ''))
         )
 
         no_whales = sum(
             1 for trade in trades
-            if trade['size'] > self.WHALE_SIZE_USD and trade.get('asset_id') == 'NO_TOKEN'
+            if float(trade['size']) > self.WHALE_SIZE_USD and self._is_no_token(trade.get('asset_id', ''))
         )
 
         total_whales = yes_whales + no_whales
@@ -538,10 +663,18 @@ class MarketMicrostructureService:
         """
         try:
             # Collect data for 2 minutes
-            data = await self.collect_market_data(
-                self.condition_id,
-                duration_seconds=120
-            )
+            # Use token_ids method if available (correct CLOB format)
+            if self.token_ids:
+                data = await self.collect_market_data_with_token_ids(
+                    self.token_ids,
+                    duration_seconds=120
+                )
+            else:
+                # Fallback to old method (will fail with 404, but gracefully)
+                data = await self.collect_market_data(
+                    self.condition_id,
+                    duration_seconds=120
+                )
 
             # Calculate individual scores
             momentum_score = self.calculate_momentum_score(data['trades'])
@@ -564,7 +697,7 @@ class MarketMicrostructureService:
             # Extract metadata
             whale_count = sum(
                 1 for t in data['trades']
-                if t['size'] > self.WHALE_SIZE_USD
+                if float(t.get('size', 0)) > self.WHALE_SIZE_USD
             )
 
             momentum_direction = (

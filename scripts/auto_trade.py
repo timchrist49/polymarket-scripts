@@ -14,6 +14,7 @@ Usage:
 import asyncio
 import sys
 import signal
+import logging
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -84,15 +85,24 @@ class AutoTrader:
 
             logger.info("Found markets", count=len(markets))
 
-            # Extract condition_id from discovered market
+            # Extract condition_id and token_ids from discovered market
             condition_id = getattr(markets[0], 'condition_id', None)
+            token_ids = markets[0].get_token_ids() if markets else []
+
             if not condition_id:
                 logger.warning("No condition_id found, using fallback")
                 condition_id = "unknown"
 
-            # Initialize market service with condition_id
+            if not token_ids:
+                logger.warning("No token_ids found")
+
+            # Initialize market service with token_ids (preferred) or condition_id (fallback)
             if not self.market_service or self.market_service.condition_id != condition_id:
-                self.market_service = MarketMicrostructureService(self.settings, condition_id)
+                self.market_service = MarketMicrostructureService(
+                    self.settings,
+                    condition_id=condition_id,
+                    token_ids=token_ids if token_ids else None
+                )
 
             # Step 2: Data Collection (parallel) - NEW: fetch social + market
             btc_data, social_sentiment, market_signals = await asyncio.gather(
@@ -418,6 +428,13 @@ def main(
     """Run the autonomous trading bot."""
     # Load settings
     settings = Settings()
+
+    # Configure stdlib logging (required for structlog's LoggerFactory)
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=logging.INFO,
+    )
 
     # Configure logging
     structlog.configure(

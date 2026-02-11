@@ -401,19 +401,69 @@ class PolymarketClient:
             from py_clob_client.clob_types import OrderArgs, MarketOrderArgs, OrderType
 
             if request.order_type == "market":
-                # Market order (FOK/FAK) - use amount instead of size
-                # For BUY: amount = dollar amount, for SELL: amount = shares
-                amount = price * request.size if request.side == "BUY" else request.size
+                # Market order - use LIMIT order with GTC instead to avoid decimal precision issues
+                # GTC orders with aggressive pricing act like market orders
+                from py_clob_client.clob_types import OrderArgs
+
+                price = round(price, 4)
+                size = round(request.size, 2)  # Use 2 decimals for size
+
+                logger.info(f"Placing GTC limit order: side={request.side}, size={size}, price={price}")
+
+                order_args = OrderArgs(
+                    token_id=request.token_id,
+                    side=request.side,
+                    price=price,
+                    size=size,
+                )
+
+                result = client.create_and_post_order(order_args)
+                order_id = result.get("orderID", "") if isinstance(result, dict) else ""
+
+                logger.info(f"Order placed successfully: {order_id}")
+
+                return OrderResponse(
+                    order_id=order_id,
+                    status="posted",
+                    accepted=True,
+                    raw_response=result if isinstance(result, dict) else {},
+                )
+
+            elif False:  # Skip the old market order code
+                # Market order - API validates decimal precision strictly
+                # For BUY: makerAmount = tokens (≤4 decimals), takerAmount = USDC (≤2 decimals)
+                # API calculates: takerAmount = makerAmount / price
+
+                price = round(price, 4)  # Max 4 decimals for price
+
+                if request.side == "BUY":
+                    # Start with token amount (this becomes makerAmount)
+                    token_amount = round(request.size, 4)  # Tokens: max 4 decimals
+                    # Calculate USDC amount ensuring it has ≤2 decimals
+                    usdc_amount = round(price * token_amount, 2)  # USDC: max 2 decimals
+                    # Recalculate token amount to ensure consistency
+                    token_amount = round(usdc_amount / price, 4)  # Re-derive to match
+                    amount = usdc_amount  # Pass USDC amount to API
+                else:
+                    # For SELL: reverse (taker gets USDC, maker gives tokens)
+                    token_amount = round(request.size, 4)
+                    amount = token_amount
+
+                print(f"DEBUG: side={request.side}, amount={amount}, price={price}, calculated_token_amount={token_amount}")
+                logger.info(f"Order details: side={request.side}, amount={amount}, price={price}")
 
                 market_order_args = MarketOrderArgs(
                     token_id=request.token_id,
                     amount=amount,
                     side=request.side,
                     price=price,  # Optional price limit
-                    order_type=OrderType.FOK,  # Fill-Or-Kill for immediate execution
+                    order_type=OrderType.GTC,  # Good-Til-Cancel allows order to sit on book
                 )
 
-                result = client.create_and_post_order(market_order_args, orderType=OrderType.FOK)
+                # Create and post market order
+                signed_order = client.create_market_order(market_order_args)
+                print(f"DEBUG: signed_order = {signed_order.dict() if hasattr(signed_order, 'dict') else signed_order}")
+                result = client.post_order(signed_order, orderType=OrderType.GTC)
             else:
                 # Limit order (GTC) - use size
                 order_args = OrderArgs(
@@ -426,10 +476,10 @@ class PolymarketClient:
                 result = client.create_and_post_order(order_args)
 
             return OrderResponse(
-                order_id=result.get("orderId", ""),
+                order_id=result.get("orderID", "") if isinstance(result, dict) else "",
                 status="posted",
                 accepted=True,
-                raw_response=result,
+                raw_response=result if isinstance(result, dict) else signed_order.dict(),
             )
 
         except Exception as e:

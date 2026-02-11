@@ -62,16 +62,54 @@ python scripts/auto_trade.py
 
 **⚠️ CAUTION: This will execute real trades with real money**
 
-```bash
-# Set trading mode + credentials
-export POLYMARKET_MODE=trading
-export POLYMARKET_PRIVATE_KEY=0x...
-export POLYMARKET_API_KEY=...
-export POLYMARKET_API_SECRET=...
-export POLYMARKET_API_PASSPHRASE=...
+Set up your `.env` file with trading credentials:
 
-# Run bot
+```bash
+# Trading mode
+POLYMARKET_MODE=trading
+
+# Gmail/Magic Link account (signature_type=1)
+POLYMARKET_PRIVATE_KEY=0x...
+POLYMARKET_FUNDER=0x...  # Your wallet address
+POLYMARKET_SIGNATURE_TYPE=1
+
+# API credentials (generate with setup_api_credentials.py)
+POLYMARKET_API_KEY=...
+POLYMARKET_API_SECRET=...
+POLYMARKET_API_PASSPHRASE=...
+```
+
+### 6. Run as background daemon (RECOMMENDED)
+
+**The bot must run continuously to trade 24/7.** Use the daemon script to keep it running even after terminal disconnect:
+
+```bash
+# Start bot (survives terminal disconnect & logout)
+./start_bot.sh start
+
+# Check status
+./start_bot.sh status
+
+# View live logs
+./start_bot.sh logs
+
+# Stop bot
+./start_bot.sh stop
+
+# Restart
+./start_bot.sh restart
+```
+
+**Important:** The daemon script uses `nohup` to detach from the terminal. Logs are written to `logs/bot_daemon.log`.
+
+### 7. Alternative: Run directly (for testing)
+
+```bash
+# Run in foreground (stops when terminal closes)
 python scripts/auto_trade.py
+
+# Single test cycle
+python scripts/auto_trade.py --once
 ```
 
 ## Architecture
@@ -87,6 +125,69 @@ polymarket/trading/
 scripts/
 └── auto_trade.py     # Main orchestration loop
 ```
+
+## Daemon Script
+
+The `start_bot.sh` script manages the bot as a background daemon process that survives terminal disconnects and SSH session closures.
+
+### Features
+
+- **Process Management**: Start, stop, restart, and check status
+- **PID Tracking**: Maintains PID file at `/tmp/polymarket_bot.pid`
+- **Log Management**: Writes to `logs/bot_daemon.log`
+- **Graceful Shutdown**: Waits 10 seconds for clean exit before force kill
+- **Session Independence**: Uses `nohup` to detach from terminal
+
+### Usage
+
+```bash
+# Start daemon
+./start_bot.sh start
+# Output: ✅ Bot started successfully (PID 12345)
+
+# Check status
+./start_bot.sh status
+# Output: ✅ Bot is running (PID 12345)
+#         Shows: PID, elapsed time, memory usage
+
+# View live logs
+./start_bot.sh logs
+# Tails logs/bot_daemon.log with live updates
+
+# Stop daemon
+./start_bot.sh stop
+# Output: 🛑 Stopping bot (PID 12345)...
+#         ✅ Bot stopped successfully
+
+# Restart (stop + start)
+./start_bot.sh restart
+```
+
+### How It Works
+
+1. **Start**: Launches `python3 -u scripts/auto_trade.py` with `nohup`
+2. **Detach**: Process runs in background, independent of terminal
+3. **PID File**: Saves process ID to `/tmp/polymarket_bot.pid`
+4. **Logs**: Redirects stdout/stderr to `logs/bot_daemon.log`
+5. **Persist**: Continues running even if you:
+   - Close terminal
+   - Logout from SSH
+   - Disconnect network
+   - Exit Claude Code session
+
+### When to Use
+
+**Use daemon script (recommended):**
+- Production/live trading
+- Running 24/7 unattended
+- Remote server deployment
+- Need to logout but keep bot running
+
+**Use direct Python (for testing):**
+- Development and debugging
+- Single test cycles (`--once` flag)
+- Want to see logs in terminal
+- Need to stop bot with Ctrl+C
 
 ## Risk Management
 
@@ -104,19 +205,131 @@ scripts/
 
 ## Monitoring
 
-Logs are written to:
-- Console: Structured logs (colorized)
-- File: `logs/auto_trade.log` (JSON format)
+### Log Files
 
-Key metrics logged:
-- BTC price and source
-- Sentiment score and confidence
-- Technical indicators (RSI, MACD, trend)
-- AI decision and reasoning
-- Risk validation results
-- Trade execution status
+When running with `./start_bot.sh`:
+- **Daemon logs**: `logs/bot_daemon.log` - Full structured logs with timestamps
+- **View live**: `./start_bot.sh logs` or `tail -f logs/bot_daemon.log`
+
+When running directly with `python scripts/auto_trade.py`:
+- **Console**: Structured logs (colorized) sent to stdout
+- **Optional file**: Set `BOT_LOG_FILE` in `.env` (disabled by default)
+
+### Key Metrics Logged
+
+Each 3-minute trading cycle logs:
+- **Data Collection** (2 minutes):
+  - BTC price from Binance
+  - Social sentiment from Tavily (Fear & Greed, trending, votes)
+  - Market microstructure from WebSocket (55+ trades analyzed)
+  - Whale activity detection (orders > $100)
+- **Technical Analysis**:
+  - RSI, MACD, EMA indicators (falls back to neutral on failure)
+- **Signal Aggregation**:
+  - Combined score from social + market signals
+  - Agreement multiplier (aligned signals boost confidence)
+- **AI Decision**:
+  - Action: BUY/SELL/HOLD
+  - Confidence: 0.0-1.0
+  - Reasoning: AI explanation
+  - Position size recommendation
+- **Risk Validation**:
+  - Confidence threshold check (default: 0.70)
+  - Position size limits
+  - Duplicate trade prevention
+  - Approval/rejection reason
+- **Trade Execution**:
+  - Order ID (if executed)
+  - Order type (GTC limit order with aggressive pricing)
+  - Status (posted/failed)
+
+### Example Log Output
+
+```
+[2026-02-11T00:31:08Z] [info] Starting trading cycle [cycle=1]
+[2026-02-11T00:31:09Z] [info] Found markets [count=1]
+[2026-02-11T00:31:09Z] [info] Connecting to Polymarket CLOB WebSocket [duration=120]
+[2026-02-11T00:31:10Z] [info] Social sentiment calculated [score=-0.23] [signal=STRONG_BEARISH]
+[2026-02-11T00:33:09Z] [info] Market microstructure calculated [score=-0.35] [whales=7]
+[2026-02-11T00:33:09Z] [info] Sentiment aggregated [final_score=-0.30] [signal=STRONG_BEARISH]
+[2026-02-11T00:33:25Z] [info] AI Decision [action=HOLD] [confidence=0.93] [reasoning='...']
+[2026-02-11T00:33:25Z] [info] Decision rejected by risk manager [reason='Action is HOLD']
+[2026-02-11T00:33:25Z] [info] Cycle completed [cycle=1]
+[2026-02-11T00:33:25Z] [info] Waiting 180 seconds until next cycle...
+```
+
+### Monitoring Commands
+
+```bash
+# Check if bot is running
+./start_bot.sh status
+
+# View live logs with colors
+./start_bot.sh logs
+
+# Check recent decisions
+tail -100 logs/bot_daemon.log | grep "AI Decision"
+
+# Check if any trades were executed
+tail -100 logs/bot_daemon.log | grep "Trade executed"
+
+# Monitor portfolio balance
+python -c "from polymarket.client import PolymarketClient; p = PolymarketClient().get_portfolio_summary(); print(f'Balance: \${p.usdc_balance:.2f}')"
+```
 
 ## Troubleshooting
+
+### Bot not running / stopped overnight
+**Symptom**: Bot process not found, no recent logs
+
+**Cause**: Bot was started without daemon script and terminal session closed
+
+**Fix**: Use `./start_bot.sh start` instead of running Python directly. The daemon script uses `nohup` to detach from terminal.
+
+```bash
+# Check if bot is running
+./start_bot.sh status
+
+# If not running, start it properly
+./start_bot.sh start
+```
+
+### Logs not showing / invisible
+**Symptom**: Only print() statements appear, no structured logs
+
+**Fixed in current version**: stdlib logging now properly configured. If you still see this:
+
+```bash
+# Verify Python is running with -u flag (unbuffered)
+ps aux | grep auto_trade
+
+# Should see: python3 -u scripts/auto_trade.py
+```
+
+### Bot keeps deciding HOLD / not trading
+**Symptom**: Bot runs but never places orders
+
+**This is normal!** The bot only trades when:
+1. Confidence ≥ 70% (configurable via `BOT_CONFIDENCE_THRESHOLD`)
+2. Signals are aligned (not conflicting)
+3. Market conditions are favorable
+
+Check recent decisions:
+```bash
+tail -100 logs/bot_daemon.log | grep "AI Decision"
+```
+
+Common reasons for HOLD:
+- **Bearish signals**: Market momentum is down, social sentiment is negative
+- **Conflicting indicators**: Whales buying but overall momentum is down
+- **Low confidence**: AI is uncertain about direction
+- **Already positioned**: Bot won't open duplicate positions
+
+To lower the threshold (more aggressive):
+```bash
+# In .env
+BOT_CONFIDENCE_THRESHOLD=0.60  # Default is 0.70
+```
 
 ### "No BTC markets found"
 - Markets may not be active during off-hours
@@ -131,6 +344,15 @@ Key metrics logged:
 - Check API key is valid
 - Sentiment will default to neutral (score=0.0)
 
+### WebSocket connection errors
+**Symptom**: "HTTP 404" or "server rejected WebSocket connection"
+
+**Fixed in current version**: Now uses correct CLOB WebSocket endpoint. If you still see this, check:
+```bash
+# Verify market microstructure is collecting data
+tail -f logs/bot_daemon.log | grep "Data collection complete"
+```
+
 ### Dependency errors
 ```bash
 # Install all dependencies
@@ -138,6 +360,18 @@ pip install -r requirements.txt
 
 # Test imports
 python -c "import ccxt, openai, tavily, pandas, numpy; print('OK')"
+```
+
+### Bot crashed / unresponsive
+```bash
+# Check status
+./start_bot.sh status
+
+# View recent logs for errors
+tail -100 logs/bot_daemon.log | grep -i "error"
+
+# Restart bot
+./start_bot.sh restart
 ```
 
 ## Safety Features

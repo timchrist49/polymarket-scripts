@@ -1,6 +1,8 @@
 import pytest
 import asyncio
+import json
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 from polymarket.trading.market_microstructure import MarketMicrostructureService
 from polymarket.config import Settings
 from polymarket.models import MarketSignals
@@ -291,3 +293,69 @@ async def test_websocket_connection_real():
 
     except Exception as e:
         pytest.skip(f"WebSocket connection failed: {e}")
+
+
+@pytest.mark.asyncio
+async def test_websocket_subscription_uses_correct_clob_format():
+    """
+    Test that WebSocket subscription uses correct CLOB format with token IDs.
+
+    CLOB WebSocket expects:
+    {
+        "type": "MARKET",
+        "assets_ids": ["token_id_1", "token_id_2"]
+    }
+
+    NOT the RTDS format:
+    {
+        "action": "subscribe",
+        "subscriptions": [{
+            "topic": "market",
+            "condition_id": "..."
+        }]
+    }
+    """
+    service = MarketMicrostructureService(Settings(), "test-condition-123")
+
+    # Token IDs to use for subscription
+    token_ids = [
+        "75436921419096805904008583680333623108653517040192373569717437397077840910753",
+        "2328222210416595233000723821528707301486180950666654837266138688670056541763"
+    ]
+
+    # Mock websockets.connect to capture what message is sent
+    sent_messages = []
+
+    mock_ws = AsyncMock()
+    mock_ws.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+    mock_ws.recv = AsyncMock(side_effect=asyncio.TimeoutError())  # Timeout immediately
+    mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
+    mock_ws.__aexit__ = AsyncMock(return_value=None)
+
+    with patch('websockets.connect', return_value=mock_ws):
+        try:
+            # This will timeout, but we just want to check the subscription message
+            await service.collect_market_data_with_token_ids(
+                token_ids=token_ids,
+                duration_seconds=1
+            )
+        except:
+            pass  # Expected to fail, we're just checking the message
+
+    # Verify a message was sent
+    assert len(sent_messages) > 0, "No WebSocket message was sent"
+
+    # Parse the message
+    message = json.loads(sent_messages[0])
+
+    # Verify CLOB format (not RTDS format)
+    assert "type" in message, "Message should have 'type' field (CLOB format)"
+    assert message["type"] == "market", "Message type should be 'market' (lowercase)"
+    assert "assets_ids" in message, "Message should have 'assets_ids' field"
+    assert message["assets_ids"] == token_ids, "Message should contain correct token IDs"
+
+    # Verify it's NOT using RTDS format
+    assert "action" not in message, "Message should NOT have 'action' field (RTDS format)"
+    assert "subscriptions" not in message, "Message should NOT have 'subscriptions' field (RTDS format)"
+    assert "topic" not in message, "Message should NOT have 'topic' field (RTDS format)"
+    assert "condition_id" not in message, "Message should NOT have 'condition_id' field"

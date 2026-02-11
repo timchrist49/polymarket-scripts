@@ -2,7 +2,31 @@
 
 Production-grade Python scripts for trading the "BTC Up or Down 15 Minutes" market on Polymarket.
 
-## Features
+## 🤖 Autonomous Trading Bot
+
+**NEW**: Fully autonomous trading bot that runs 24/7. See [README_BOT.md](./README_BOT.md) for complete documentation.
+
+**Quick Start:**
+```bash
+# Configure .env with trading credentials
+cp .env.example .env
+
+# Start bot as daemon (survives terminal disconnect)
+./start_bot.sh start
+
+# Monitor live
+./start_bot.sh logs
+```
+
+The bot:
+- Analyzes BTC price, social sentiment, and market microstructure every 3 minutes
+- Makes AI-powered trading decisions using GPT-4o-mini
+- Executes trades automatically with risk management
+- Runs as a background daemon independent of terminal sessions
+
+## Manual Trading Scripts
+
+For manual/scripted trading, use these individual scripts:
 
 - **fetch_markets.py**: Fetch market data, discover active BTC 15-min markets
 - **place_order.py**: Place buy/sell orders with dry-run mode
