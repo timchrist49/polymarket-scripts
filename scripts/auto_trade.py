@@ -69,6 +69,12 @@ class AutoTrader:
         # Track open positions for stop-loss
         self.open_positions: list[dict] = []
 
+    async def initialize(self) -> None:
+        """Initialize async resources before trading cycles."""
+        # Start BTC price WebSocket stream
+        await self.btc_service.start()
+        logger.info("Initialized Polymarket WebSocket for BTC prices")
+
     async def run_cycle(self) -> None:
         """Execute one trading cycle."""
         self.cycle_count += 1
@@ -77,11 +83,6 @@ class AutoTrader:
             cycle=self.cycle_count,
             timestamp=datetime.now().isoformat()
         )
-
-        # Start BTC price stream if not already running
-        if not hasattr(self.btc_service, '_stream') or self.btc_service._stream is None:
-            await self.btc_service.start()
-            logger.info("Started Polymarket WebSocket for BTC prices")
 
         try:
             # Step 1: Market Discovery - Find BTC 15-min markets
@@ -235,10 +236,13 @@ class AutoTrader:
 
             # Parse market slug for timing
             market_slug = market.slug or ""
-            start_time = self.market_tracker.parse_market_start(market_slug)
+            if not market_slug:
+                logger.warning("Market has no slug, skipping timing/price-to-beat", market_id=market.id)
+
+            start_time = self.market_tracker.parse_market_start(market_slug) if market_slug else None
 
             # Calculate time remaining
-            time_remaining = 0
+            time_remaining = None
             is_end_of_market = False
             if start_time:
                 time_remaining = self.market_tracker.calculate_time_remaining(start_time)
@@ -251,9 +255,9 @@ class AutoTrader:
                     is_end_phase=is_end_of_market
                 )
 
-            # Get or set price-to-beat
-            price_to_beat = self.market_tracker.get_price_to_beat(market_slug)
-            if price_to_beat is None and start_time:
+            # Get or set price-to-beat (only if we have a valid slug)
+            price_to_beat = self.market_tracker.get_price_to_beat(market_slug) if market_slug else None
+            if price_to_beat is None and start_time and market_slug:
                 # First time seeing this market - store current price as baseline
                 price_to_beat = btc_data.price
                 self.market_tracker.set_price_to_beat(market_slug, price_to_beat)
@@ -286,7 +290,7 @@ class AutoTrader:
                 "outcomes": market.outcomes if hasattr(market, 'outcomes') else ["Yes", "No"],
                 # NEW: Price-to-beat and timing context
                 "price_to_beat": price_to_beat,
-                "time_remaining_seconds": time_remaining,
+                "time_remaining_seconds": time_remaining or 900,  # Default to 15 min if None
                 "is_end_of_market": is_end_of_market
             }
 
@@ -472,6 +476,9 @@ class AutoTrader:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
+        # Initialize async resources
+        await self.initialize()
+
         while self.running:
             await self.run_cycle()
 
@@ -489,6 +496,7 @@ class AutoTrader:
 
     async def run_once(self) -> None:
         """Run a single cycle for testing."""
+        await self.initialize()
         await self.run_cycle()
         await self.btc_service.close()  # Now closes WebSocket
         await self.social_service.close()
