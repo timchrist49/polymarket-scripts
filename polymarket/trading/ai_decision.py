@@ -135,6 +135,43 @@ PRICE-TO-BEAT ANALYSIS:
         else:
             price_context = "PRICE-TO-BEAT: Not available (market just started)"
 
+        # NEW: Signal Validation Rules (only when price-to-beat available)
+        if has_price_to_beat:
+            validation_rules = f"""
+⚠️ SIGNAL VALIDATION RULES:
+
+You MUST check for contradictions between market signals and actual BTC movement:
+
+1. **BEARISH Signal + BTC Actually UP:**
+   - If aggregated market score < -0.3 (BEARISH)
+   - AND BTC is UP from price-to-beat (+{price_diff_pct:+.2f}%)
+   - → This is a CONTRADICTION - market is lagging behind reality
+   - → Decision: HOLD (do NOT bet NO when BTC is going UP)
+
+2. **BULLISH Signal + BTC Actually DOWN:**
+   - If aggregated market score > +0.3 (BULLISH)
+   - AND BTC is DOWN from price-to-beat ({price_diff_pct:+.2f}%)
+   - → This is a CONTRADICTION - market is lagging behind reality
+   - → Decision: HOLD (do NOT bet YES when BTC is going DOWN)
+
+3. **Signals ALIGN:**
+   - If market sentiment matches actual BTC direction
+   - → Proceed with normal confidence-based decision
+
+**Why This Matters:**
+- Polymarket sentiment shows what traders THINK, not what IS happening
+- The 2-minute collection window often lags actual BTC movement
+- Following contradictory signals leads to consistent losses
+- Example: Market says "bearish" based on old data, but BTC already bounced
+
+**When to Override:**
+- Only if you have VERY STRONG conviction (>0.95 confidence)
+- AND can explain in reasoning why the contradiction is temporary
+- Otherwise: HOLD and wait for signals to align
+"""
+        else:
+            validation_rules = ""
+
         # NEW: Timing context
         time_remaining = market.get("time_remaining_seconds", 900)
         is_end_of_market = market.get("is_end_of_market", False)
@@ -189,6 +226,8 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 
 {price_context}
 
+{validation_rules}
+
 {timing_context}
 
 {momentum_context}
@@ -240,9 +279,11 @@ RISK PARAMETERS:
 
 DECISION INSTRUCTIONS:
 1. USE YOUR REASONING TOKENS to analyze:
+   - ⚠️ CHECK VALIDATION RULES FIRST - any contradictions?
    - Price-to-beat direction (is current price up or down from start?)
+   - Actual BTC momentum (is BTC moving up or down right now?)
+   - Market signals (what does Polymarket sentiment say?)
    - Technical indicators alignment
-   - Sentiment signals (social + market microstructure)
    - Time remaining (end-of-market = established trend)
 
 2. CONSIDER END-OF-MARKET STRATEGY:
