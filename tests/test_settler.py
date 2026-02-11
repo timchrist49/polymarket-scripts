@@ -44,3 +44,55 @@ class TestTimestampParsing:
         timestamp = settler._parse_market_close_timestamp("")
 
         assert timestamp is None
+
+
+class TestOutcomeDetermination:
+    """Test determining YES/NO outcome from price comparison."""
+
+    def test_price_up_means_yes_wins(self):
+        """When close > start, UP won (YES)."""
+        db = PerformanceDatabase(":memory:")
+        settler = TradeSettler(db, btc_fetcher=None)
+
+        outcome = settler._determine_outcome(
+            btc_close_price=72000.0,
+            price_to_beat=70000.0
+        )
+
+        assert outcome == "YES"
+
+    def test_price_down_means_no_wins(self):
+        """When close < start, DOWN won (NO)."""
+        db = PerformanceDatabase(":memory:")
+        settler = TradeSettler(db, btc_fetcher=None)
+
+        outcome = settler._determine_outcome(
+            btc_close_price=69000.0,
+            price_to_beat=70000.0
+        )
+
+        assert outcome == "NO"
+
+    def test_price_tie_defaults_to_no(self):
+        """When close == start, default to NO (rare case)."""
+        db = PerformanceDatabase(":memory:")
+        settler = TradeSettler(db, btc_fetcher=None)
+
+        outcome = settler._determine_outcome(
+            btc_close_price=70000.0,
+            price_to_beat=70000.0
+        )
+
+        assert outcome == "NO"
+
+    def test_small_price_increase_still_yes(self):
+        """Even small increases count as YES."""
+        db = PerformanceDatabase(":memory:")
+        settler = TradeSettler(db, btc_fetcher=None)
+
+        outcome = settler._determine_outcome(
+            btc_close_price=70001.0,
+            price_to_beat=70000.0
+        )
+
+        assert outcome == "YES"

@@ -50,3 +50,23 @@ class TradeSettler:
             market_slug=market_slug
         )
         return None
+
+    def _determine_outcome(
+        self,
+        btc_close_price: float,
+        price_to_beat: float
+    ) -> str:
+        """
+        Determine which outcome won (YES or NO).
+
+        Args:
+            btc_close_price: BTC price at market close
+            price_to_beat: Baseline BTC price from cycle start
+
+        Returns:
+            "YES" if UP won, "NO" if DOWN won
+        """
+        if btc_close_price > price_to_beat:
+            return "YES"  # UP won
+        else:
+            return "NO"   # DOWN won (includes tie)
