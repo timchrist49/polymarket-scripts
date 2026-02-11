@@ -70,3 +70,42 @@ class TradeSettler:
             return "YES"  # UP won
         else:
             return "NO"   # DOWN won (includes tie)
+
+    def _calculate_profit_loss(
+        self,
+        action: str,
+        actual_outcome: str,
+        position_size: float,
+        executed_price: float
+    ) -> tuple[float, bool]:
+        """
+        Calculate profit/loss for a settled trade.
+
+        Polymarket binary mechanics:
+        - Shares bought: position_size / executed_price
+        - If win: Payout = shares × $1.00
+        - If loss: Payout = $0
+
+        Args:
+            action: "YES" or "NO"
+            actual_outcome: "YES" or "NO"
+            position_size: Dollar amount invested
+            executed_price: Price paid per share
+
+        Returns:
+            (profit_loss, is_win)
+        """
+        shares = position_size / executed_price
+
+        if (action == "YES" and actual_outcome == "YES") or \
+           (action == "NO" and actual_outcome == "NO"):
+            # Win - each share worth $1
+            payout = shares * 1.00
+            profit_loss = payout - position_size
+            is_win = True
+        else:
+            # Loss - shares worth $0
+            profit_loss = -position_size
+            is_win = False
+
+        return profit_loss, is_win
