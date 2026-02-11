@@ -100,9 +100,10 @@ class AIDecisionService:
     ) -> str:
         """Build the AI prompt with aggregated sentiment data."""
 
-        # Determine market type (UP or DOWN)
-        question = market.get("question", "").lower()
-        market_type = "UP" if "up" in question else "DOWN"
+        # Get market outcomes (e.g., ["Up", "Down"])
+        outcomes = market.get("outcomes", ["Yes", "No"])
+        yes_outcome = outcomes[0] if len(outcomes) > 0 else "Yes"
+        no_outcome = outcomes[1] if len(outcomes) > 1 else "No"
 
         yes_price = float(market.get("yes_price", 0.5))
         no_price = float(market.get("no_price", 0.5))
@@ -115,9 +116,10 @@ class AIDecisionService:
 
 CURRENT MARKET DATA:
 - BTC Price: ${btc_price.price:,.2f}
-- Market Type: BTC will go {market_type} in 15 minutes
-- Current YES odds: {yes_price:.2f}
-- Current NO odds: {no_price:.2f}
+- Market Question: {market.get("question", "Unknown")}
+- Token Outcomes:
+  * YES token = "{yes_outcome}" (current odds: {yes_price:.2f})
+  * NO token = "{no_outcome}" (current odds: {no_price:.2f})
 
 TECHNICAL INDICATORS (60-min analysis):
 - RSI(14): {technical.rsi:.1f} (Overbought >70, Oversold <30)
@@ -186,7 +188,14 @@ Return JSON with:
 
 Only trade if confidence >= {self.settings.bot_confidence_threshold}. Otherwise return HOLD.
 
-Remember: You are trading on whether BTC will go {market_type}. Buy YES if you think BTC will go {market_type}, buy NO if you think it will go the opposite."""
+ACTION MAPPING:
+- Return "YES" to buy the "{yes_outcome}" token (currently {yes_price:.2f} odds)
+- Return "NO" to buy the "{no_outcome}" token (currently {no_price:.2f} odds)
+- Return "HOLD" if signals are unclear or confidence is too low
+
+IMPORTANT: Choose the action that aligns with your signal direction:
+- BULLISH signals (BTC going up) → Buy token that profits from BTC going up
+- BEARISH signals (BTC going down) → Buy token that profits from BTC going down"""
 
     def _parse_decision(self, data: dict, token_id: str) -> TradingDecision:
         """Parse AI response into TradingDecision."""

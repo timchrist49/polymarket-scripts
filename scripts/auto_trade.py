@@ -226,16 +226,14 @@ class AutoTrader:
                 logger.warning("No token IDs found", market_id=market.id)
                 return
 
-            # Use first token (YES token)
-            token_id = token_ids[0]
-
-            # Build market data dict
+            # Build market data dict (don't select token yet - wait for AI decision)
             market_dict = {
-                "token_id": token_id,
+                "token_id": token_ids[0],  # Temporary, for logging only
                 "question": market.question,
                 "yes_price": market.best_bid or 0.50,
                 "no_price": market.best_ask or 0.50,
-                "active": market.active
+                "active": market.active,
+                "outcomes": market.outcomes if hasattr(market, 'outcomes') else ["Yes", "No"]
             }
 
             # Step 1: AI Decision - CHANGED: pass aggregated_sentiment
@@ -247,16 +245,39 @@ class AutoTrader:
                 portfolio_value=portfolio_value
             )
 
-            # Log decision
+            # Map AI decision to correct token based on outcomes
+            # Outcomes are typically ["Up", "Down"] or ["Yes", "No"]
+            # AI returns "YES" to buy first outcome, "NO" to buy second outcome
+            if decision.action == "YES":
+                token_id = token_ids[0]  # First outcome (e.g., "Up")
+                token_name = market_dict["outcomes"][0]
+            elif decision.action == "NO":
+                token_id = token_ids[1]  # Second outcome (e.g., "Down")
+                token_name = market_dict["outcomes"][1]
+            else:
+                token_id = None
+                token_name = "HOLD"
+
+            # Log decision with token mapping
             if self.settings.bot_log_decisions:
                 logger.info(
                     "AI Decision",
                     market_id=market.id,
                     action=decision.action,
+                    token=token_name,
                     confidence=f"{decision.confidence:.2f}",
                     reasoning=decision.reasoning,
                     position_size=str(decision.position_size)
                 )
+
+            # Skip if HOLD decision
+            if decision.action == "HOLD" or token_id is None:
+                logger.info(
+                    "Decision: HOLD",
+                    market_id=market.id,
+                    reason=decision.reasoning
+                )
+                return
 
             # Step 2: Risk Validation
             validation = await self.risk_manager.validate_decision(
@@ -276,7 +297,7 @@ class AutoTrader:
 
             # Step 3: Execute Trade
             if self.settings.mode == "trading":
-                await self._execute_trade(market, decision, validation.adjusted_position, token_id)
+                await self._execute_trade(market, decision, validation.adjusted_position, token_id, token_name)
             else:
                 logger.info(
                     "Dry run - would execute trade",
@@ -292,7 +313,7 @@ class AutoTrader:
                 error=str(e)
             )
 
-    async def _execute_trade(self, market, decision, amount: Decimal, token_id: str) -> None:
+    async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str) -> None:
         """Execute a trade order."""
         try:
             from polymarket.models import OrderRequest
@@ -312,6 +333,7 @@ class AutoTrader:
                 "Trade executed",
                 market_id=market.id,
                 action=decision.action,
+                token=token_name,
                 amount=str(amount),
                 order_id=result.order_id
             )
