@@ -22,6 +22,20 @@ Autonomous trading bot for Polymarket BTC 15-minute up/down markets.
   - Uses FOK (Fill-or-Kill) market orders for guaranteed execution
   - Tracks price staleness and slippage for self-reflection
 
+- **Self-Reflection & Auto-Optimization (ACTIVE):**
+  - AI-powered performance analysis using OpenAI
+  - Triggers: Every 10 trades + After 3 consecutive losses
+  - Analyzes win rate, profit/loss, and signal performance
+  - Identifies winning/losing patterns automatically
+  - Generates parameter adjustment recommendations
+  - **Tiered Autonomy System:**
+    - Tier 1 (±5%): Auto-adjusts small parameters immediately
+    - Tier 2 (5-20%): Requests Telegram approval (4hr timeout)
+    - Tier 3 (>20%): Emergency pause for dangerous changes
+  - Safe bounds: Confidence (50-95%), Position ($5-50), Exposure (10-80%)
+  - All adjustments logged to database with reasoning
+  - Telegram notifications for all reflection events
+
 - **Trading Cycle:**
   - Runs every 3 minutes (configurable)
   - Discovers active BTC 15-min markets
@@ -58,6 +72,11 @@ BOT_MAX_POSITION_DOLLARS=5.00  # Absolute dollar cap
 # JIT Price Execution Safety
 TRADE_MAX_UNFAVORABLE_MOVE_PCT=10.0  # Skip if price moved 10%+ worse
 TRADE_MAX_FAVORABLE_WARN_PCT=5.0     # Warn if price moved 5%+ better
+
+# Telegram Notifications (for self-reflection system)
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
 ```
 
 ### 3. Test in dry-run mode

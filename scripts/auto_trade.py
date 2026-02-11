@@ -882,6 +882,26 @@ class AutoTrader:
                     )
                 return
 
+            # Check if market is still active (rollover protection)
+            if not fresh_market.active:
+                logger.warning(
+                    "Trade skipped - market expired/rolled over",
+                    market_id=fresh_market.id,
+                    token=token_name,
+                    action=decision.action
+                )
+                # Update metrics with skip reason
+                if trade_id > 0:
+                    await self.performance_tracker.update_execution_metrics(
+                        trade_id=trade_id,
+                        analysis_price=analysis_price,
+                        execution_price=None,
+                        price_staleness_seconds=int((datetime.now() - cycle_start_time).total_seconds()),
+                        price_movement_favorable=None,
+                        skipped_unfavorable_move=True
+                    )
+                return
+
             # Calculate fresh execution price from fresh market
             if decision.action == "YES":
                 execution_price = fresh_market.best_ask if fresh_market.best_ask else 0.50
