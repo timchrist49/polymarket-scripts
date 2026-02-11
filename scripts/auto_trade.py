@@ -108,7 +108,7 @@ class AutoTrader:
                 return None
 
             # Get oldest price in 5-minute window
-            price_5min_ago = Decimal(str(history[0]['price']))
+            price_5min_ago = history[0].price
 
             # Calculate percentage change
             momentum_pct = float((current_price - price_5min_ago) / price_5min_ago * 100)
