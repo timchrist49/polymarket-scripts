@@ -40,8 +40,15 @@ class BTCPriceService:
         if self._stream is None:
             self._stream = CryptoPriceStream(self.settings)
             self._stream_task = asyncio.create_task(self._stream.start())
-            await asyncio.sleep(1)  # Wait for connection
-            logger.info("BTCPriceService started with Polymarket WebSocket")
+            await asyncio.sleep(1)  # Initial connection time
+
+            # Wait for connection and first price (up to 5 seconds)
+            for _ in range(10):
+                if self._stream.is_connected() and await self._stream.get_current_price():
+                    break
+                await asyncio.sleep(0.5)
+
+            logger.info("BTCPriceService started with Polymarket WebSocket", connected=self._stream.is_connected() if self._stream else False)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Lazy init of HTTP session."""
@@ -59,7 +66,7 @@ class BTCPriceService:
                 return self._cache
 
         # Try Polymarket WebSocket first
-        if self._stream:
+        if self._stream and self._stream.is_connected():
             data = await self._stream.get_current_price()
             if data:
                 self._cache = data
