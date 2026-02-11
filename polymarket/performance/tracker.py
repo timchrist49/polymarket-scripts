@@ -15,14 +15,16 @@ logger = structlog.get_logger()
 class PerformanceTracker:
     """Tracks trading performance and stores to database."""
 
-    def __init__(self, db_path: str = "data/performance.db"):
+    def __init__(self, db_path: str = "data/performance.db", db: Optional[PerformanceDatabase] = None):
         """
         Initialize performance tracker.
 
         Args:
             db_path: Path to SQLite database (':memory:' for testing)
+            db: Existing database instance (for testing with shared DB)
         """
-        self.db = PerformanceDatabase(db_path)
+        self.db = db if db is not None else PerformanceDatabase(db_path)
+        self._owns_db = (db is None)
         logger.info("Performance tracker initialized")
 
     async def log_decision(
@@ -124,4 +126,5 @@ class PerformanceTracker:
 
     def close(self):
         """Close database connection."""
-        self.db.close()
+        if self._owns_db:
+            self.db.close()
