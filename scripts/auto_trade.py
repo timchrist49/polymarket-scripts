@@ -37,6 +37,7 @@ from polymarket.trading.signal_aggregator import SignalAggregator
 from polymarket.trading.technical import TechnicalAnalysis
 from polymarket.trading.ai_decision import AIDecisionService
 from polymarket.trading.risk import RiskManager
+from polymarket.trading.market_tracker import MarketTracker
 
 app = typer.Typer(help="Autonomous Polymarket Trading Bot")
 logger = structlog.get_logger()
@@ -57,6 +58,7 @@ class AutoTrader:
         self.aggregator = SignalAggregator()
         self.ai_service = AIDecisionService(settings)
         self.risk_manager = RiskManager(settings)
+        self.market_tracker = MarketTracker(settings)
 
         # State tracking
         self.cycle_count = 0
@@ -75,6 +77,11 @@ class AutoTrader:
             cycle=self.cycle_count,
             timestamp=datetime.now().isoformat()
         )
+
+        # Start BTC price stream if not already running
+        if not hasattr(self.btc_service, '_stream') or self.btc_service._stream is None:
+            await self.btc_service.start()
+            logger.info("Started Polymarket WebSocket for BTC prices")
 
         try:
             # Step 1: Market Discovery - Find BTC 15-min markets
@@ -226,14 +233,61 @@ class AutoTrader:
                 logger.warning("No token IDs found", market_id=market.id)
                 return
 
-            # Build market data dict (don't select token yet - wait for AI decision)
+            # Parse market slug for timing
+            market_slug = market.slug or ""
+            start_time = self.market_tracker.parse_market_start(market_slug)
+
+            # Calculate time remaining
+            time_remaining = 0
+            is_end_of_market = False
+            if start_time:
+                time_remaining = self.market_tracker.calculate_time_remaining(start_time)
+                is_end_of_market = self.market_tracker.is_end_of_market(start_time)
+
+                logger.info(
+                    "Market timing",
+                    market_id=market.id,
+                    time_remaining=f"{time_remaining//60}m {time_remaining%60}s",
+                    is_end_phase=is_end_of_market
+                )
+
+            # Get or set price-to-beat
+            price_to_beat = self.market_tracker.get_price_to_beat(market_slug)
+            if price_to_beat is None and start_time:
+                # First time seeing this market - store current price as baseline
+                price_to_beat = btc_data.price
+                self.market_tracker.set_price_to_beat(market_slug, price_to_beat)
+                logger.info(
+                    "Price-to-beat set",
+                    market_id=market.id,
+                    price=f"${price_to_beat:,.2f}"
+                )
+
+            # Calculate price difference
+            if price_to_beat:
+                diff, diff_pct = self.market_tracker.calculate_price_difference(
+                    btc_data.price, price_to_beat
+                )
+                logger.info(
+                    "Price comparison",
+                    current=f"${btc_data.price:,.2f}",
+                    price_to_beat=f"${price_to_beat:,.2f}",
+                    difference=f"${diff:+,.2f}",
+                    percentage=f"{diff_pct:+.2f}%"
+                )
+
+            # Build market data dict with ALL context
             market_dict = {
                 "token_id": token_ids[0],  # Temporary, for logging only
                 "question": market.question,
                 "yes_price": market.best_bid or 0.50,
                 "no_price": market.best_ask or 0.50,
                 "active": market.active,
-                "outcomes": market.outcomes if hasattr(market, 'outcomes') else ["Yes", "No"]
+                "outcomes": market.outcomes if hasattr(market, 'outcomes') else ["Yes", "No"],
+                # NEW: Price-to-beat and timing context
+                "price_to_beat": price_to_beat,
+                "time_remaining_seconds": time_remaining,
+                "is_end_of_market": is_end_of_market
             }
 
             # Step 1: AI Decision - CHANGED: pass aggregated_sentiment
@@ -427,19 +481,19 @@ class AutoTrader:
                 await asyncio.sleep(self.interval)
 
         # Cleanup
-        await self.btc_service.close()
-        await self.social_service.close()  # NEW
+        await self.btc_service.close()  # Now closes WebSocket
+        await self.social_service.close()
         if self.market_service:
-            await self.market_service.close()  # NEW
+            await self.market_service.close()
         logger.info("AutoTrader shutdown complete")
 
     async def run_once(self) -> None:
         """Run a single cycle for testing."""
         await self.run_cycle()
-        await self.btc_service.close()
-        await self.social_service.close()  # NEW
+        await self.btc_service.close()  # Now closes WebSocket
+        await self.social_service.close()
         if self.market_service:
-            await self.market_service.close()  # NEW
+            await self.market_service.close()
 
 
 @app.command()
