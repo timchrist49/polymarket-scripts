@@ -69,8 +69,8 @@ class AIDecisionService:
                         },
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=1,  # GPT-5-Nano requires temp=1
-                    reasoning_effort=self.settings.openai_reasoning_effort,  # low/medium/high
+                    temperature=0.3,  # Low temperature for consistent trading decisions
+                    reasoning_effort=self.settings.openai_reasoning_effort,  # minimal/low/medium/high (API parameter, not create() kwarg)
                     max_tokens=1000,  # Increased for reasoning tokens
                     response_format={"type": "json_object"}
                 ),

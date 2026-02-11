@@ -112,7 +112,7 @@ class Settings:
     )
     # === OpenAI GPT-5-Nano Configuration ===
     openai_reasoning_effort: str = field(
-        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "medium")
+        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "low")  # low=faster for 15-min markets
     )
 
     # === Tavily Configuration ===
