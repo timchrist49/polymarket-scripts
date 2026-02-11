@@ -185,6 +185,17 @@ class Settings:
         default_factory=lambda: os.getenv("EMERGENCY_PAUSE_ENABLED", "false").lower() == "true"
     )
 
+    # === Settlement Configuration ===
+    settlement_interval_minutes: int = field(
+        default_factory=lambda: int(os.getenv("SETTLEMENT_INTERVAL_MINUTES", "10"))
+    )
+    settlement_batch_size: int = field(
+        default_factory=lambda: int(os.getenv("SETTLEMENT_BATCH_SIZE", "50"))
+    )
+    settlement_alert_lag_hours: int = field(
+        default_factory=lambda: int(os.getenv("SETTLEMENT_ALERT_LAG_HOURS", "1"))
+    )
+
     def __post_init__(self):
         """Validate settings based on mode."""
         if self.mode == "trading":
