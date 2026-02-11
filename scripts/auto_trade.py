@@ -183,6 +183,20 @@ class AutoTrader:
                 self.market_service.get_market_score(),
             )
 
+            # Calculate actual BTC momentum (last 5 minutes) - ONCE PER LOOP
+            btc_momentum = await self._get_btc_momentum(
+                self.btc_service,
+                btc_data.price
+            )
+
+            # Log momentum if available
+            if btc_momentum:
+                logger.info(
+                    "BTC actual movement",
+                    direction=btc_momentum['direction'],
+                    change_pct=f"{btc_momentum['momentum_pct']:+.2f}%"
+                )
+
             logger.info(
                 "Data collected",
                 btc_price=f"${btc_data.price:,.2f}",
@@ -244,7 +258,8 @@ class AutoTrader:
                 await self._process_market(
                     market, btc_data, indicators,
                     aggregated_sentiment,  # CHANGED: pass aggregated instead of social
-                    portfolio_value
+                    portfolio_value,
+                    btc_momentum  # NEW: pass momentum calculated once per loop
                 )
 
             # Step 7: Stop-loss check
@@ -288,24 +303,11 @@ class AutoTrader:
         btc_data,
         indicators,
         aggregated_sentiment,  # CHANGED from sentiment
-        portfolio_value: Decimal
+        portfolio_value: Decimal,
+        btc_momentum: dict | None  # NEW: momentum calculated once per loop
     ) -> None:
         """Process a single market for trading decision."""
         try:
-            # Calculate actual BTC momentum (last 5 minutes)
-            btc_momentum = await self._get_btc_momentum(
-                self.btc_service,
-                btc_data.price
-            )
-
-            # Log momentum if available
-            if btc_momentum:
-                logger.info(
-                    "BTC actual movement",
-                    direction=btc_momentum['direction'],
-                    change_pct=f"{btc_momentum['momentum_pct']:+.2f}%"
-                )
-
             # Get token IDs
             token_ids = market.get_token_ids()
             if not token_ids:
