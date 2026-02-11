@@ -179,14 +179,15 @@ The `start_bot.sh` script manages the bot as a background daemon process that su
 
 ### GPT-5-Nano with Reasoning Tokens
 - Uses OpenAI's GPT-5-Nano model with reasoning tokens for better analysis
-- Temperature locked at 1 (model requirement)
+- Temperature set to 0.3 for consistent trading decisions
 - Configurable reasoning effort: low/medium/high
 - More thorough signal analysis before decisions
 
 ### Polymarket WebSocket Integration
 - Real-time BTC prices from Polymarket's `crypto_prices` WebSocket feed
 - Ensures price consistency with market resolution
-- Falls back to Binance if WebSocket unavailable
+- Automatic fallback to Binance if WebSocket connection fails or returns no data
+- Transparent switching - bot continues operating seamlessly
 - Eliminates polling delays
 
 ### Price-to-Beat Tracking
@@ -440,10 +441,11 @@ python scripts/auto_trade.py --interval 60
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENAI_API_KEY` | - | OpenAI API key (required) |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Model for decisions |
+| `OPENAI_MODEL` | `gpt-5-nano` | Model for decisions |
+| `OPENAI_REASONING_EFFORT` | `medium` | Reasoning depth (low/medium/high) |
 | `TAVILY_API_KEY` | - | Tavily API key (required) |
-| `BTC_PRICE_SOURCE` | `binance` | Price source (binance/coingecko) |
-| `BTC_PRICE_CACHE_SECONDS` | `30` | Cache TTL for BTC price |
+| `BTC_PRICE_SOURCE` | `polymarket` | Price source (polymarket/binance/coingecko) |
+| `BTC_PRICE_CACHE_SECONDS` | `10` | Cache TTL for BTC price |
 | `BOT_INTERVAL_SECONDS` | `180` | Cycle interval |
 | `BOT_CONFIDENCE_THRESHOLD` | `0.75` | Min confidence to trade |
 | `BOT_MAX_POSITION_PERCENT` | `0.10` | Max position (% of portfolio) |
