@@ -40,6 +40,7 @@ from polymarket.trading.risk import RiskManager
 from polymarket.trading.market_tracker import MarketTracker
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
+from polymarket.telegram.bot import TelegramBot
 
 app = typer.Typer(help="Autonomous Polymarket Trading Bot")
 logger = structlog.get_logger()
@@ -62,9 +63,10 @@ class AutoTrader:
         self.risk_manager = RiskManager(settings)
         self.market_tracker = MarketTracker(settings)
         self.performance_tracker = PerformanceTracker()
+        self.telegram_bot = TelegramBot(settings)  # Initialize Telegram bot
         self.cleanup_scheduler = CleanupScheduler(
             db=self.performance_tracker.db,
-            telegram=None,  # No telegram integration yet
+            telegram=self.telegram_bot,  # Pass Telegram bot instance
             interval_hours=168,  # Weekly
             days_threshold=30
         )
@@ -549,6 +551,44 @@ class AutoTrader:
                 error=str(e)
             )
 
+    async def _get_fresh_market_data(self, market_id: str) -> Market:
+        """
+        Fetch fresh market data immediately before order execution.
+
+        Args:
+            market_id: The market ID to fetch
+
+        Returns:
+            Market object with current best_bid/best_ask prices
+
+        Raises:
+            Exception: If market not found or fetch fails
+        """
+        try:
+            # Refetch the current market to get latest prices
+            fresh_market = self.client.discover_btc_15min_market()
+
+            # Verify it's the same market
+            if fresh_market.id != market_id:
+                logger.warning(
+                    "Fresh market ID mismatch",
+                    expected=market_id,
+                    got=fresh_market.id
+                )
+
+            logger.info(
+                "Fetched fresh market data",
+                market_id=fresh_market.id,
+                best_ask=f"{fresh_market.best_ask:.3f}",
+                best_bid=f"{fresh_market.best_bid:.3f}"
+            )
+
+            return fresh_market
+
+        except Exception as e:
+            logger.error("Failed to fetch fresh market data", market_id=market_id, error=str(e))
+            raise
+
     async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str, market_price: float) -> None:
         """Execute a trade order."""
         try:
@@ -580,6 +620,19 @@ class AutoTrader:
                 amount=str(amount),
                 order_id=result.order_id
             )
+
+            # Send Telegram notification
+            try:
+                await self.telegram_bot.send_trade_alert(
+                    market_slug=market.slug or f"Market {market.id}",
+                    action=decision.action,
+                    confidence=decision.confidence,
+                    position_size=float(amount),
+                    price=market_price,
+                    reasoning=decision.reasoning
+                )
+            except Exception as e:
+                logger.warning("Failed to send Telegram notification", error=str(e))
 
             # Track position for stop-loss
             self.open_positions.append({
