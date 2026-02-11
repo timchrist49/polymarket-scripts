@@ -401,6 +401,14 @@ class AutoTrader:
                 "btc_momentum": btc_momentum,  # Will be None if unavailable
             }
 
+            logger.info(
+                "Market prices",
+                market_id=market.id,
+                yes_price=f"{market_dict['yes_price']:.3f}",
+                no_price=f"{market_dict['no_price']:.3f}",
+                outcomes=market_dict["outcomes"]
+            )
+
             # Step 1: AI Decision - CHANGED: pass aggregated_sentiment
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
@@ -462,7 +470,10 @@ class AutoTrader:
 
             # Step 3: Execute Trade
             if self.settings.mode == "trading":
-                await self._execute_trade(market, decision, validation.adjusted_position, token_id, token_name)
+                # Determine market price based on decision
+                # For BUY orders, use ask price (what sellers want)
+                market_price = market.best_ask if market.best_ask else 0.50
+                await self._execute_trade(market, decision, validation.adjusted_position, token_id, token_name, market_price)
             else:
                 logger.info(
                     "Dry run - would execute trade",
@@ -478,16 +489,23 @@ class AutoTrader:
                 error=str(e)
             )
 
-    async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str) -> None:
+    async def _execute_trade(self, market, decision, amount: Decimal, token_id: str, token_name: str, market_price: float) -> None:
         """Execute a trade order."""
         try:
             from polymarket.models import OrderRequest
+
+            logger.info(
+                "Order pricing",
+                token=token_name,
+                market_price=f"{market_price:.3f}",
+                action=decision.action
+            )
 
             # Create order request
             order_request = OrderRequest(
                 token_id=token_id,
                 side="BUY",  # Always BUY for our decision (YES or NO token)
-                price=0.50,  # Market order approximation
+                price=market_price,  # Use actual market price
                 size=float(amount),
                 order_type="market"
             )
