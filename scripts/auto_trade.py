@@ -40,6 +40,8 @@ from polymarket.trading.risk import RiskManager
 from polymarket.trading.market_tracker import MarketTracker
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
+from polymarket.performance.reflection import ReflectionEngine
+from polymarket.performance.adjuster import ParameterAdjuster, AdjustmentTier
 from polymarket.telegram.bot import TelegramBot
 
 app = typer.Typer(help="Autonomous Polymarket Trading Bot")
@@ -71,9 +73,23 @@ class AutoTrader:
             days_threshold=30
         )
 
+        # Self-reflection and parameter adjustment
+        self.reflection_engine = ReflectionEngine(
+            db=self.performance_tracker.db,
+            settings=settings
+        )
+        self.parameter_adjuster = ParameterAdjuster(
+            settings=settings,
+            db=self.performance_tracker.db,
+            telegram=self.telegram_bot
+        )
+
         # State tracking
         self.cycle_count = 0
         self.trades_today = 0
+        self.total_trades = 0  # Track total trades for reflection trigger
+        self.consecutive_losses = 0  # Track consecutive losses for reflection trigger
+        self.last_trade_was_loss = False  # Track last trade outcome
         self.pnl_today = Decimal("0")
         self.running = True
 
@@ -90,6 +106,150 @@ class AutoTrader:
         # Start cleanup scheduler in background
         asyncio.create_task(self.cleanup_scheduler.start())
         logger.info("Cleanup scheduler started (runs weekly)")
+        logger.info("Self-reflection system enabled (triggers: 10 trades, 3 consecutive losses)")
+
+    async def _trigger_reflection(self, trigger_type: str) -> None:
+        """
+        Trigger reflection analysis and process recommendations.
+
+        Args:
+            trigger_type: '10_trades', '3_losses', or 'end_of_day'
+        """
+        try:
+            logger.info(
+                "Triggering self-reflection",
+                trigger_type=trigger_type,
+                total_trades=self.total_trades,
+                consecutive_losses=self.consecutive_losses
+            )
+
+            # Run reflection analysis
+            insights = await self.reflection_engine.analyze_performance(
+                trigger_type=trigger_type,
+                trades_analyzed=self.total_trades
+            )
+
+            # Send insights to Telegram
+            if insights and insights.get("insights"):
+                insights_text = "\n".join(f"• {i}" for i in insights["insights"])
+                await self.telegram_bot.send_reflection_summary(
+                    trigger_type=trigger_type,
+                    insights_text=insights_text,
+                    trades_analyzed=self.total_trades
+                )
+
+            # Process recommendations
+            if insights and insights.get("recommendations"):
+                await self._process_recommendations(insights["recommendations"])
+
+        except Exception as e:
+            logger.error("Reflection failed", error=str(e), trigger_type=trigger_type)
+
+    async def _process_recommendations(self, recommendations: list) -> None:
+        """
+        Process reflection recommendations and apply adjustments.
+
+        Args:
+            recommendations: List of parameter adjustment recommendations
+        """
+        for rec in recommendations:
+            try:
+                parameter_name = rec.get("parameter")
+                current_value = rec.get("current")
+                recommended_value = rec.get("recommended")
+                reason = rec.get("reason", "AI recommendation")
+
+                if not all([parameter_name, current_value is not None, recommended_value is not None]):
+                    logger.warning("Incomplete recommendation", recommendation=rec)
+                    continue
+
+                # Validate adjustment
+                if not self.parameter_adjuster.validate_adjustment(parameter_name, recommended_value):
+                    logger.warning(
+                        "Recommendation rejected - outside safe bounds",
+                        parameter=parameter_name,
+                        value=recommended_value
+                    )
+                    continue
+
+                # Classify tier
+                tier = self.parameter_adjuster.classify_tier(
+                    parameter_name=parameter_name,
+                    current_value=current_value,
+                    new_value=recommended_value
+                )
+
+                logger.info(
+                    "Processing recommendation",
+                    parameter=parameter_name,
+                    current=current_value,
+                    recommended=recommended_value,
+                    tier=tier.value
+                )
+
+                # Apply adjustment (handles approval for Tier 2, pause for Tier 3)
+                applied = await self.parameter_adjuster.apply_adjustment(
+                    parameter_name=parameter_name,
+                    old_value=current_value,
+                    new_value=recommended_value,
+                    reason=reason,
+                    tier=tier
+                )
+
+                if applied:
+                    # Update settings in memory
+                    if hasattr(self.settings, parameter_name):
+                        setattr(self.settings, parameter_name, recommended_value)
+                        logger.info(
+                            "Parameter adjusted",
+                            parameter=parameter_name,
+                            old_value=current_value,
+                            new_value=recommended_value,
+                            tier=tier.value
+                        )
+                    else:
+                        logger.error("Unknown parameter name", parameter=parameter_name)
+
+            except Exception as e:
+                logger.error("Failed to process recommendation", error=str(e), rec=rec)
+
+    async def _check_consecutive_losses(self) -> None:
+        """Check if we have 3 consecutive losses and trigger reflection."""
+        try:
+            cursor = self.performance_tracker.db.conn.cursor()
+
+            # Get last 3 trades with known outcomes
+            cursor.execute("""
+                SELECT is_win, action
+                FROM trades
+                WHERE is_win IS NOT NULL
+                ORDER BY timestamp DESC
+                LIMIT 3
+            """)
+
+            rows = cursor.fetchall()
+
+            if len(rows) >= 3:
+                # Check if all 3 are losses
+                recent_losses = [row['is_win'] == 0 for row in rows]
+
+                if all(recent_losses):
+                    # Only trigger once per streak
+                    if not self.last_trade_was_loss or self.consecutive_losses < 3:
+                        self.consecutive_losses = 3
+                        self.last_trade_was_loss = True
+                        logger.warning(
+                            "Detected 3 consecutive losses - triggering reflection",
+                            recent_trades=[row['action'] for row in rows]
+                        )
+                        asyncio.create_task(self._trigger_reflection("3_losses"))
+                else:
+                    # Reset streak
+                    self.consecutive_losses = 0
+                    self.last_trade_was_loss = False
+
+        except Exception as e:
+            logger.error("Failed to check consecutive losses", error=str(e))
 
     def _check_emergency_pause(self) -> bool:
         """Check if emergency pause flag is set."""
@@ -544,6 +704,17 @@ class AutoTrader:
                     token_id, token_name, market_price,
                     trade_id, cycle_start_time
                 )
+
+                # Track trades for reflection triggers
+                self.total_trades += 1
+
+                # Trigger reflection every 10 trades
+                if self.total_trades % 10 == 0:
+                    asyncio.create_task(self._trigger_reflection("10_trades"))
+
+                # Check for consecutive losses trigger (based on database)
+                await self._check_consecutive_losses()
+
             else:
                 logger.info(
                     "Dry run - would execute trade",

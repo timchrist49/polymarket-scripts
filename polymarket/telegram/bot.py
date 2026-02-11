@@ -236,3 +236,33 @@ To resume:
 """
 
         await self._send_message(message)
+
+    async def send_reflection_summary(
+        self,
+        trigger_type: str,
+        insights_text: str,
+        trades_analyzed: int
+    ):
+        """Send reflection analysis summary."""
+        if not self._bot:
+            return
+
+        # Format trigger type for display
+        trigger_display = {
+            "10_trades": "10 Trades Milestone",
+            "3_losses": "3 Consecutive Losses",
+            "end_of_day": "End of Day Review"
+        }.get(trigger_type, trigger_type)
+
+        message = f"""🤖 **Self-Reflection Analysis**
+
+**Trigger:** {trigger_display}
+**Trades Analyzed:** {trades_analyzed}
+
+**Key Insights:**
+{insights_text}
+
+The bot will now process recommendations and adjust parameters according to the tiered autonomy system.
+"""
+
+        await self._send_message(message)
