@@ -69,16 +69,25 @@ class AIDecisionService:
                         },
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.3,  # Low temperature for consistent trading decisions
-                    reasoning_effort=self.settings.openai_reasoning_effort,  # minimal/low/medium/high (API parameter, not create() kwarg)
-                    max_tokens=1000,  # Increased for reasoning tokens
+                    temperature=1.0,  # GPT-5-Nano only supports default temperature=1.0
+                    reasoning_effort=self.settings.openai_reasoning_effort,  # minimal/low/medium/high
+                    max_completion_tokens=8000,  # Increased for reasoning tokens (medium effort ~2k-4k reasoning + 1k output)
                     response_format={"type": "json_object"}
                 ),
                 timeout=30.0  # Increased timeout for reasoning
             )
 
-            # Parse response
+            # Parse response (handle GPT-5-Nano reasoning format)
             content = response.choices[0].message.content
+
+            # Log response for debugging
+            if not content or content.strip() == "":
+                # GPT-5-Nano may return empty content with reasoning tokens
+                logger.warning("Empty content from GPT-5-Nano, using refusal if present")
+                if hasattr(response.choices[0].message, 'refusal') and response.choices[0].message.refusal:
+                    raise ValueError(f"Model refused: {response.choices[0].message.refusal}")
+                raise ValueError("Empty response from AI model")
+
             decision_data = json.loads(content)
 
             # Validate and create decision
