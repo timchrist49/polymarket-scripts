@@ -348,14 +348,29 @@ class AutoTrader:
             # Get or set price-to-beat (only if we have a valid slug)
             price_to_beat = self.market_tracker.get_price_to_beat(market_slug) if market_slug else None
             if price_to_beat is None and start_time and market_slug:
-                # First time seeing this market - store current price as baseline
-                price_to_beat = btc_data.price
-                self.market_tracker.set_price_to_beat(market_slug, price_to_beat)
-                logger.info(
-                    "Price-to-beat set",
-                    market_id=market.id,
-                    price=f"${price_to_beat:,.2f}"
-                )
+                # First time seeing this market - fetch historical price at market start
+                start_timestamp = int(start_time.timestamp())
+                historical_price = await self.btc_service.get_price_at_timestamp(start_timestamp)
+
+                if historical_price:
+                    price_to_beat = historical_price
+                    self.market_tracker.set_price_to_beat(market_slug, price_to_beat)
+                    logger.info(
+                        "Price-to-beat set from historical data",
+                        market_id=market.id,
+                        market_start=start_time.isoformat(),
+                        price=f"${price_to_beat:,.2f}"
+                    )
+                else:
+                    # Fallback to current price if historical fetch fails
+                    price_to_beat = btc_data.price
+                    self.market_tracker.set_price_to_beat(market_slug, price_to_beat)
+                    logger.warning(
+                        "Price-to-beat fallback to current price",
+                        market_id=market.id,
+                        reason="Historical price fetch failed",
+                        price=f"${price_to_beat:,.2f}"
+                    )
 
             # Calculate price difference
             if price_to_beat:

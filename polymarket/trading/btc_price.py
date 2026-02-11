@@ -157,6 +157,50 @@ class BTCPriceService:
             logger.error("Failed to fetch price history", error=str(e))
             raise
 
+    async def get_price_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+        """
+        Get BTC price at a specific Unix timestamp.
+
+        Args:
+            timestamp: Unix timestamp (seconds since epoch)
+
+        Returns:
+            BTC price as Decimal, or None if unavailable
+        """
+        try:
+            session = await self._get_session()
+            url = "https://api.binance.com/api/v3/klines"
+
+            # Convert to milliseconds and get single 1-minute candle
+            timestamp_ms = timestamp * 1000
+            params = {
+                "symbol": "BTCUSDT",
+                "interval": "1m",
+                "startTime": str(timestamp_ms),
+                "limit": "1"
+            }
+
+            async with session.get(url, params=params, timeout=10) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                if not data:
+                    logger.warning("No price data at timestamp", timestamp=timestamp)
+                    return None
+
+                # Return close price of the candle
+                price = decimal.Decimal(str(data[0][4]))
+                logger.info(
+                    "Fetched historical BTC price",
+                    timestamp=timestamp,
+                    price=f"${price:,.2f}"
+                )
+                return price
+
+        except Exception as e:
+            logger.error("Failed to fetch historical price", timestamp=timestamp, error=str(e))
+            return None
+
     async def get_price_change(self, window_minutes: int = 5) -> PriceChange:
         """Calculate price change over a time window."""
         history = await self.get_price_history(minutes=window_minutes)
