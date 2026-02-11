@@ -1,10 +1,14 @@
 """Parameter adjustment and validation system."""
 
 from enum import Enum
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional, TYPE_CHECKING
 import structlog
 
 from polymarket.config import Settings
+
+if TYPE_CHECKING:
+    from polymarket.performance.database import PerformanceDatabase
+    from polymarket.telegram.bot import TelegramBot
 
 logger = structlog.get_logger()
 
@@ -35,15 +39,24 @@ class ParameterBounds:
 class ParameterAdjuster:
     """Validates and classifies parameter adjustments."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        db: Optional['PerformanceDatabase'] = None,
+        telegram: Optional['TelegramBot'] = None
+    ):
         """
         Initialize parameter adjuster.
 
         Args:
             settings: Current bot settings
+            db: Performance database for logging
+            telegram: Telegram bot for notifications
         """
         self.settings = settings
         self.bounds = ParameterBounds()
+        self.db = db
+        self.telegram = telegram
 
     def validate_adjustment(self, parameter_name: str, new_value: float) -> bool:
         """
@@ -116,3 +129,121 @@ class ParameterAdjuster:
             return 0.0
 
         return ((new - current) / current) * 100.0
+
+    async def apply_adjustment(
+        self,
+        parameter_name: str,
+        old_value: float,
+        new_value: float,
+        reason: str,
+        tier: AdjustmentTier
+    ) -> bool:
+        """
+        Apply a parameter adjustment.
+
+        Args:
+            parameter_name: Name of parameter to adjust
+            old_value: Current value
+            new_value: Proposed new value
+            reason: Reasoning for adjustment
+            tier: Tier classification
+
+        Returns:
+            True if applied, False if rejected
+        """
+        # Validate bounds
+        if not self.validate_adjustment(parameter_name, new_value):
+            logger.warning(
+                "Adjustment rejected - out of bounds",
+                parameter=parameter_name,
+                new_value=new_value
+            )
+            return False
+
+        # Only auto-apply Tier 1
+        if tier != AdjustmentTier.TIER_1_AUTO:
+            logger.info(
+                "Adjustment requires approval",
+                parameter=parameter_name,
+                tier=tier.value
+            )
+            return False
+
+        # Apply adjustment
+        setattr(self.settings, parameter_name, new_value)
+
+        # Log to database
+        if self.db:
+            self._log_adjustment(
+                parameter_name=parameter_name,
+                old_value=old_value,
+                new_value=new_value,
+                reason=reason,
+                approval_method="tier_1_auto"
+            )
+
+        # Notify via Telegram
+        if self.telegram:
+            await self._notify_adjustment(
+                parameter_name=parameter_name,
+                old_value=old_value,
+                new_value=new_value,
+                reason=reason
+            )
+
+        logger.info(
+            "Parameter adjusted automatically",
+            parameter=parameter_name,
+            old_value=old_value,
+            new_value=new_value,
+            reason=reason
+        )
+
+        return True
+
+    def _log_adjustment(
+        self,
+        parameter_name: str,
+        old_value: float,
+        new_value: float,
+        reason: str,
+        approval_method: str
+    ):
+        """Log adjustment to database."""
+        from datetime import datetime
+
+        cursor = self.db.conn.cursor()
+        cursor.execute("""
+            INSERT INTO parameter_history
+            (timestamp, parameter_name, old_value, new_value, reason, approval_method)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (datetime.now(), parameter_name, old_value, new_value, reason, approval_method))
+
+        self.db.conn.commit()
+
+    async def _notify_adjustment(
+        self,
+        parameter_name: str,
+        old_value: float,
+        new_value: float,
+        reason: str
+    ):
+        """Send Telegram notification about adjustment."""
+        change_pct = self.calculate_change_percent(old_value, new_value)
+
+        message = f"""⚙️ **Parameter Auto-Adjusted** (Tier 1)
+
+Parameter: `{parameter_name}`
+Old Value: {old_value:.4f}
+New Value: {new_value:.4f}
+Change: {change_pct:+.1f}%
+
+Reason: {reason}
+
+✅ Applied automatically (within ±5% threshold)
+"""
+
+        try:
+            await self.telegram._send_message(message)
+        except Exception as e:
+            logger.error("Failed to send adjustment notification", error=str(e))

@@ -82,3 +82,82 @@ def test_calculate_change_percent(mock_settings):
     # 20% increase
     pct = adjuster.calculate_change_percent(10.0, 12.0)
     assert pct == 20.0
+
+@pytest.mark.asyncio
+async def test_apply_tier_1_adjustment(mock_settings):
+    """Test applying Tier 1 auto-adjustment."""
+    from polymarket.performance.database import PerformanceDatabase
+    from polymarket.telegram.bot import TelegramBot
+    from unittest.mock import AsyncMock, Mock
+
+    db = PerformanceDatabase(":memory:")
+    telegram = Mock(spec=TelegramBot)
+    telegram.send_message = AsyncMock()
+    telegram._send_message = AsyncMock()
+
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=telegram)
+
+    # Apply Tier 1 adjustment (3% decrease from 0.75 to 0.7275)
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.7275,
+        reason="Win rate is high, can be more aggressive",
+        tier=AdjustmentTier.TIER_1_AUTO
+    )
+
+    assert result is True
+
+    # Verify logged to database
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT * FROM parameter_history ORDER BY timestamp DESC LIMIT 1")
+    row = cursor.fetchone()
+
+    assert row['parameter_name'] == 'bot_confidence_threshold'
+    assert row['old_value'] == 0.75
+    assert row['new_value'] == 0.7275
+    assert row['approval_method'] == 'tier_1_auto'
+
+    db.close()
+
+@pytest.mark.asyncio
+async def test_reject_tier_2_without_approval(mock_settings):
+    """Test that Tier 2 adjustments are rejected without approval."""
+    from polymarket.performance.database import PerformanceDatabase
+
+    db = PerformanceDatabase(":memory:")
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=None)
+
+    # Try to apply Tier 2 adjustment without approval
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.65,  # 13% decrease
+        reason="Test",
+        tier=AdjustmentTier.TIER_2_APPROVAL
+    )
+
+    assert result is False  # Should be rejected
+
+    db.close()
+
+@pytest.mark.asyncio
+async def test_reject_out_of_bounds(mock_settings):
+    """Test that out-of-bounds adjustments are rejected."""
+    from polymarket.performance.database import PerformanceDatabase
+
+    db = PerformanceDatabase(":memory:")
+    adjuster = ParameterAdjuster(mock_settings, db=db, telegram=None)
+
+    # Try to apply adjustment outside bounds
+    result = await adjuster.apply_adjustment(
+        parameter_name="bot_confidence_threshold",
+        old_value=0.75,
+        new_value=0.98,  # Above max of 0.95
+        reason="Test",
+        tier=AdjustmentTier.TIER_1_AUTO
+    )
+
+    assert result is False  # Should be rejected
+
+    db.close()
