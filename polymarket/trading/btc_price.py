@@ -100,18 +100,26 @@ class BTCPriceService:
                 self._cache_time = datetime.now()
                 return data
             else:
-                logger.warning("No price from Polymarket WebSocket, falling back to Binance")
+                logger.warning("No price from Polymarket WebSocket, falling back to CoinGecko")
 
-        # Fallback to Binance if WebSocket unavailable
+        # Fallback to CoinGecko (Binance blocked in Indonesia)
         try:
-            data = await self._fetch_binance()
+            data = await self._fetch_coingecko()
+            logger.info("Fetched BTC price from CoinGecko", price=float(data.price))
         except Exception as e:
-            logger.error("Failed to fetch price from Binance", error=str(e))
-            # Return stale cache if available
-            if self._cache:
-                logger.warning("Returning stale cache", age_seconds=(datetime.now() - self._cache_time).total_seconds())
-                return self._cache
-            raise
+            logger.error("Failed to fetch price from CoinGecko", error=str(e))
+            # Try Binance as last resort (will likely fail in Indonesia)
+            try:
+                data = await self._fetch_binance()
+                logger.info("Fetched BTC price from Binance", price=float(data.price))
+            except Exception as binance_error:
+                logger.error("Binance also failed", error=str(binance_error))
+                # Return stale cache if available
+                if self._cache:
+                    age = (datetime.now() - self._cache_time).total_seconds()
+                    logger.warning("Returning stale cache", age_seconds=age)
+                    return self._cache
+                raise
 
         # Update cache
         self._cache = data
@@ -294,15 +302,61 @@ class BTCPriceService:
             self._stale_policy.record_success(cached_candles)
             return cached_candles
 
-        # Need to fetch fresh data - try with retries and fallbacks
+        # Try price buffer first (should have 24h of data)
+        if self._stream and self._stream.price_buffer:
+            try:
+                now = datetime.now()
+                end_time = int(now.timestamp())
+                start_time = int((now - timedelta(minutes=minutes)).timestamp())
+
+                buffer_entries = await self._stream.price_buffer.get_price_range(
+                    start_time, end_time
+                )
+
+                # Convert buffer entries to PricePoint format
+                if buffer_entries and len(buffer_entries) >= minutes * 0.8:  # Allow 20% missing
+                    result = [
+                        PricePoint(
+                            price=entry.price,
+                            volume=decimal.Decimal("0"),  # Volume not stored in buffer
+                            timestamp=datetime.fromtimestamp(entry.timestamp)
+                        )
+                        for entry in buffer_entries
+                    ]
+                    logger.info(
+                        "✓ Using price history from buffer (no Binance call!)",
+                        minutes=minutes,
+                        entries=len(result),
+                        source="buffer"
+                    )
+                    self._stale_policy.record_success(result)
+
+                    # Cache the buffer data for next time
+                    for candle in result:
+                        timestamp = int(candle.timestamp.timestamp())
+                        self._candle_cache.put(timestamp, candle)
+
+                    return result
+                else:
+                    logger.info(
+                        "Buffer has insufficient data, falling back to CoinGecko",
+                        requested=minutes,
+                        available=len(buffer_entries) if buffer_entries else 0,
+                        threshold=int(minutes * 0.8)
+                    )
+            except Exception as e:
+                logger.warning("Buffer query failed, falling back to CoinGecko", error=str(e))
+
+        # Fallback to external APIs if buffer doesn't have enough data
+        # Use CoinGecko as primary (Binance blocked in Indonesia)
         async def fetch_primary():
-            return await self._fetch_binance_history(minutes)
+            return await self._fetch_coingecko_history(minutes)
 
         result = await fetch_with_fallbacks(
-            lambda: fetch_with_retry(fetch_primary, "Binance", self._retry_config),
+            lambda: fetch_with_retry(fetch_primary, "CoinGecko", self._retry_config),
             [
-                ("CoinGecko", lambda: self._fetch_coingecko_history(minutes)),
-                ("Kraken", lambda: self._fetch_kraken_history(minutes))
+                ("Kraken", lambda: self._fetch_kraken_history(minutes)),
+                ("Binance", lambda: self._fetch_binance_history(minutes))
             ]
         )
 
@@ -406,16 +460,25 @@ class BTCPriceService:
                     return price
                 else:
                     logger.debug(
-                        "Price not in buffer, falling back to Binance",
+                        "Price not in buffer, falling back to CoinGecko",
                         timestamp=timestamp
                     )
             except Exception as e:
                 logger.warning(
-                    "Buffer query failed, falling back to Binance",
+                    "Buffer query failed, falling back to CoinGecko",
                     error=str(e)
                 )
 
-        # Fallback to Binance API
+        # Fallback to CoinGecko API first (Binance blocked in Indonesia)
+        try:
+            price = await self._fetch_coingecko_at_timestamp(timestamp)
+            if price:
+                return price
+            logger.info("CoinGecko returned no data, trying Binance as last resort")
+        except Exception as e:
+            logger.warning("CoinGecko failed, trying Binance", error=str(e))
+
+        # Last resort: Binance API (will likely fail in Indonesia)
         try:
             session = await self._get_session()
             url = "https://api.binance.com/api/v3/klines"
