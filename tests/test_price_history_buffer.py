@@ -2,6 +2,8 @@
 
 import pytest
 import asyncio
+import tempfile
+import os
 from decimal import Decimal
 from datetime import datetime
 from polymarket.trading.price_history_buffer import PriceHistoryBuffer
@@ -138,3 +140,119 @@ async def test_get_price_range_empty_buffer():
     )
 
     assert entries == []
+
+
+@pytest.mark.asyncio
+async def test_save_to_disk_creates_json_file():
+    """Should save buffer to JSON file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_file = os.path.join(tmpdir, "price_history.json")
+        buffer = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+
+        await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
+        await buffer.append(1770875160, Decimal("67025.10"), "polymarket")
+
+        await buffer.save_to_disk()
+
+        assert os.path.exists(json_file)
+
+
+@pytest.mark.asyncio
+async def test_save_to_disk_uses_atomic_write():
+    """Should write to .tmp file then rename (atomic)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_file = os.path.join(tmpdir, "price_history.json")
+        buffer = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+
+        await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
+        await buffer.save_to_disk()
+
+        # Tmp file should not exist after successful save
+        tmp_file = json_file + ".tmp"
+        assert not os.path.exists(tmp_file)
+        assert os.path.exists(json_file)
+
+
+@pytest.mark.asyncio
+async def test_save_clears_dirty_flag():
+    """Saving should clear dirty flag."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_file = os.path.join(tmpdir, "price_history.json")
+        buffer = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+
+        await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
+        assert buffer.is_dirty() == True
+
+        await buffer.save_to_disk()
+        assert buffer.is_dirty() == False
+
+
+@pytest.mark.asyncio
+async def test_load_from_disk_restores_buffer():
+    """Should load buffer from JSON file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_file = os.path.join(tmpdir, "price_history.json")
+
+        # Create and save buffer
+        buffer1 = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+        await buffer1.append(1770875100, Decimal("67018.35"), "polymarket")
+        await buffer1.append(1770875160, Decimal("67025.10"), "polymarket")
+        await buffer1.save_to_disk()
+
+        # Create new buffer and load
+        buffer2 = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+        await buffer2.load_from_disk()
+
+        assert buffer2.size() == 2
+        price = await buffer2.get_price_at(1770875100)
+        assert price == Decimal("67018.35")
+
+
+@pytest.mark.asyncio
+async def test_load_from_disk_handles_missing_file():
+    """Should handle missing file gracefully."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_file = os.path.join(tmpdir, "nonexistent.json")
+        buffer = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+
+        # Should not raise exception
+        await buffer.load_from_disk()
+        assert buffer.size() == 0
+
+
+@pytest.mark.asyncio
+async def test_load_from_disk_handles_corrupted_json():
+    """Should handle corrupted JSON gracefully."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_file = os.path.join(tmpdir, "corrupted.json")
+
+        # Write corrupted JSON
+        with open(json_file, 'w') as f:
+            f.write("{ invalid json }")
+
+        buffer = PriceHistoryBuffer(
+            retention_hours=24,
+            persistence_file=json_file
+        )
+
+        # Should not raise exception, just log error
+        await buffer.load_from_disk()
+        assert buffer.size() == 0

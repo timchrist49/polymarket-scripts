@@ -195,3 +195,142 @@ class PriceHistoryBuffer:
             )
 
             return entries
+
+    async def save_to_disk(self):
+        """
+        Persist buffer to JSON file using atomic write.
+
+        Atomic write: save to .tmp file, then rename to actual file.
+        This prevents corruption if process crashes during write.
+        """
+        async with self._lock:
+            if not self._dirty:
+                logger.debug("Buffer not dirty, skipping save")
+                return
+
+            # Ensure directory exists
+            Path(self._persistence_file).parent.mkdir(parents=True, exist_ok=True)
+
+            # Prepare data for JSON serialization
+            data = {
+                "version": "1.0",
+                "last_updated": datetime.now().isoformat(),
+                "retention_hours": self._retention_hours,
+                "prices": [
+                    {
+                        "timestamp": entry.timestamp,
+                        "price": str(entry.price),  # Decimal to string
+                        "source": entry.source,
+                        "received_at": entry.received_at
+                    }
+                    for entry in self._buffer
+                ]
+            }
+
+            # Atomic write: write to temp, then rename
+            tmp_file = self._persistence_file + ".tmp"
+            try:
+                with open(tmp_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+
+                # Atomic rename (POSIX guarantees atomicity)
+                os.replace(tmp_file, self._persistence_file)
+
+                self._dirty = False
+                self._last_save_time = datetime.now()
+
+                logger.info(
+                    "Buffer saved to disk",
+                    file=self._persistence_file,
+                    entries=len(self._buffer),
+                    size_kb=os.path.getsize(self._persistence_file) / 1024
+                )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to save buffer to disk",
+                    error=str(e),
+                    file=self._persistence_file
+                )
+                # Clean up temp file if it exists
+                if os.path.exists(tmp_file):
+                    os.remove(tmp_file)
+                raise
+
+    async def load_from_disk(self):
+        """
+        Load buffer from JSON persistence file on startup.
+
+        Handles missing files and corrupted JSON gracefully.
+        Invalid entries are skipped with warning.
+        """
+        async with self._lock:
+            if not os.path.exists(self._persistence_file):
+                logger.info(
+                    "Persistence file not found, starting with empty buffer",
+                    file=self._persistence_file
+                )
+                return
+
+            try:
+                with open(self._persistence_file, 'r') as f:
+                    data = json.load(f)
+
+                # Validate version
+                if data.get("version") != "1.0":
+                    logger.warning(
+                        "Unknown persistence file version",
+                        version=data.get("version")
+                    )
+
+                # Load prices
+                prices = data.get("prices", [])
+                loaded_count = 0
+                skipped_count = 0
+
+                for entry_data in prices:
+                    try:
+                        entry = PriceEntry(
+                            timestamp=entry_data["timestamp"],
+                            price=Decimal(entry_data["price"]),
+                            source=entry_data.get("source", "unknown"),
+                            received_at=entry_data.get("received_at", "")
+                        )
+                        self._buffer.append(entry)
+                        loaded_count += 1
+                    except (KeyError, ValueError) as e:
+                        logger.warning(
+                            "Skipped invalid entry",
+                            error=str(e),
+                            entry=entry_data
+                        )
+                        skipped_count += 1
+
+                self._dirty = False
+                self._last_save_time = datetime.fromisoformat(
+                    data.get("last_updated", datetime.now().isoformat())
+                )
+
+                logger.info(
+                    "Buffer loaded from disk",
+                    file=self._persistence_file,
+                    loaded=loaded_count,
+                    skipped=skipped_count,
+                    size_kb=os.path.getsize(self._persistence_file) / 1024
+                )
+
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to parse persistence file (corrupted JSON)",
+                    error=str(e),
+                    file=self._persistence_file
+                )
+                # Continue with empty buffer
+
+            except Exception as e:
+                logger.error(
+                    "Failed to load buffer from disk",
+                    error=str(e),
+                    file=self._persistence_file
+                )
+                # Continue with empty buffer
