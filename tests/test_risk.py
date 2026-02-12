@@ -102,3 +102,64 @@ class TestOddsExtraction:
         odds = risk_mgr._extract_odds_for_action("NO", market)
 
         assert odds == Decimal("0.50")
+
+
+class TestPositionSizingWithOdds:
+    """Test position sizing with odds adjustment."""
+
+    @pytest.mark.asyncio
+    async def test_position_sizing_low_odds_scaled_down(self):
+        """Low odds (0.31) should scale down position size."""
+        settings = Settings()
+        risk_mgr = RiskManager(settings)
+
+        from polymarket.models import TradingDecision
+        decision = TradingDecision(
+            action="YES",
+            confidence=0.85,
+            reasoning="test",
+            token_id="0x123",
+            position_size=Decimal("9.56"),
+            stop_loss_threshold=0.30
+        )
+        market = {"yes_price": 0.31, "no_price": 0.69}
+
+        result = await risk_mgr.validate_decision(
+            decision,
+            portfolio_value=Decimal("100"),
+            market=market
+        )
+
+        assert result.approved
+        # With 0.31 odds, multiplier is ~0.62x
+        # Position should be scaled down
+        assert result.adjusted_position < Decimal("9.56")
+        assert result.adjusted_position > Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_position_sizing_high_odds_unchanged(self):
+        """High odds (0.83) should not scale position size."""
+        settings = Settings()
+        risk_mgr = RiskManager(settings)
+
+        from polymarket.models import TradingDecision
+        decision = TradingDecision(
+            action="NO",
+            confidence=0.85,
+            reasoning="test",
+            token_id="0x456",
+            position_size=Decimal("5.0"),
+            stop_loss_threshold=0.30
+        )
+        market = {"yes_price": 0.17, "no_price": 0.83}
+
+        result = await risk_mgr.validate_decision(
+            decision,
+            portfolio_value=Decimal("100"),
+            market=market
+        )
+
+        assert result.approved
+        # With 0.83 odds, multiplier is 1.0x (no scaling)
+        # Position should be unchanged
+        assert result.adjusted_position == Decimal("5.00")

@@ -52,8 +52,13 @@ class RiskManager:
 
         # Check 3: Calculate position size
         max_position = portfolio_value * Decimal(str(self.settings.bot_max_position_percent))
+
+        # Extract odds for the action
+        odds = self._extract_odds_for_action(decision.action, market)
+
+        # Calculate position size with odds awareness
         suggested_size = self._calculate_position_size(
-            decision, portfolio_value, max_position
+            decision, portfolio_value, max_position, odds
         )
 
         # Check 4: Total exposure
@@ -109,9 +114,10 @@ class RiskManager:
         self,
         decision: TradingDecision,
         portfolio_value: Decimal,
-        max_position: Decimal
+        max_position: Decimal,
+        odds: Decimal
     ) -> Decimal:
-        """Calculate position size based on confidence."""
+        """Calculate position size based on confidence and odds."""
         base_size = portfolio_value * Decimal(str(self.settings.bot_max_position_percent))
 
         # Scale by confidence
