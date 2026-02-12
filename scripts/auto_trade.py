@@ -709,6 +709,19 @@ class AutoTrader:
                     percentage=f"{diff_pct:+.2f}%"
                 )
 
+                # Check minimum movement threshold to avoid entering too early
+                MIN_MOVEMENT_THRESHOLD = 100  # $100 minimum BTC movement
+                abs_diff = abs(diff)
+                if abs_diff < MIN_MOVEMENT_THRESHOLD:
+                    logger.info(
+                        "Skipping market - insufficient BTC movement",
+                        market_id=market.id,
+                        movement=f"${abs_diff:.2f}",
+                        threshold=f"${MIN_MOVEMENT_THRESHOLD}",
+                        reason="Wait for clearer directional signal"
+                    )
+                    continue  # Skip this market, no trade
+
             # Build market data dict with ALL context
             # Note: Polymarket returns prices for UP/YES token only
             # DOWN/NO price is complementary: 1 - UP_price
@@ -766,6 +779,23 @@ class AutoTrader:
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))
                 # Continue trading - don't block on logging failures
+
+            # Additional validation: YES trades need stronger momentum to avoid mean reversion
+            if decision.action == "YES" and price_to_beat:
+                diff, _ = self.market_tracker.calculate_price_difference(
+                    btc_data.price, price_to_beat
+                )
+                MIN_YES_MOVEMENT = 200  # $200 minimum for YES trades (higher threshold)
+
+                if diff < MIN_YES_MOVEMENT:
+                    logger.info(
+                        "Skipping YES trade - insufficient upward momentum",
+                        market_id=market.id,
+                        movement=f"${diff:+,.2f}",
+                        threshold=f"${MIN_YES_MOVEMENT}",
+                        reason="Avoid buying exhausted momentum (mean reversion risk)"
+                    )
+                    continue  # Skip this trade
 
             # Map AI decision to correct token based on outcomes
             # Outcomes are typically ["Up", "Down"] or ["Yes", "No"]
