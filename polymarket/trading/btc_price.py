@@ -186,6 +186,66 @@ class BTCPriceService:
             logger.error("Failed to fetch CoinGecko history", error=str(e))
             raise
 
+    async def _fetch_kraken_history(self, minutes: int = 60) -> list[PricePoint]:
+        """
+        Fetch historical price candles from Kraken.
+
+        Args:
+            minutes: Number of 1-minute candles to fetch
+
+        Returns:
+            List of price points
+        """
+        session = await self._get_session()
+
+        # Kraken OHLC endpoint
+        url = "https://api.kraken.com/0/public/OHLC"
+
+        # Kraken uses 'since' parameter (Unix timestamp) and interval
+        since_timestamp = int((datetime.now() - timedelta(minutes=minutes)).timestamp())
+
+        params = {
+            "pair": "XBTUSD",  # BTC/USD pair
+            "interval": "1",   # 1 minute candles
+            "since": str(since_timestamp)
+        }
+
+        try:
+            async with session.get(url, params=params, timeout=30) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                # Check for Kraken API errors
+                if data.get("error"):
+                    raise Exception(f"Kraken API error: {data['error']}")
+
+                # Kraken OHLC format: [timestamp, open, high, low, close, vwap, volume, count]
+                ohlc_data = data["result"].get("XXBTZUSD", [])
+
+                result = []
+                for candle in ohlc_data:
+                    timestamp = candle[0]
+                    close_price = candle[4]
+                    volume = candle[6]
+
+                    result.append(PricePoint(
+                        price=decimal.Decimal(str(close_price)),
+                        volume=decimal.Decimal(str(volume)),
+                        timestamp=datetime.fromtimestamp(timestamp)
+                    ))
+
+                logger.debug(
+                    "Fetched Kraken history",
+                    candles=len(result),
+                    minutes=minutes
+                )
+
+                return result
+
+        except Exception as e:
+            logger.error("Failed to fetch Kraken history", error=str(e))
+            raise
+
     async def get_price_history(self, minutes: int = 60) -> list[PricePoint]:
         """Get historical price points for technical analysis."""
         # Use direct HTTP request to Binance API instead of ccxt
