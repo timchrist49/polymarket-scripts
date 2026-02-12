@@ -67,3 +67,4 @@ Thumbs.db
 # Project specific
 *.db
 *.sqlite
+logs/*.old
