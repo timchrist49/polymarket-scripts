@@ -61,3 +61,51 @@ class PriceHistoryBuffer:
     def max_size(self) -> int:
         """Return maximum buffer capacity."""
         return self._buffer.maxlen
+
+    async def append(
+        self,
+        timestamp: int,
+        price: Decimal,
+        source: str = "polymarket"
+    ):
+        """
+        Add new price to buffer.
+
+        Args:
+            timestamp: Unix timestamp (seconds)
+            price: BTC price
+            source: Price source identifier
+
+        Note: Rejects out-of-order timestamps (older than last entry)
+        """
+        async with self._lock:
+            # Validate timestamp ordering
+            if self._buffer and timestamp < self._buffer[-1].timestamp:
+                logger.warning(
+                    "Rejected out-of-order price update",
+                    timestamp=timestamp,
+                    last_timestamp=self._buffer[-1].timestamp,
+                    age_seconds=self._buffer[-1].timestamp - timestamp
+                )
+                return
+
+            entry = PriceEntry(
+                timestamp=timestamp,
+                price=price,
+                source=source,
+                received_at=datetime.now().isoformat()
+            )
+
+            self._buffer.append(entry)
+            self._dirty = True
+
+            logger.debug(
+                "Price appended to buffer",
+                timestamp=timestamp,
+                price=f"${price:,.2f}",
+                buffer_size=len(self._buffer)
+            )
+
+    def is_dirty(self) -> bool:
+        """Check if buffer has unsaved changes."""
+        return self._dirty
