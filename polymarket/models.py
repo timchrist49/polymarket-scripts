@@ -307,11 +307,54 @@ class MarketSignals:
 
 
 @dataclass
+class FundingRateSignal:
+    """Funding rate signals from perpetual futures markets."""
+    score: float                      # -1.0 (oversold) to +1.0 (overheated)
+    confidence: float                 # 0.0 to 1.0
+    funding_rate: float              # Raw funding rate (positive = longs pay shorts)
+    funding_rate_normalized: float   # Normalized to [-1, 1] range
+    signal_type: str                 # "OVERHEATED", "NEUTRAL", "OVERSOLD"
+    source: str                      # Exchange name (e.g., "binance")
+    timestamp: datetime
+
+    def validate(self) -> None:
+        """Validate field constraints."""
+        if not -1.0 <= self.score <= 1.0:
+            raise ValueError(f"score must be in [-1.0, 1.0], got {self.score}")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
+
+
+@dataclass
+class BTCDominanceSignal:
+    """BTC dominance signals indicating capital flow."""
+    score: float                      # -1.0 (alt season) to +1.0 (BTC season)
+    confidence: float                 # 0.0 to 1.0
+    dominance_pct: float             # Current BTC dominance %
+    dominance_change_24h: float      # 24h change in dominance
+    signal_type: str                 # "BTC_SEASON", "NEUTRAL", "ALT_SEASON"
+    market_cap_btc: float           # BTC market cap in USD
+    market_cap_total: float         # Total crypto market cap in USD
+    timestamp: datetime
+
+    def validate(self) -> None:
+        """Validate field constraints."""
+        if not -1.0 <= self.score <= 1.0:
+            raise ValueError(f"score must be in [-1.0, 1.0], got {self.score}")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
+        if not 0.0 <= self.dominance_pct <= 100.0:
+            raise ValueError(f"dominance_pct must be in [0.0, 100.0], got {self.dominance_pct}")
+
+
+@dataclass
 class AggregatedSentiment:
     """Final aggregated sentiment with agreement-based confidence."""
     social: SocialSentiment
     market: MarketSignals
-    final_score: float                # Weighted: market 60% + social 40%
+    funding: FundingRateSignal | None  # New: funding rate signals
+    dominance: BTCDominanceSignal | None  # New: BTC dominance signals
+    final_score: float                # Weighted: market 40% + social 20% + funding 20% + dominance 15% + orderbook 5%
     final_confidence: float           # Base confidence * agreement multiplier
     agreement_multiplier: float       # 0.5 (conflict) to 1.5 (perfect agreement)
     signal_type: str                  # "STRONG_BULLISH", "CONFLICTED", etc.
@@ -328,3 +371,7 @@ class AggregatedSentiment:
         # Validate nested objects
         self.social.validate()
         self.market.validate()
+        if self.funding:
+            self.funding.validate()
+        if self.dominance:
+            self.dominance.validate()

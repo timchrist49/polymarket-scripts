@@ -14,7 +14,7 @@ import structlog
 import ccxt.async_support as ccxt
 import aiohttp
 
-from polymarket.models import BTCPriceData, PricePoint, PriceChange
+from polymarket.models import BTCPriceData, PricePoint, PriceChange, FundingRateSignal, BTCDominanceSignal
 from polymarket.config import Settings
 from polymarket.trading.crypto_price_stream import CryptoPriceStream
 from polymarket.trading.price_cache import CandleCache
@@ -651,6 +651,175 @@ class BTCPriceService:
             change_amount=change_amount,
             velocity=velocity
         )
+
+    async def get_funding_rates(self) -> FundingRateSignal | None:
+        """
+        Fetch BTC funding rates from Binance futures via CoinGecko Pro API.
+
+        Positive funding = longs pay shorts (overheated/bearish signal)
+        Negative funding = shorts pay longs (oversold/bullish signal)
+
+        Returns:
+            FundingRateSignal or None if unavailable
+        """
+        if not self.settings.coingecko_api_key:
+            logger.warning("CoinGecko Pro API key required for funding rates")
+            return None
+
+        try:
+            session = await self._get_session()
+            url = "https://pro-api.coingecko.com/api/v3/derivatives"
+            params = {"x_cg_pro_api_key": self.settings.coingecko_api_key}
+
+            async with session.get(url, params=params, timeout=10) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                # Find Binance BTCUSDT perpetual contract
+                btc_ticker = None
+                for ticker in data:
+                    if ticker.get("market") == "Binance (Futures)" and ticker.get("symbol") == "BTCUSDT":
+                        if ticker.get("contract_type") == "perpetual":
+                            btc_ticker = ticker
+                            break
+
+                if not btc_ticker:
+                    logger.warning("Binance BTCUSDT perpetual contract not found")
+                    return None
+
+                # Extract funding rate (as decimal, e.g., 0.0001 = 0.01%)
+                funding_rate = btc_ticker.get("funding_rate")
+                if funding_rate is None:
+                    logger.warning("Funding rate not available in ticker data")
+                    return None
+
+                # Convert to percentage
+                funding_rate = float(funding_rate) * 100  # e.g., 0.0001 -> 0.01%
+
+                # Normalize to [-1, 1] range
+                # Typical funding rates: -0.1% to +0.1% (extreme), -0.01% to +0.01% (normal)
+                # Normalize: ±0.05% = ±0.5, ±0.1% = ±1.0
+                funding_rate_normalized = max(min(funding_rate / 0.1, 1.0), -1.0)
+
+                # Score: negative funding rate is bullish (shorts paying longs)
+                # positive funding rate is bearish (longs paying shorts)
+                score = -funding_rate_normalized  # Invert: negative funding = positive score
+
+                # Confidence based on magnitude (higher = more extreme = more confident)
+                confidence = min(abs(funding_rate_normalized), 1.0)
+
+                # Signal classification
+                if funding_rate > 0.05:
+                    signal_type = "OVERHEATED"  # Longs overheated, bearish
+                elif funding_rate < -0.05:
+                    signal_type = "OVERSOLD"  # Shorts overheated, bullish
+                else:
+                    signal_type = "NEUTRAL"
+
+                logger.info(
+                    "Funding rate fetched",
+                    funding_rate=f"{funding_rate:.4f}%",
+                    score=f"{score:+.2f}",
+                    confidence=f"{confidence:.2f}",
+                    signal=signal_type
+                )
+
+                return FundingRateSignal(
+                    score=score,
+                    confidence=confidence,
+                    funding_rate=funding_rate,
+                    funding_rate_normalized=funding_rate_normalized,
+                    signal_type=signal_type,
+                    source="binance_futures",
+                    timestamp=datetime.now()
+                )
+
+        except Exception as e:
+            logger.error("Failed to fetch funding rates", error=str(e))
+            return None
+
+    async def get_btc_dominance(self) -> BTCDominanceSignal | None:
+        """
+        Fetch BTC dominance from CoinGecko Pro API global market data.
+
+        Rising dominance = capital flowing into BTC (bullish for BTC)
+        Falling dominance = capital flowing to alts (bearish for BTC)
+
+        Returns:
+            BTCDominanceSignal or None if unavailable
+        """
+        if not self.settings.coingecko_api_key:
+            logger.warning("CoinGecko Pro API key required for BTC dominance")
+            return None
+
+        try:
+            session = await self._get_session()
+            url = "https://pro-api.coingecko.com/api/v3/global"
+            params = {"x_cg_pro_api_key": self.settings.coingecko_api_key}
+
+            async with session.get(url, params=params, timeout=10) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                global_data = data.get("data", {})
+
+                # Extract BTC dominance percentage
+                dominance_pct = global_data.get("market_cap_percentage", {}).get("btc")
+                if dominance_pct is None:
+                    logger.warning("BTC dominance not available in global data")
+                    return None
+
+                dominance_pct = float(dominance_pct)
+
+                # Extract market caps
+                market_caps = global_data.get("market_cap_percentage", {})
+                total_market_cap = global_data.get("total_market_cap", {}).get("usd", 0)
+                btc_market_cap = total_market_cap * (dominance_pct / 100.0) if total_market_cap else 0
+
+                # Extract 24h change in dominance
+                # Note: CoinGecko doesn't provide direct dominance change, so we estimate from price change
+                dominance_change_24h = global_data.get("market_cap_change_percentage_24h_usd", 0.0)
+
+                # Normalize dominance to score
+                # Historical BTC dominance range: 40% (alt season) to 70% (BTC season)
+                # Typical: 45-60%
+                # Score: >55% = bullish BTC, <50% = bearish BTC (alt season)
+                if dominance_pct > 55:
+                    score = min((dominance_pct - 55) / 15, 1.0)  # 55-70% maps to 0.0-1.0
+                    signal_type = "BTC_SEASON"
+                elif dominance_pct < 50:
+                    score = max((dominance_pct - 50) / 10, -1.0)  # 40-50% maps to -1.0-0.0
+                    signal_type = "ALT_SEASON"
+                else:
+                    score = 0.0
+                    signal_type = "NEUTRAL"
+
+                # Confidence based on how far from neutral (50%)
+                confidence = min(abs(dominance_pct - 50) / 20, 1.0)
+
+                logger.info(
+                    "BTC dominance fetched",
+                    dominance=f"{dominance_pct:.2f}%",
+                    change_24h=f"{dominance_change_24h:+.2f}%",
+                    score=f"{score:+.2f}",
+                    confidence=f"{confidence:.2f}",
+                    signal=signal_type
+                )
+
+                return BTCDominanceSignal(
+                    score=score,
+                    confidence=confidence,
+                    dominance_pct=dominance_pct,
+                    dominance_change_24h=dominance_change_24h,
+                    signal_type=signal_type,
+                    market_cap_btc=btc_market_cap,
+                    market_cap_total=total_market_cap,
+                    timestamp=datetime.now()
+                )
+
+        except Exception as e:
+            logger.error("Failed to fetch BTC dominance", error=str(e))
+            return None
 
     async def close(self):
         """Clean up resources."""

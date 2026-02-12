@@ -486,11 +486,13 @@ class AutoTrader:
                     token_ids=token_ids if token_ids else None
                 )
 
-            # Step 2: Data Collection (parallel) - NEW: fetch social + market
-            btc_data, social_sentiment, market_signals = await asyncio.gather(
+            # Step 2: Data Collection (parallel) - NEW: fetch social + market + funding + dominance
+            btc_data, social_sentiment, market_signals, funding_signal, dominance_signal = await asyncio.gather(
                 self.btc_service.get_current_price(),
                 self.social_service.get_social_score(),
                 self.market_service.get_market_score(),
+                self.btc_service.get_funding_rates(),
+                self.btc_service.get_btc_dominance(),
             )
 
             # Calculate actual BTC momentum (last 5 minutes) - ONCE PER LOOP
@@ -513,7 +515,11 @@ class AutoTrader:
                 social_score=f"{social_sentiment.score:+.2f}",
                 social_conf=f"{social_sentiment.confidence:.2f}",
                 market_score=f"{market_signals.score:+.2f}",
-                market_conf=f"{market_signals.confidence:.2f}"
+                market_conf=f"{market_signals.confidence:.2f}",
+                funding_score=f"{funding_signal.score:+.2f}" if funding_signal else "N/A",
+                funding_conf=f"{funding_signal.confidence:.2f}" if funding_signal else "N/A",
+                dominance_score=f"{dominance_signal.score:+.2f}" if dominance_signal else "N/A",
+                dominance_conf=f"{dominance_signal.confidence:.2f}" if dominance_signal else "N/A"
             )
 
             # Step 3: Technical Analysis (optional - graceful if unavailable)
@@ -544,8 +550,13 @@ class AutoTrader:
                     trend="NEUTRAL"
                 )
 
-            # Step 4: Aggregate Signals - NEW
-            aggregated_sentiment = self.aggregator.aggregate(social_sentiment, market_signals)
+            # Step 4: Aggregate Signals - NEW (includes funding + dominance)
+            aggregated_sentiment = self.aggregator.aggregate(
+                social_sentiment,
+                market_signals,
+                funding=funding_signal,
+                dominance=dominance_signal
+            )
 
             logger.info(
                 "Sentiment aggregated",

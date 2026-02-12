@@ -1,13 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-02-12T11:20:33.155972",
+  "last_updated": "2026-02-12T12:36:24.196061",
   "retention_hours": 24,
-  "prices": [
-    {
-      "timestamp": 1770805233,
-      "price": "60000.00",
-      "source": "polymarket",
-      "received_at": "2026-02-12T11:20:33.155867"
-    }
-  ]
+  "prices": []
 }
