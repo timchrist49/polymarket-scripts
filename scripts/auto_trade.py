@@ -49,6 +49,53 @@ app = typer.Typer(help="Autonomous Polymarket Trading Bot")
 logger = structlog.get_logger()
 
 
+async def price_history_saver(buffer, interval: int = 300):
+    """
+    Background task to save price buffer to disk periodically.
+
+    Args:
+        buffer: PriceHistoryBuffer instance
+        interval: Save interval in seconds (default 300 = 5 minutes)
+    """
+    logger.info(f"Price history saver started (interval: {interval}s)")
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await buffer.save_to_disk()
+            logger.debug("Price history auto-saved")
+        except asyncio.CancelledError:
+            logger.info("Price history saver stopped")
+            raise  # Re-raise to properly cancel task
+        except Exception as e:
+            logger.error(f"Failed to auto-save price history: {e}")
+            # Continue running despite errors
+
+
+async def price_history_cleaner(buffer, interval: int = 3600):
+    """
+    Background task to cleanup old entries periodically.
+
+    Args:
+        buffer: PriceHistoryBuffer instance
+        interval: Cleanup interval in seconds (default 3600 = 1 hour)
+    """
+    logger.info(f"Price history cleaner started (interval: {interval}s)")
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            removed = await buffer.cleanup_old_entries()
+            if removed > 0:
+                logger.info(f"Price history auto-cleanup: {removed} entries removed")
+        except asyncio.CancelledError:
+            logger.info("Price history cleaner stopped")
+            raise  # Re-raise to properly cancel task
+        except Exception as e:
+            logger.error(f"Failed to auto-cleanup price history: {e}")
+            # Continue running despite errors
+
+
 class AutoTrader:
     """Main autonomous trading bot orchestrator."""
 
@@ -105,6 +152,9 @@ class AutoTrader:
         # Track open positions for stop-loss
         self.open_positions: list[dict] = []
 
+        # Background tasks for price buffer maintenance
+        self.background_tasks: list[asyncio.Task] = []
+
     async def initialize(self) -> None:
         """Initialize async resources before trading cycles."""
         # Start BTC price WebSocket stream
@@ -120,6 +170,14 @@ class AutoTrader:
         # Start settlement loop
         settlement_task = asyncio.create_task(self._run_settlement_loop())
         logger.info("Settlement loop started")
+
+        # Start background tasks for price buffer maintenance
+        if self.btc_service._stream and self.btc_service._stream.price_buffer:
+            buffer = self.btc_service._stream.price_buffer
+            saver_task = asyncio.create_task(price_history_saver(buffer, interval=300))
+            cleaner_task = asyncio.create_task(price_history_cleaner(buffer, interval=3600))
+            self.background_tasks.extend([saver_task, cleaner_task])
+            logger.info("Price buffer background tasks started (save: 5min, cleanup: 1hr)")
 
     async def _trigger_reflection(self, trigger_type: str) -> None:
         """
@@ -1146,6 +1204,16 @@ class AutoTrader:
                 await asyncio.sleep(self.interval)
 
         # Cleanup
+        # Cancel background tasks
+        for task in self.background_tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        if self.background_tasks:
+            logger.info("Background tasks stopped")
+
         await self.btc_service.close()  # Now closes WebSocket
         await self.social_service.close()
         if self.market_service:
@@ -1160,6 +1228,15 @@ class AutoTrader:
         """Run a single cycle for testing."""
         await self.initialize()
         await self.run_cycle()
+
+        # Cancel background tasks
+        for task in self.background_tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
         await self.btc_service.close()  # Now closes WebSocket
         await self.social_service.close()
         if self.market_service:

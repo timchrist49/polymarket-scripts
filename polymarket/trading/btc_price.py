@@ -60,7 +60,12 @@ class BTCPriceService:
     async def start(self):
         """Start Polymarket WebSocket stream."""
         if self._stream is None:
-            self._stream = CryptoPriceStream(self.settings)
+            # Enable price buffer for 24-hour price history
+            self._stream = CryptoPriceStream(
+                self.settings,
+                buffer_enabled=True,
+                buffer_file="data/price_history.json"
+            )
             self._stream_task = asyncio.create_task(self._stream.start())
             await asyncio.sleep(1)  # Initial connection time
 
