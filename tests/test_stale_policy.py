@@ -67,3 +67,54 @@ def test_can_use_stale_cache_no_cache():
     policy = StaleDataPolicy()
 
     assert policy.can_use_stale_cache() is False
+
+
+def test_get_stale_cache_with_warning():
+    """Returns stale cache with warning."""
+    policy = StaleDataPolicy()
+    data = BTCPriceData(
+        price=Decimal("67000"),
+        timestamp=datetime.now(),
+        source="test",
+        volume_24h=Decimal("1000")
+    )
+    policy.record_success(data)
+
+    result = policy.get_stale_cache_with_warning()
+
+    assert result is not None
+    assert result.price == Decimal("67000")
+
+
+def test_get_stale_cache_too_old_returns_none():
+    """Returns None if cache too old."""
+    policy = StaleDataPolicy()
+    data = BTCPriceData(
+        price=Decimal("67000"),
+        timestamp=datetime.now(),
+        source="test",
+        volume_24h=Decimal("1000")
+    )
+    policy._stale_cache = (data, datetime.now() - timedelta(minutes=11))
+
+    result = policy.get_stale_cache_with_warning()
+
+    assert result is None
+
+
+def test_should_skip_cycle():
+    """Should skip if cache not usable."""
+    policy = StaleDataPolicy()
+
+    assert policy.should_skip_cycle() is True
+
+    # Add fresh cache
+    data = BTCPriceData(
+        price=Decimal("67000"),
+        timestamp=datetime.now(),
+        source="test",
+        volume_24h=Decimal("1000")
+    )
+    policy.record_success(data)
+
+    assert policy.should_skip_cycle() is False

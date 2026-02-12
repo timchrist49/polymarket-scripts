@@ -53,3 +53,25 @@ class StaleDataPolicy:
         delta = datetime.now() - self._last_success_time
         minutes = int(delta.total_seconds() / 60)
         return f"{minutes} minutes ago"
+
+    def get_stale_cache_with_warning(self) -> Optional[Any]:
+        """Return stale cache with clear warnings."""
+        if not self.can_use_stale_cache():
+            logger.error("Stale cache too old or unavailable")
+            return None
+
+        data, cached_at = self._stale_cache
+        age_seconds = (datetime.now() - cached_at).total_seconds()
+
+        logger.warning(
+            "⚠️  USING STALE CACHED DATA",
+            age_seconds=int(age_seconds),
+            age_readable=f"{int(age_seconds/60)} min {int(age_seconds%60)} sec",
+            consecutive_failures=self._consecutive_failures
+        )
+
+        return data
+
+    def should_skip_cycle(self) -> bool:
+        """Determine if we should skip this trading cycle."""
+        return not self.can_use_stale_cache()
