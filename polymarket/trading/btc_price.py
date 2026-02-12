@@ -21,6 +21,7 @@ from polymarket.trading.price_cache import CandleCache
 from polymarket.trading.retry_logic import fetch_with_retry, RetryConfig
 from polymarket.trading.parallel_fetch import fetch_with_fallbacks
 from polymarket.trading.stale_policy import StaleDataPolicy
+from polymarket.performance.settlement_validator import SettlementPriceValidator
 
 logger = structlog.get_logger()
 
@@ -44,6 +45,9 @@ class BTCPriceService:
 
         # Stale data policy
         self._stale_policy = StaleDataPolicy()
+
+        # Settlement validator
+        self._settlement_validator = SettlementPriceValidator(btc_service=self)
 
     async def start(self):
         """Start Polymarket WebSocket stream."""
@@ -335,13 +339,38 @@ class BTCPriceService:
 
     async def get_price_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
         """
-        Get BTC price at a specific Unix timestamp.
+        Get BTC price at a specific Unix timestamp with validation.
+
+        Uses multi-source validation for settlement accuracy.
 
         Args:
             timestamp: Unix timestamp (seconds since epoch)
 
         Returns:
-            BTC price as Decimal, or None if unavailable
+            Validated BTC price as Decimal, or None if unavailable/invalid
+        """
+        # Use settlement validator for multi-source consensus
+        validated_price = await self._settlement_validator.get_validated_price(timestamp)
+
+        if validated_price:
+            return validated_price
+
+        # Validation failed - log and return None
+        logger.warning(
+            "Price validation failed for settlement",
+            timestamp=timestamp
+        )
+        return None
+
+    async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+        """
+        Fetch BTC price at specific timestamp from Binance.
+
+        Args:
+            timestamp: Unix timestamp (seconds)
+
+        Returns:
+            BTC price or None
         """
         try:
             session = await self._get_session()
@@ -356,7 +385,7 @@ class BTCPriceService:
                 "limit": "1"
             }
 
-            async with session.get(url, params=params, timeout=10) as resp:
+            async with session.get(url, params=params, timeout=30) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
 
@@ -366,18 +395,20 @@ class BTCPriceService:
 
                 # Return close price of the candle
                 price = decimal.Decimal(str(data[0][4]))
-                logger.info(
-                    "Fetched historical BTC price",
+                logger.debug(
+                    "Fetched Binance historical price",
                     timestamp=timestamp,
                     price=f"${price:,.2f}"
                 )
                 return price
 
         except asyncio.TimeoutError:
-            logger.error("Failed to fetch historical price", timestamp=timestamp, error="Binance API timeout after 10s")
+            logger.error("Failed to fetch historical price", timestamp=timestamp,
+                        error="Binance API timeout after 30s")
             return None
         except Exception as e:
-            logger.error("Failed to fetch historical price", timestamp=timestamp, error=str(e) or type(e).__name__)
+            logger.error("Failed to fetch historical price", timestamp=timestamp,
+                        error=str(e) or type(e).__name__)
             return None
 
     async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:

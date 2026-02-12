@@ -62,3 +62,16 @@ async def test_get_price_history_fallback_to_coingecko():
     assert result[0].price == Decimal("67000")
 
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_get_price_at_timestamp_uses_validator():
+    """get_price_at_timestamp uses settlement validator."""
+    settings = Settings()
+    service = BTCPriceService(settings)
+
+    # Verify settlement validator is integrated
+    assert service._settlement_validator is not None
+    assert service._settlement_validator._btc_service is service
+
+    await service.close()
