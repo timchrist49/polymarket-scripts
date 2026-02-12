@@ -17,6 +17,7 @@ import aiohttp
 from polymarket.models import BTCPriceData, PricePoint, PriceChange
 from polymarket.config import Settings
 from polymarket.trading.crypto_price_stream import CryptoPriceStream
+from polymarket.trading.price_cache import CandleCache
 
 logger = structlog.get_logger()
 
@@ -34,6 +35,9 @@ class BTCPriceService:
         # Polymarket WebSocket stream
         self._stream: Optional[CryptoPriceStream] = None
         self._stream_task: Optional[asyncio.Task] = None
+
+        # Candle cache
+        self._candle_cache = CandleCache()
 
     async def start(self):
         """Start Polymarket WebSocket stream."""
@@ -247,9 +251,26 @@ class BTCPriceService:
             raise
 
     async def get_price_history(self, minutes: int = 60) -> list[PricePoint]:
-        """Get historical price points for technical analysis."""
-        # Use direct HTTP request to Binance API instead of ccxt
-        # to avoid the derivatives API timeout issue
+        """Get historical price points for technical analysis with caching."""
+        # Check cache first
+        cached_candles = []
+        uncached_count = 0
+
+        for i in range(minutes):
+            timestamp = int((datetime.now() - timedelta(minutes=minutes-i)).timestamp())
+            candle = self._candle_cache.get(timestamp)
+
+            if candle:
+                cached_candles.append(candle)
+            else:
+                uncached_count += 1
+
+        # If we have enough cached candles, use them
+        if uncached_count == 0:
+            logger.debug("Using fully cached price history", minutes=minutes)
+            return cached_candles
+
+        # Need to fetch fresh data
         try:
             session = await self._get_session()
             url = "https://api.binance.com/api/v3/klines"
@@ -259,11 +280,11 @@ class BTCPriceService:
                 "limit": str(minutes)
             }
 
-            async with session.get(url, params=params, timeout=10) as resp:
+            async with session.get(url, params=params, timeout=30) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
 
-                return [
+                candles = [
                     PricePoint(
                         price=decimal.Decimal(str(candle[4])),  # Close price
                         volume=decimal.Decimal(str(candle[5])),  # Volume
@@ -271,8 +292,19 @@ class BTCPriceService:
                     )
                     for candle in data
                 ]
+
+                # Cache all fetched candles
+                for candle in candles:
+                    timestamp = int(candle.timestamp.timestamp())
+                    self._candle_cache.put(timestamp, candle)
+
+                logger.debug("Fetched and cached price history",
+                           minutes=minutes, cached_new=len(candles))
+
+                return candles
+
         except asyncio.TimeoutError:
-            logger.error("Failed to fetch price history", error="Binance API timeout after 10s")
+            logger.error("Failed to fetch price history", error="Binance API timeout after 30s")
             raise
         except Exception as e:
             logger.error("Failed to fetch price history", error=str(e) or type(e).__name__)
