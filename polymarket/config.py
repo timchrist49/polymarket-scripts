@@ -161,6 +161,23 @@ class Settings:
         default_factory=lambda: int(os.getenv("STOP_LOSS_FORCE_EXIT_MINUTES", "5"))
     )
 
+    # === Price Fetching Configuration ===
+    btc_fetch_timeout: int = field(
+        default_factory=lambda: int(os.getenv("BTC_FETCH_TIMEOUT", "30"))
+    )
+    btc_fetch_max_retries: int = field(
+        default_factory=lambda: int(os.getenv("BTC_FETCH_MAX_RETRIES", "2"))
+    )
+    btc_fetch_retry_delay: float = field(
+        default_factory=lambda: float(os.getenv("BTC_FETCH_RETRY_DELAY", "2.0"))
+    )
+    btc_cache_stale_max_age: int = field(
+        default_factory=lambda: int(os.getenv("BTC_CACHE_STALE_MAX_AGE", "600"))
+    )
+    btc_settlement_tolerance_pct: float = field(
+        default_factory=lambda: float(os.getenv("BTC_SETTLEMENT_TOLERANCE_PCT", "0.5"))
+    )
+
     # === Bot Logging ===
     bot_log_decisions: bool = field(
         default_factory=lambda: os.getenv("BOT_LOG_DECISIONS", "true").lower() == "true"

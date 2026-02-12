@@ -81,3 +81,14 @@ def test_settings_repr_with_none_credentials():
     assert "private_key=None" in repr_str
     assert "api_key=None" in repr_str
 
+
+def test_price_fetch_config_defaults():
+    """Price fetch configuration has correct defaults."""
+    settings = Settings()
+
+    assert settings.btc_fetch_timeout == 30
+    assert settings.btc_fetch_max_retries == 2
+    assert settings.btc_fetch_retry_delay == 2.0
+    assert settings.btc_cache_stale_max_age == 600
+    assert settings.btc_settlement_tolerance_pct == 0.5
+
