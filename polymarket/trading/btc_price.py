@@ -325,6 +325,92 @@ class BTCPriceService:
             logger.error("Failed to fetch historical price", timestamp=timestamp, error=str(e) or type(e).__name__)
             return None
 
+    async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+        """
+        Fetch BTC price at specific timestamp from CoinGecko.
+
+        Args:
+            timestamp: Unix timestamp (seconds)
+
+        Returns:
+            BTC price or None
+        """
+        session = await self._get_session()
+
+        # CoinGecko historical data endpoint
+        # Note: For exact timestamp, we use the 'history' endpoint with date
+        date_str = datetime.fromtimestamp(timestamp).strftime("%d-%m-%Y")
+        url = f"https://api.coingecko.com/api/v3/coins/bitcoin/history"
+
+        params = {
+            "date": date_str,
+            "localization": "false"
+        }
+
+        try:
+            async with session.get(url, params=params, timeout=30) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                price = data.get("market_data", {}).get("current_price", {}).get("usd")
+
+                if price:
+                    logger.debug("Fetched CoinGecko price at timestamp",
+                                timestamp=timestamp, price=f"${price:,.2f}")
+                    return decimal.Decimal(str(price))
+
+                return None
+
+        except Exception as e:
+            logger.error("Failed to fetch CoinGecko price at timestamp",
+                        timestamp=timestamp, error=str(e))
+            return None
+
+    async def _fetch_kraken_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+        """
+        Fetch BTC price at specific timestamp from Kraken.
+
+        Args:
+            timestamp: Unix timestamp (seconds)
+
+        Returns:
+            BTC price or None
+        """
+        session = await self._get_session()
+
+        # Kraken OHLC endpoint with specific timestamp
+        url = "https://api.kraken.com/0/public/OHLC"
+
+        params = {
+            "pair": "XBTUSD",
+            "interval": "1",
+            "since": str(timestamp)
+        }
+
+        try:
+            async with session.get(url, params=params, timeout=30) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                if data.get("error"):
+                    raise Exception(f"Kraken API error: {data['error']}")
+
+                # Get first candle (closest to timestamp)
+                ohlc_data = data["result"].get("XXBTZUSD", [])
+
+                if ohlc_data:
+                    close_price = ohlc_data[0][4]  # Close price
+                    logger.debug("Fetched Kraken price at timestamp",
+                                timestamp=timestamp, price=f"${close_price}")
+                    return decimal.Decimal(str(close_price))
+
+                return None
+
+        except Exception as e:
+            logger.error("Failed to fetch Kraken price at timestamp",
+                        timestamp=timestamp, error=str(e))
+            return None
+
     async def get_price_change(self, window_minutes: int = 5) -> PriceChange:
         """Calculate price change over a time window."""
         history = await self.get_price_history(minutes=window_minutes)

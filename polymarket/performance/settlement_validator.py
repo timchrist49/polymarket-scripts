@@ -94,17 +94,20 @@ class SettlementPriceValidator:
         max_price = max(prices)
         return float((max_price - min_price) / min_price * 100)
 
-    # These will be implemented in next task
     async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
-        """Placeholder - will delegate to BTCPriceService."""
+        """Fetch from Binance via BTCPriceService."""
         if self._btc_service:
             return await self._btc_service.get_price_at_timestamp(timestamp)
         return None
 
     async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
-        """Placeholder - will be implemented."""
+        """Fetch from CoinGecko via BTCPriceService."""
+        if self._btc_service:
+            return await self._btc_service._fetch_coingecko_at_timestamp(timestamp)
         return None
 
     async def _fetch_kraken_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
-        """Placeholder - will be implemented."""
+        """Fetch from Kraken via BTCPriceService."""
+        if self._btc_service:
+            return await self._btc_service._fetch_kraken_at_timestamp(timestamp)
         return None

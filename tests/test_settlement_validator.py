@@ -62,3 +62,51 @@ def test_calculate_spread():
 
     # Spread = (67200 - 67000) / 67000 * 100 = 0.298%
     assert 0.29 < spread < 0.30
+
+
+@pytest.mark.asyncio
+async def test_fetch_coingecko_at_timestamp_integration():
+    """Integration test for CoinGecko timestamp fetch."""
+    from polymarket.trading.btc_price import BTCPriceService
+    from polymarket.config import Settings
+
+    settings = Settings()
+    btc_service = BTCPriceService(settings)
+    validator = SettlementPriceValidator(btc_service)
+
+    # Mock the session with proper context manager support
+    class MockResponse:
+        status = 200
+
+        def raise_for_status(self):
+            pass
+
+        async def json(self):
+            return {
+                "market_data": {
+                    "current_price": {"usd": 67123.45}
+                }
+            }
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    class MockSession:
+        closed = False
+
+        def get(self, *args, **kwargs):
+            return MockResponse()
+
+    async def mock_get_session():
+        return MockSession()
+
+    btc_service._get_session = mock_get_session
+
+    result = await validator._fetch_coingecko_at_timestamp(1707696000)
+
+    assert result == Decimal("67123.45")
+
+    await btc_service.close()
