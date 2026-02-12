@@ -1,6 +1,7 @@
 """Trade settlement service for determining win/loss outcomes."""
 
 import re
+import asyncio
 import structlog
 from datetime import datetime, timedelta
 from typing import Dict, Optional
@@ -299,6 +300,10 @@ class TradeSettler:
                     logger.error(error_msg)
                     stats['errors'].append(error_msg)
                     continue
+                finally:
+                    # Rate limit: 2 second delay between each trade settlement
+                    # to prevent API hammering
+                    await asyncio.sleep(2)
 
         except Exception as e:
             logger.error("Settlement cycle failed", error=str(e))

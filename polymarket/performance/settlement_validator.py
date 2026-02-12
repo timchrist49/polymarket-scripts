@@ -98,7 +98,7 @@ class SettlementPriceValidator:
     async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """Fetch from Binance via BTCPriceService."""
         if self._btc_service:
-            return await self._btc_service.get_price_at_timestamp(timestamp)
+            return await self._btc_service._fetch_binance_at_timestamp(timestamp)
         return None
 
     async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
