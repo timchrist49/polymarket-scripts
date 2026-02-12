@@ -188,6 +188,27 @@ class RiskManager:
 
         return multiplier
 
+    def _extract_odds_for_action(self, action: str, market: dict) -> Decimal:
+        """
+        Get the odds for the side being bet.
+
+        Args:
+            action: Trading action ("YES", "NO", "HOLD")
+            market: Market data containing yes_price and no_price
+
+        Returns:
+            Decimal: Odds for the action (0.0 to 1.0), defaults to 0.50
+        """
+        if action == "YES":
+            odds = market.get("yes_price", 0.50)
+        elif action == "NO":
+            odds = market.get("no_price", 0.50)
+        else:
+            # HOLD or invalid action
+            odds = 0.50
+
+        return Decimal(str(odds))
+
     async def evaluate_stop_loss(
         self,
         open_positions: list[dict],
