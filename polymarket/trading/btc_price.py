@@ -128,6 +128,64 @@ class BTCPriceService:
                 volume_24h=decimal.Decimal(str(btc.get("usd_24h_vol", 0)))
             )
 
+    async def _fetch_coingecko_history(self, minutes: int = 60) -> list[PricePoint]:
+        """
+        Fetch historical price candles from CoinGecko.
+
+        Args:
+            minutes: Number of 1-minute candles to fetch
+
+        Returns:
+            List of price points
+        """
+        session = await self._get_session()
+
+        # CoinGecko uses 'market_chart' endpoint for historical data
+        # Note: Free tier has rate limits, use carefully
+        url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+
+        # Calculate time range (now - minutes)
+        to_timestamp = int(datetime.now().timestamp())
+        from_timestamp = to_timestamp - (minutes * 60)
+
+        params = {
+            "vs_currency": "usd",
+            "from": str(from_timestamp),
+            "to": str(to_timestamp)
+        }
+
+        try:
+            async with session.get(url, params=params, timeout=30) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                # CoinGecko returns arrays of [timestamp_ms, price]
+                prices = data.get("prices", [])
+                volumes = data.get("total_volumes", [])
+
+                # Convert to PricePoint objects
+                result = []
+                for i, (timestamp_ms, price) in enumerate(prices):
+                    volume = volumes[i][1] if i < len(volumes) else 0
+
+                    result.append(PricePoint(
+                        price=decimal.Decimal(str(price)),
+                        volume=decimal.Decimal(str(volume)),
+                        timestamp=datetime.fromtimestamp(timestamp_ms / 1000)
+                    ))
+
+                logger.debug(
+                    "Fetched CoinGecko history",
+                    candles=len(result),
+                    minutes=minutes
+                )
+
+                return result
+
+        except Exception as e:
+            logger.error("Failed to fetch CoinGecko history", error=str(e))
+            raise
+
     async def get_price_history(self, minutes: int = 60) -> list[PricePoint]:
         """Get historical price points for technical analysis."""
         # Use direct HTTP request to Binance API instead of ccxt
