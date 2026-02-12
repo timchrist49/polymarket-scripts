@@ -140,6 +140,42 @@ class RiskManager:
 
         return min(calculated, max_position)
 
+    def _calculate_odds_multiplier(self, odds: float) -> float:
+        """
+        Scale down position size for low-odds bets.
+
+        Logic:
+        - odds >= 0.50: No scaling (100% of position)
+        - odds < 0.50:  Linear scale from 100% down to 50%
+        - odds < 0.25:  Reject bet entirely (too risky)
+
+        Examples:
+        - 0.83 odds → 1.00x (no reduction)
+        - 0.50 odds → 1.00x (breakeven)
+        - 0.40 odds → 0.80x (20% reduction)
+        - 0.31 odds → 0.62x (38% reduction)
+        - 0.25 odds → 0.50x (50% reduction, minimum)
+        - 0.20 odds → REJECT (below threshold)
+
+        Args:
+            odds: The odds for the side being bet (0.0 to 1.0)
+
+        Returns:
+            float: Multiplier between 0.0 (reject) and 1.0 (no scaling)
+        """
+        MINIMUM_ODDS = 0.25
+        SCALE_THRESHOLD = 0.50
+
+        if odds < MINIMUM_ODDS:
+            return 0.0  # Reject bet
+
+        if odds >= SCALE_THRESHOLD:
+            return 1.0  # No scaling needed
+
+        # Linear interpolation between 0.5x and 1.0x
+        multiplier = 0.5 + (odds - MINIMUM_ODDS) / (SCALE_THRESHOLD - MINIMUM_ODDS) * 0.5
+        return multiplier
+
     async def evaluate_stop_loss(
         self,
         open_positions: list[dict],
