@@ -163,3 +163,30 @@ class TestPositionSizingWithOdds:
         # With 0.83 odds, multiplier is 1.0x (no scaling)
         # Position should be unchanged
         assert result.adjusted_position == Decimal("5.00")
+
+    @pytest.mark.asyncio
+    async def test_position_sizing_below_minimum_odds_rejected(self):
+        """Odds < 0.25 should reject the bet entirely."""
+        settings = Settings()
+        risk_mgr = RiskManager(settings)
+
+        from polymarket.models import TradingDecision
+        decision = TradingDecision(
+            action="YES",
+            confidence=Decimal("0.90"),  # High confidence
+            reasoning="test",
+            token_id="0x789",
+            position_size=Decimal("10.0"),
+            stop_loss_threshold=0.30
+        )
+        market = {"yes_price": 0.20, "no_price": 0.80}  # Very low odds
+
+        result = await risk_mgr.validate_decision(
+            decision,
+            portfolio_value=Decimal("100"),
+            market=market
+        )
+
+        assert not result.approved  # Should be rejected
+        assert "odds" in result.reason.lower()  # Reason should mention odds
+        assert "0.25" in result.reason  # Should mention minimum threshold

@@ -61,6 +61,14 @@ class RiskManager:
             decision, portfolio_value, max_position, odds
         )
 
+        # Check 3a: Reject if odds below minimum threshold
+        if suggested_size == Decimal("0"):
+            return ValidationResult(
+                approved=False,
+                reason=f"Odds {float(odds):.2f} below minimum threshold 0.25",
+                adjusted_position=None
+            )
+
         # Check 4: Total exposure
         open_exposure = Decimal("0")
         if open_positions:
@@ -133,6 +141,10 @@ class RiskManager:
             multiplier = Decimal("0.0")
 
         calculated = base_size * multiplier
+
+        # Apply odds multiplier
+        odds_multiplier = self._calculate_odds_multiplier(odds)
+        calculated = calculated * odds_multiplier
 
         # Apply absolute dollar cap
         dollar_cap = Decimal(str(self.settings.bot_max_position_dollars))
