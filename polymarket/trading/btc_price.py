@@ -18,6 +18,9 @@ from polymarket.models import BTCPriceData, PricePoint, PriceChange
 from polymarket.config import Settings
 from polymarket.trading.crypto_price_stream import CryptoPriceStream
 from polymarket.trading.price_cache import CandleCache
+from polymarket.trading.retry_logic import fetch_with_retry, RetryConfig
+from polymarket.trading.parallel_fetch import fetch_with_fallbacks
+from polymarket.trading.stale_policy import StaleDataPolicy
 
 logger = structlog.get_logger()
 
@@ -38,6 +41,9 @@ class BTCPriceService:
 
         # Candle cache
         self._candle_cache = CandleCache()
+
+        # Stale data policy
+        self._stale_policy = StaleDataPolicy()
 
     async def start(self):
         """Start Polymarket WebSocket stream."""
@@ -251,7 +257,7 @@ class BTCPriceService:
             raise
 
     async def get_price_history(self, minutes: int = 60) -> list[PricePoint]:
-        """Get historical price points for technical analysis with caching."""
+        """Get historical price points for technical analysis with fallbacks."""
         # Check cache first
         cached_candles = []
         uncached_count = 0
@@ -268,47 +274,64 @@ class BTCPriceService:
         # If we have enough cached candles, use them
         if uncached_count == 0:
             logger.debug("Using fully cached price history", minutes=minutes)
+            self._stale_policy.record_success(cached_candles)
             return cached_candles
 
-        # Need to fetch fresh data
-        try:
-            session = await self._get_session()
-            url = "https://api.binance.com/api/v3/klines"
-            params = {
-                "symbol": "BTCUSDT",
-                "interval": "1m",
-                "limit": str(minutes)
-            }
+        # Need to fetch fresh data - try with retries and fallbacks
+        async def fetch_primary():
+            return await self._fetch_binance_history(minutes)
 
-            async with session.get(url, params=params, timeout=30) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        result = await fetch_with_fallbacks(
+            lambda: fetch_with_retry(fetch_primary, "Binance"),
+            [
+                ("CoinGecko", lambda: self._fetch_coingecko_history(minutes)),
+                ("Kraken", lambda: self._fetch_kraken_history(minutes))
+            ]
+        )
 
-                candles = [
-                    PricePoint(
-                        price=decimal.Decimal(str(candle[4])),  # Close price
-                        volume=decimal.Decimal(str(candle[5])),  # Volume
-                        timestamp=datetime.fromtimestamp(candle[0] / 1000)
-                    )
-                    for candle in data
-                ]
+        if result:
+            # Cache all fetched candles
+            for candle in result:
+                timestamp = int(candle.timestamp.timestamp())
+                self._candle_cache.put(timestamp, candle)
 
-                # Cache all fetched candles
-                for candle in candles:
-                    timestamp = int(candle.timestamp.timestamp())
-                    self._candle_cache.put(timestamp, candle)
+            self._stale_policy.record_success(result)
+            logger.debug("Fetched and cached price history",
+                       minutes=minutes, candles=len(result))
+            return result
 
-                logger.debug("Fetched and cached price history",
-                           minutes=minutes, cached_new=len(candles))
+        # All sources failed - try stale cache
+        self._stale_policy.record_failure()
+        stale_data = self._stale_policy.get_stale_cache_with_warning()
 
-                return candles
+        if stale_data:
+            return stale_data
 
-        except asyncio.TimeoutError:
-            logger.error("Failed to fetch price history", error="Binance API timeout after 30s")
-            raise
-        except Exception as e:
-            logger.error("Failed to fetch price history", error=str(e) or type(e).__name__)
-            raise
+        # No options left
+        raise Exception("Failed to fetch price history from all sources")
+
+    async def _fetch_binance_history(self, minutes: int) -> list[PricePoint]:
+        """Fetch from Binance (extracted for fallback logic)."""
+        session = await self._get_session()
+        url = "https://api.binance.com/api/v3/klines"
+        params = {
+            "symbol": "BTCUSDT",
+            "interval": "1m",
+            "limit": str(minutes)
+        }
+
+        async with session.get(url, params=params, timeout=30) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+
+            return [
+                PricePoint(
+                    price=decimal.Decimal(str(candle[4])),  # Close price
+                    volume=decimal.Decimal(str(candle[5])),  # Volume
+                    timestamp=datetime.fromtimestamp(candle[0] / 1000)
+                )
+                for candle in data
+            ]
 
     async def get_price_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
         """

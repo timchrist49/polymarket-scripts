@@ -33,3 +33,32 @@ async def test_candle_cache_is_integrated():
     assert retrieved.price == Decimal("67000")
 
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_get_price_history_fallback_to_coingecko():
+    """Falls back to CoinGecko when Binance fails."""
+    settings = Settings()
+    service = BTCPriceService(settings)
+
+    # Mock Binance to fail
+    async def mock_binance_fetch(*args, **kwargs):
+        raise Exception("Binance down")
+
+    service._fetch_binance_history = mock_binance_fetch
+
+    # Mock CoinGecko to succeed
+    service._fetch_coingecko_history = AsyncMock(return_value=[
+        PricePoint(
+            price=Decimal("67000"),
+            volume=Decimal("100"),
+            timestamp=datetime.now()
+        )
+    ])
+
+    result = await service.get_price_history(minutes=1)
+
+    assert len(result) == 1
+    assert result[0].price == Decimal("67000")
+
+    await service.close()
