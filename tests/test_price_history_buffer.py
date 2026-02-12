@@ -256,3 +256,47 @@ async def test_load_from_disk_handles_corrupted_json():
         # Should not raise exception, just log error
         await buffer.load_from_disk()
         assert buffer.size() == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_removes_old_entries():
+    """Test cleanup removes entries older than retention period."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    # Add old entry (25 hours ago)
+    old_timestamp = int(datetime.now().timestamp()) - (25 * 3600)
+    await buffer.append(old_timestamp, Decimal("60000.00"))
+
+    # Add recent entry (1 hour ago)
+    recent_timestamp = int(datetime.now().timestamp()) - 3600
+    await buffer.append(recent_timestamp, Decimal("67000.00"))
+
+    assert buffer.size() == 2
+
+    # Cleanup
+    removed = await buffer.cleanup_old_entries()
+
+    assert removed == 1
+    assert buffer.size() == 1
+
+    # Verify recent entry still present
+    price = await buffer.get_price_at(recent_timestamp, tolerance=5)
+    assert price == Decimal("67000.00")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_marks_buffer_dirty():
+    """Test cleanup marks buffer as dirty for persistence."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    # Add old entry
+    old_timestamp = int(datetime.now().timestamp()) - (25 * 3600)
+    await buffer.append(old_timestamp, Decimal("60000.00"))
+
+    # Save and clear dirty flag
+    await buffer.save_to_disk()
+    assert not buffer._dirty
+
+    # Cleanup should mark dirty
+    await buffer.cleanup_old_entries()
+    assert buffer._dirty

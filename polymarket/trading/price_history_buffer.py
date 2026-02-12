@@ -334,3 +334,29 @@ class PriceHistoryBuffer:
                     file=self._persistence_file
                 )
                 # Continue with empty buffer
+
+    async def cleanup_old_entries(self) -> int:
+        """
+        Remove entries older than retention period.
+
+        Returns:
+            Number of entries removed
+        """
+        async with self._lock:
+            cutoff_timestamp = int(datetime.now().timestamp()) - (self._retention_hours * 3600)
+
+            original_size = len(self._buffer)
+
+            # Filter out old entries (keep only recent)
+            self._buffer = deque(
+                (entry for entry in self._buffer if entry.timestamp >= cutoff_timestamp),
+                maxlen=self._buffer.maxlen
+            )
+
+            removed_count = original_size - len(self._buffer)
+
+            if removed_count > 0:
+                self._dirty = True
+                logger.info(f"Cleaned up {removed_count} old entries")
+
+            return removed_count
