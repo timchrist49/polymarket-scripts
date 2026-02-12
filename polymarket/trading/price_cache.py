@@ -39,3 +39,48 @@ class CandleCache:
             return 300   # 5 min TTL for recent closed candles
         else:
             return 60    # 1 min TTL for current/recent candles
+
+    def put(self, timestamp: int, candle: PricePoint) -> None:
+        """
+        Cache a candle.
+
+        Args:
+            timestamp: Minute-level timestamp (Unix seconds)
+            candle: Price data point
+        """
+        self._candles[timestamp] = (candle, datetime.now())
+
+    def get(self, timestamp: int) -> Optional[PricePoint]:
+        """
+        Retrieve cached candle if valid.
+
+        Args:
+            timestamp: Minute-level timestamp (Unix seconds)
+
+        Returns:
+            Cached candle or None if invalid/missing
+        """
+        if not self.is_valid(timestamp):
+            return None
+
+        candle, _ = self._candles[timestamp]
+        return candle
+
+    def is_valid(self, timestamp: int) -> bool:
+        """
+        Check if cached candle is still valid.
+
+        Args:
+            timestamp: Minute-level timestamp (Unix seconds)
+
+        Returns:
+            True if cache is valid, False otherwise
+        """
+        if timestamp not in self._candles:
+            return False
+
+        candle, cached_at = self._candles[timestamp]
+        age = (datetime.now() - cached_at).total_seconds()
+        ttl = self.get_ttl(candle.timestamp)
+
+        return age < ttl

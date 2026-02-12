@@ -70,3 +70,61 @@ def test_get_ttl_future_timestamp():
     ttl = cache.get_ttl(future_timestamp, current_time=now)
 
     assert ttl == 60  # 1 minute (treat as current candle)
+
+
+def test_put_and_get_candle():
+    """Can cache and retrieve a candle."""
+    cache = CandleCache()
+    timestamp = int(datetime.now().timestamp())
+    candle = PricePoint(
+        price=Decimal("67000.50"),
+        volume=Decimal("100.0"),
+        timestamp=datetime.now()
+    )
+
+    cache.put(timestamp, candle)
+    result = cache.get(timestamp)
+
+    assert result is not None
+    assert result.price == Decimal("67000.50")
+
+
+def test_is_valid_fresh_cache():
+    """Fresh cache is valid."""
+    cache = CandleCache()
+    timestamp = int(datetime.now().timestamp())
+    candle = PricePoint(
+        price=Decimal("67000.50"),
+        volume=Decimal("100.0"),
+        timestamp=datetime.now()
+    )
+
+    cache.put(timestamp, candle)
+
+    assert cache.is_valid(timestamp) is True
+
+
+def test_is_valid_missing_cache():
+    """Missing cache is invalid."""
+    cache = CandleCache()
+    timestamp = int(datetime.now().timestamp())
+
+    assert cache.is_valid(timestamp) is False
+
+
+def test_is_valid_expired_cache():
+    """Expired cache is invalid."""
+    cache = CandleCache()
+    now = datetime.now()
+    timestamp = int((now - timedelta(minutes=2)).timestamp())
+    candle = PricePoint(
+        price=Decimal("67000.50"),
+        volume=Decimal("100.0"),
+        timestamp=now - timedelta(minutes=2)
+    )
+
+    # Manually set old cached_at time
+    cache._candles[timestamp] = (candle, now - timedelta(minutes=2))
+
+    # For current candle, TTL is 60s, so 2 min old is expired
+    assert cache.is_valid(timestamp) is False
