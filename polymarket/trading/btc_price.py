@@ -543,6 +543,9 @@ class BTCPriceService:
         """
         Fetch BTC price at specific timestamp from CoinGecko Pro API.
 
+        Uses /market_chart/range endpoint which provides 5-minute granularity
+        for recent data (within 1 day), suitable for 15-minute markets.
+
         Args:
             timestamp: Unix timestamp (seconds)
 
@@ -554,14 +557,15 @@ class BTCPriceService:
         # Use Pro API if API key available
         base_url = "https://pro-api.coingecko.com/api/v3" if self.settings.coingecko_api_key else "https://api.coingecko.com/api/v3"
 
-        # CoinGecko historical data endpoint
-        # Note: For exact timestamp, we use the 'history' endpoint with date
-        date_str = datetime.fromtimestamp(timestamp).strftime("%d-%m-%Y")
-        url = f"{base_url}/coins/bitcoin/history"
+        # Use market_chart/range endpoint for minute-level granularity
+        # This returns 5-minute data points for recent timestamps
+        url = f"{base_url}/coins/bitcoin/market_chart/range"
 
+        # Query a 5-minute window around the target timestamp
         params = {
-            "date": date_str,
-            "localization": "false"
+            "vs_currency": "usd",
+            "from": str(timestamp),
+            "to": str(timestamp + 300),  # +5 minutes
         }
 
         # Add API key for Pro tier
@@ -573,14 +577,28 @@ class BTCPriceService:
                 resp.raise_for_status()
                 data = await resp.json()
 
-                price = data.get("market_data", {}).get("current_price", {}).get("usd")
+                # Extract price data points [[timestamp_ms, price], ...]
+                prices = data.get("prices", [])
 
-                if price:
-                    logger.debug("Fetched CoinGecko price at timestamp",
-                                timestamp=timestamp, price=f"${price:,.2f}")
-                    return decimal.Decimal(str(price))
+                if not prices:
+                    logger.warning("No price data returned from CoinGecko", timestamp=timestamp)
+                    return None
 
-                return None
+                # Find the price closest to our target timestamp
+                target_ms = timestamp * 1000  # Convert to milliseconds
+                closest_price = min(prices, key=lambda p: abs(p[0] - target_ms))
+
+                price = closest_price[1]
+                time_diff = abs(closest_price[0] - target_ms) / 1000  # Convert back to seconds
+
+                logger.debug(
+                    "Fetched CoinGecko price at timestamp",
+                    timestamp=timestamp,
+                    price=f"${price:,.2f}",
+                    time_diff_seconds=f"{time_diff:.0f}"
+                )
+
+                return decimal.Decimal(str(price))
 
         except Exception as e:
             logger.error("Failed to fetch CoinGecko price at timestamp",
