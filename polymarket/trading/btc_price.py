@@ -401,8 +401,9 @@ class BTCPriceService:
                     logger.warning("No price data at timestamp", timestamp=timestamp)
                     return None
 
-                # Return close price of the candle
-                price = decimal.Decimal(str(data[0][4]))
+                # Return OPEN price of the candle (at exact timestamp, not 1 min later)
+                # data[0] = [open_time, open, high, low, close, volume, close_time, ...]
+                price = decimal.Decimal(str(data[0][1]))
                 logger.debug(
                     "Fetched Binance historical price",
                     timestamp=timestamp,
