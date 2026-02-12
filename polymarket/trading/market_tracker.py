@@ -5,7 +5,7 @@ Tracks market timing, calculates time remaining, and manages price-to-beat.
 """
 
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict
 from pathlib import Path
 import json
@@ -34,6 +34,9 @@ class MarketTracker:
 
         Slug format: btc-updown-15m-{epoch_timestamp}
         Example: btc-updown-15m-1739203200
+
+        NOTE: The timestamp in the slug represents market END time.
+        For 15-minute markets, we subtract 15 minutes to get START time.
         """
         try:
             parts = slug.split("-")
@@ -41,10 +44,14 @@ class MarketTracker:
                 logger.warning("Invalid market slug format", slug=slug)
                 return None
 
-            timestamp_str = parts[-1]  # Last part is epoch
+            timestamp_str = parts[-1]  # Last part is epoch (market END time)
             timestamp = int(timestamp_str)
 
-            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            # Convert END time to START time (subtract 15 minutes)
+            market_end = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            market_start = market_end - timedelta(minutes=15)
+
+            return market_start
         except (ValueError, IndexError) as e:
             logger.error("Failed to parse market slug", slug=slug, error=str(e))
             return None
