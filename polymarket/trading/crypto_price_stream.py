@@ -15,6 +15,7 @@ import websockets
 
 from polymarket.models import BTCPriceData
 from polymarket.config import Settings
+from polymarket.trading.price_history_buffer import PriceHistoryBuffer
 
 logger = structlog.get_logger()
 
@@ -24,16 +25,38 @@ class CryptoPriceStream:
 
     WS_URL = "wss://ws-live-data.polymarket.com"
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        buffer_enabled: bool = False,
+        buffer_file: str = "data/price_history.json"
+    ):
         self.settings = settings
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._current_price: Optional[BTCPriceData] = None
         self._connected = False
         self._running = False
 
+        # Initialize price history buffer if enabled
+        self.price_buffer: Optional[PriceHistoryBuffer] = None
+        if buffer_enabled:
+            self.price_buffer = PriceHistoryBuffer(
+                retention_hours=24,
+                save_interval=300,  # 5 minutes
+                persistence_file=buffer_file
+            )
+
     async def start(self):
         """Start WebSocket connection and price stream."""
         self._running = True
+
+        # Load historical price data if buffer is enabled
+        if self.price_buffer:
+            try:
+                await self.price_buffer.load_from_disk()
+                logger.info("Price history loaded from disk")
+            except Exception as e:
+                logger.warning(f"Could not load price history: {e}")
 
         try:
             async with websockets.connect(self.WS_URL) as ws:
@@ -101,6 +124,12 @@ class CryptoPriceStream:
                             source="polymarket"
                         )
 
+                        # Append to buffer if enabled
+                        await self._append_to_buffer(
+                            latest["timestamp"] // 1000,  # Convert ms to seconds
+                            Decimal(str(latest["value"]))
+                        )
+
                 # Handle real-time price updates
                 elif msg_type == "update" and payload.get("symbol") == "btcusdt":
                     self._current_price = BTCPriceData(
@@ -114,8 +143,24 @@ class CryptoPriceStream:
                         price=f"${self._current_price.price:,.2f}",
                         source="polymarket"
                     )
+
+                    # Append to buffer if enabled
+                    await self._append_to_buffer(
+                        payload["timestamp"] // 1000,  # Convert ms to seconds
+                        Decimal(str(payload["value"]))
+                    )
+
         except Exception as e:
             logger.error("Failed to parse price message", error=str(e))
+
+    async def _append_to_buffer(self, timestamp: int, price: Decimal):
+        """Append price to buffer if enabled. Errors don't crash WebSocket."""
+        if self.price_buffer:
+            try:
+                await self.price_buffer.append(timestamp, price, source="polymarket")
+            except Exception as e:
+                logger.error(f"Failed to append to price buffer: {e}")
+                # Don't crash WebSocket on buffer failure
 
     async def get_current_price(self) -> Optional[BTCPriceData]:
         """Get most recent BTC price."""
@@ -130,3 +175,11 @@ class CryptoPriceStream:
         self._running = False
         if self._ws:
             await self._ws.close()
+
+        # Save buffer to disk before shutdown
+        if self.price_buffer:
+            try:
+                await self.price_buffer.save_to_disk()
+                logger.info("Price history saved to disk")
+            except Exception as e:
+                logger.error(f"Failed to save price history: {e}")
