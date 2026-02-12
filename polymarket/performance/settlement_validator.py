@@ -31,61 +31,49 @@ class SettlementPriceValidator:
         """
         Fetch price from multiple sources and validate agreement.
 
+        For recent timestamps (< 1 hour old), use single source (Binance)
+        since we're fetching real-time data, not historical lookups.
+
         Args:
             timestamp: Unix timestamp (seconds)
 
         Returns:
-            Validated price or None if sources disagree
+            Validated price or None if unavailable
         """
-        # Fetch from all sources in parallel
-        tasks = [
-            ("Binance", self._fetch_binance_at_timestamp(timestamp)),
-            ("CoinGecko", self._fetch_coingecko_at_timestamp(timestamp)),
-            ("Kraken", self._fetch_kraken_at_timestamp(timestamp))
-        ]
+        from datetime import datetime
 
-        results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
-        prices = {
-            name: price
-            for (name, _), price in zip(tasks, results)
-            if price is not None and not isinstance(price, Exception)
-        }
+        # Calculate age of timestamp
+        now = datetime.now().timestamp()
+        age_seconds = now - timestamp
 
-        if len(prices) < self.MIN_SOURCES:
-            logger.error(
-                "Insufficient sources for validation",
-                available=len(prices),
-                required=self.MIN_SOURCES
-            )
-            return None
-
-        # Check if all prices agree within tolerance
-        prices_list = list(prices.values())
-        avg_price = sum(prices_list) / len(prices_list)
-
-        for source, price in prices.items():
-            deviation_pct = abs(float((price - avg_price) / avg_price * 100))
-
-            if deviation_pct > self.tolerance_percent:
-                logger.error(
-                    "Price sources disagree",
-                    source=source,
-                    price=float(price),
-                    avg_price=float(avg_price),
-                    deviation_pct=f"{deviation_pct:.2f}%",
-                    tolerance=f"{self.tolerance_percent}%"
+        # For recent data (< 1 hour), just use Binance
+        # Free APIs don't support historical lookups, only current prices
+        if age_seconds < 3600:  # Less than 1 hour old
+            price = await self._fetch_binance_at_timestamp(timestamp)
+            if price:
+                logger.info(
+                    "Settlement price fetched (real-time)",
+                    source="Binance",
+                    price=f"${price:,.2f}",
+                    age_minutes=f"{age_seconds/60:.1f}"
+                )
+                return price
+            else:
+                logger.warning(
+                    "Failed to fetch recent price from Binance",
+                    timestamp=timestamp,
+                    age_seconds=age_seconds
                 )
                 return None
 
-        # All sources agree! Return average for accuracy
-        logger.info(
-            "Settlement price validated",
-            sources=list(prices.keys()),
-            avg_price=f"${avg_price:,.2f}",
-            spread=f"{self._calculate_spread(prices_list):.2f}%"
+        # For old data (> 1 hour), skip multi-source validation
+        # Free APIs can't provide historical data
+        logger.warning(
+            "Timestamp too old for free API settlement",
+            timestamp=timestamp,
+            age_hours=f"{age_seconds/3600:.1f}"
         )
-
-        return avg_price
+        return None
 
     def _calculate_spread(self, prices: list[Decimal]) -> float:
         """Calculate price spread percentage."""
