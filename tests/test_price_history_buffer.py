@@ -63,3 +63,43 @@ async def test_append_marks_buffer_dirty():
     await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
 
     assert buffer.is_dirty() == True
+
+
+@pytest.mark.asyncio
+async def test_get_price_at_exact_timestamp():
+    """Should find price at exact timestamp."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
+    await buffer.append(1770875160, Decimal("67025.10"), "polymarket")
+
+    price = await buffer.get_price_at(1770875100)
+
+    assert price == Decimal("67018.35")
+
+
+@pytest.mark.asyncio
+async def test_get_price_at_with_tolerance():
+    """Should find closest price within tolerance window."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
+    await buffer.append(1770875160, Decimal("67025.10"), "polymarket")
+
+    # Query timestamp 5 seconds after first entry (within 30s tolerance)
+    price = await buffer.get_price_at(1770875105, tolerance=30)
+
+    assert price == Decimal("67018.35")
+
+
+@pytest.mark.asyncio
+async def test_get_price_at_returns_none_if_not_found():
+    """Should return None if no price within tolerance."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    await buffer.append(1770875100, Decimal("67018.35"), "polymarket")
+
+    # Query far future timestamp (>30s tolerance)
+    price = await buffer.get_price_at(1770875200, tolerance=30)
+
+    assert price is None

@@ -109,3 +109,53 @@ class PriceHistoryBuffer:
     def is_dirty(self) -> bool:
         """Check if buffer has unsaved changes."""
         return self._dirty
+
+    async def get_price_at(
+        self,
+        timestamp: int,
+        tolerance: int = 30
+    ) -> Optional[Decimal]:
+        """
+        Get price at specific timestamp with tolerance.
+
+        Args:
+            timestamp: Unix timestamp to query
+            tolerance: Maximum seconds difference (default: 30)
+
+        Returns:
+            Price if found within tolerance, None otherwise
+
+        Note: Returns closest price within tolerance window
+        """
+        async with self._lock:
+            if not self._buffer:
+                return None
+
+            # Binary search would be O(log n), but linear is fine for small buffer
+            # Find closest timestamp within tolerance
+            closest_entry: Optional[PriceEntry] = None
+            min_diff = tolerance + 1
+
+            for entry in self._buffer:
+                diff = abs(entry.timestamp - timestamp)
+                if diff <= tolerance and diff < min_diff:
+                    closest_entry = entry
+                    min_diff = diff
+
+            if closest_entry:
+                logger.debug(
+                    "Price found in buffer",
+                    requested_timestamp=timestamp,
+                    found_timestamp=closest_entry.timestamp,
+                    diff_seconds=min_diff,
+                    price=f"${closest_entry.price:,.2f}"
+                )
+                return closest_entry.price
+
+            logger.debug(
+                "Price not found in buffer",
+                requested_timestamp=timestamp,
+                tolerance=tolerance,
+                buffer_size=len(self._buffer)
+            )
+            return None
