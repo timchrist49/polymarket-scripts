@@ -140,7 +140,7 @@ class RiskManager:
 
         return min(calculated, max_position)
 
-    def _calculate_odds_multiplier(self, odds: float) -> float:
+    def _calculate_odds_multiplier(self, odds: Decimal) -> Decimal:
         """
         Scale down position size for low-odds bets.
 
@@ -158,22 +158,34 @@ class RiskManager:
         - 0.20 odds → REJECT (below threshold)
 
         Args:
-            odds: The odds for the side being bet (0.0 to 1.0)
+            odds: The odds for the side being bet (Decimal 0.0 to 1.0)
 
         Returns:
-            float: Multiplier between 0.0 (reject) and 1.0 (no scaling)
+            Decimal: Multiplier between 0.0 (reject) and 1.0 (no scaling)
         """
-        MINIMUM_ODDS = 0.25
-        SCALE_THRESHOLD = 0.50
+        MINIMUM_ODDS = Decimal("0.25")
+        SCALE_THRESHOLD = Decimal("0.50")
 
         if odds < MINIMUM_ODDS:
-            return 0.0  # Reject bet
+            logger.info(
+                "Bet rejected - odds below minimum threshold",
+                odds=float(odds),
+                minimum=0.25
+            )
+            return Decimal("0")
 
         if odds >= SCALE_THRESHOLD:
-            return 1.0  # No scaling needed
+            return Decimal("1.0")
 
         # Linear interpolation between 0.5x and 1.0x
-        multiplier = 0.5 + (odds - MINIMUM_ODDS) / (SCALE_THRESHOLD - MINIMUM_ODDS) * 0.5
+        multiplier = Decimal("0.5") + (odds - MINIMUM_ODDS) / (SCALE_THRESHOLD - MINIMUM_ODDS) * Decimal("0.5")
+
+        logger.debug(
+            "Odds multiplier calculated",
+            odds=float(odds),
+            multiplier=float(multiplier)
+        )
+
         return multiplier
 
     async def evaluate_stop_loss(
