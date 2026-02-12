@@ -846,7 +846,7 @@ class AutoTrader:
                 error=str(e)
             )
 
-    async def _get_fresh_market_data(self, market_id: str) -> Market:
+    async def _get_fresh_market_data(self, market_id: str) -> Optional[Market]:
         """
         Fetch fresh market data immediately before order execution.
 
@@ -854,7 +854,7 @@ class AutoTrader:
             market_id: The market ID to fetch
 
         Returns:
-            Market object with current best_bid/best_ask prices
+            Market object with current best_bid/best_ask prices, or None if market transition detected
 
         Raises:
             Exception: If market not found or fetch fails
@@ -866,10 +866,13 @@ class AutoTrader:
             # Verify it's the same market
             if fresh_market.id != market_id:
                 logger.warning(
-                    "Fresh market ID mismatch",
+                    "Market transition detected - skipping trade to avoid race condition",
                     expected=market_id,
-                    got=fresh_market.id
+                    got=fresh_market.id,
+                    reason="New market's orderbook may not be ready yet"
                 )
+                # Return None to signal trade should be skipped
+                return None
 
             logger.info(
                 "Fetched fresh market data",
@@ -998,6 +1001,26 @@ class AutoTrader:
                     )
                 return
 
+            # Check if market transition was detected
+            if fresh_market is None:
+                logger.info(
+                    "Trade skipped - market transition in progress",
+                    market_id=market.id,
+                    token=token_name,
+                    reason="Waiting for next cycle to avoid race condition"
+                )
+                # Update metrics with skip
+                if trade_id > 0:
+                    await self.performance_tracker.update_execution_metrics(
+                        trade_id=trade_id,
+                        analysis_price=analysis_price,
+                        execution_price=None,
+                        price_staleness_seconds=None,
+                        price_movement_favorable=None,
+                        skipped_unfavorable_move=True
+                    )
+                return
+
             # Check if market is still active (rollover protection)
             if not fresh_market.active:
                 logger.warning(
@@ -1076,14 +1099,26 @@ class AutoTrader:
 
             result = self.client.create_order(order_request, dry_run=False)
 
-            logger.info(
-                "Trade executed",
-                market_id=market.id,
-                action=decision.action,
-                token=token_name,
-                amount=str(amount),
-                order_id=result.order_id
-            )
+            # Only log success if order was actually placed
+            if result and result.order_id:
+                logger.info(
+                    "Trade executed",
+                    market_id=market.id,
+                    action=decision.action,
+                    token=token_name,
+                    amount=str(amount),
+                    order_id=result.order_id
+                )
+            else:
+                logger.warning(
+                    "Order placement failed",
+                    market_id=market.id,
+                    action=decision.action,
+                    token=token_name,
+                    amount=str(amount),
+                    result=str(result) if result else "None"
+                )
+                return  # Abort trade execution
 
             # Send Telegram notification
             try:

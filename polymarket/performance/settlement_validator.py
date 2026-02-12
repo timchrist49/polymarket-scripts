@@ -84,9 +84,9 @@ class SettlementPriceValidator:
         return float((max_price - min_price) / min_price * 100)
 
     async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
-        """Fetch from Binance via BTCPriceService."""
+        """Fetch price at timestamp via BTCPriceService (buffer-first, then Binance fallback)."""
         if self._btc_service:
-            return await self._btc_service._fetch_binance_at_timestamp(timestamp)
+            return await self._btc_service.get_price_at_timestamp(timestamp)
         return None
 
     async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[Decimal]:

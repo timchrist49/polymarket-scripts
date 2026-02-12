@@ -99,6 +99,10 @@ class CryptoPriceStream:
     async def _handle_message(self, message: str):
         """Parse and store price update."""
         try:
+            # Skip empty messages (WebSocket pings/heartbeats)
+            if not message or not message.strip():
+                return
+
             data = json.loads(message)
             topic = data.get("topic")
             msg_type = data.get("type")
