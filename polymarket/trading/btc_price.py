@@ -379,12 +379,43 @@ class BTCPriceService:
         """
         Fetch BTC price at specific timestamp from Binance.
 
+        Query order:
+        1. Price history buffer (if available) - instant, no network latency
+        2. Binance API (fallback) - slower, may timeout
+
         Args:
             timestamp: Unix timestamp (seconds)
 
         Returns:
             BTC price or None
         """
+        # Try buffer first (instant lookup, no network)
+        if self._stream and self._stream.price_buffer:
+            try:
+                price = await self._stream.price_buffer.get_price_at(
+                    timestamp,
+                    tolerance=30  # 30-second window
+                )
+                if price:
+                    logger.debug(
+                        "Price found in buffer",
+                        timestamp=timestamp,
+                        price=f"${price:,.2f}",
+                        source="buffer"
+                    )
+                    return price
+                else:
+                    logger.debug(
+                        "Price not in buffer, falling back to Binance",
+                        timestamp=timestamp
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Buffer query failed, falling back to Binance",
+                    error=str(e)
+                )
+
+        # Fallback to Binance API
         try:
             session = await self._get_session()
             url = "https://api.binance.com/api/v3/klines"
@@ -412,7 +443,8 @@ class BTCPriceService:
                 logger.debug(
                     "Fetched Binance historical price",
                     timestamp=timestamp,
-                    price=f"${price:,.2f}"
+                    price=f"${price:,.2f}",
+                    source="binance"
                 )
                 return price
 

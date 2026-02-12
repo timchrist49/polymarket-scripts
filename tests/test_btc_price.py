@@ -75,3 +75,105 @@ async def test_get_price_at_timestamp_uses_validator():
     assert service._settlement_validator._btc_service is service
 
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_binance_at_timestamp_checks_buffer_first():
+    """Test that buffer is queried before Binance API."""
+    settings = Settings()
+    service = BTCPriceService(settings)
+
+    # Start service (enables buffer)
+    await service.start()
+    await asyncio.sleep(1.5)  # Wait for initial price from WebSocket
+
+    # Get the current timestamp from the buffer's latest price
+    if service._stream and service._stream.price_buffer:
+        # Query a price that should be in the buffer (from WebSocket)
+        buffer = service._stream.price_buffer
+        if not buffer.is_empty():
+            # Get the most recent entry in buffer
+            recent_entry = buffer._buffer[-1]
+            recent_timestamp = recent_entry.timestamp
+
+            # Fetch price - should come from buffer, not Binance
+            price = await service._fetch_binance_at_timestamp(recent_timestamp)
+
+            # Verify we got a price (from buffer)
+            assert price is not None
+            assert price > Decimal("0")
+
+            # The price should match what's in the buffer
+            expected_price = recent_entry.price
+            assert price == expected_price
+        else:
+            pytest.skip("No prices in buffer yet")
+    else:
+        pytest.skip("Buffer not available")
+
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_binance_at_timestamp_falls_back_to_binance():
+    """Test fallback to Binance when buffer doesn't have data."""
+    settings = Settings()
+    service = BTCPriceService(settings)
+    await service.start()
+    await asyncio.sleep(0.5)
+
+    # Request price not in buffer (very old timestamp)
+    old_timestamp = int(datetime.now().timestamp()) - (48 * 3600)  # 48 hours ago
+
+    # Mock Binance response
+    with patch.object(service, '_get_session') as mock_session:
+        mock_response = AsyncMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = AsyncMock(return_value=[
+            [old_timestamp * 1000, "66500.00", "66600", "66400", "66550", "100", None, None]
+        ])
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session_obj = MagicMock()
+        mock_session_obj.get.return_value = mock_response
+        mock_session.return_value = mock_session_obj
+
+        # Should fall back to Binance
+        price = await service._fetch_binance_at_timestamp(old_timestamp)
+
+        # Price should be fetched from Binance (open price)
+        assert price == Decimal("66500.00")
+
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_binance_at_timestamp_buffer_disabled():
+    """Test service works when buffer is disabled."""
+    settings = Settings()
+    service = BTCPriceService(settings)
+    # Don't start service - buffer will be None
+
+    timestamp = int(datetime.now().timestamp()) - 3600
+
+    # Mock Binance response
+    with patch.object(service, '_get_session') as mock_session:
+        mock_response = AsyncMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = AsyncMock(return_value=[
+            [timestamp * 1000, "68000.00", "68100", "67900", "68050", "100", None, None]
+        ])
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session_obj = MagicMock()
+        mock_session_obj.get.return_value = mock_response
+        mock_session.return_value = mock_session_obj
+
+        # Should go directly to Binance (buffer not initialized)
+        price = await service._fetch_binance_at_timestamp(timestamp)
+
+        assert price == Decimal("68000.00")
+
+    await service.close()
