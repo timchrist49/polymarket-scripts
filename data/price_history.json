@@ -1,61 +1,13 @@
 {
   "version": "1.0",
-  "last_updated": "2026-02-12T07:42:13.174282",
+  "last_updated": "2026-02-12T11:20:33.155972",
   "retention_hours": 24,
   "prices": [
     {
-      "timestamp": 1770790116,
+      "timestamp": 1770805233,
       "price": "60000.00",
       "source": "polymarket",
-      "received_at": "2026-02-12T07:08:36.234409"
-    },
-    {
-      "timestamp": 1770880123,
-      "price": "67011.29",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:08:43.917454"
-    },
-    {
-      "timestamp": 1770880126,
-      "price": "67011.29",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:08:47.070160"
-    },
-    {
-      "timestamp": 1770880223,
-      "price": "66968.81",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:10:23.387746"
-    },
-    {
-      "timestamp": 1770880226,
-      "price": "66960.93",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:10:26.401984"
-    },
-    {
-      "timestamp": 1770880289,
-      "price": "66969.97",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:11:29.639736"
-    },
-    {
-      "timestamp": 1770880292,
-      "price": "66954.01",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:11:32.565567"
-    },
-    {
-      "timestamp": 1770881466,
-      "price": "67195.69",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:31:07.139179"
-    },
-    {
-      "timestamp": 1770881832,
-      "price": "67140.01",
-      "source": "polymarket",
-      "received_at": "2026-02-12T07:37:12.828320"
+      "received_at": "2026-02-12T11:20:33.155867"
     }
   ]
 }

@@ -141,15 +141,30 @@ class BTCPriceService:
             raise
 
     async def _fetch_coingecko(self) -> BTCPriceData:
-        """Fetch from CoinGecko API (fallback)."""
+        """Fetch from CoinGecko Pro API."""
         session = await self._get_session()
-        url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {
-            "ids": "bitcoin",
-            "vs_currencies": "usd",
-            "include_last_updated_at": "true",
-            "include_24hr_vol": "true"
-        }
+
+        # Use Pro API if API key available
+        if self.settings.coingecko_api_key:
+            url = "https://pro-api.coingecko.com/api/v3/simple/price"
+            params = {
+                "ids": "bitcoin",
+                "vs_currencies": "usd",
+                "include_last_updated_at": "true",
+                "include_24hr_vol": "true",
+                "include_24hr_change": "true",
+                "include_market_cap": "true",
+                "x_cg_pro_api_key": self.settings.coingecko_api_key
+            }
+        else:
+            # Fallback to free tier
+            url = "https://api.coingecko.com/api/v3/simple/price"
+            params = {
+                "ids": "bitcoin",
+                "vs_currencies": "usd",
+                "include_last_updated_at": "true",
+                "include_24hr_vol": "true"
+            }
 
         async with session.get(url, params=params) as resp:
             resp.raise_for_status()
@@ -159,13 +174,13 @@ class BTCPriceService:
             return BTCPriceData(
                 price=decimal.Decimal(str(btc["usd"])),
                 timestamp=datetime.fromtimestamp(btc["last_updated_at"]),
-                source="coingecko",
+                source="coingecko_pro" if self.settings.coingecko_api_key else "coingecko",
                 volume_24h=decimal.Decimal(str(btc.get("usd_24h_vol", 0)))
             )
 
     async def _fetch_coingecko_history(self, minutes: int = 60) -> list[PricePoint]:
         """
-        Fetch historical price candles from CoinGecko.
+        Fetch historical price candles from CoinGecko Pro API.
 
         Args:
             minutes: Number of 1-minute candles to fetch
@@ -175,9 +190,9 @@ class BTCPriceService:
         """
         session = await self._get_session()
 
-        # CoinGecko uses 'market_chart' endpoint for historical data
-        # Note: Free tier has rate limits, use carefully
-        url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+        # Use Pro API if API key available
+        base_url = "https://pro-api.coingecko.com/api/v3" if self.settings.coingecko_api_key else "https://api.coingecko.com/api/v3"
+        url = f"{base_url}/coins/bitcoin/market_chart"
 
         # Calculate time range (now - minutes)
         to_timestamp = int(datetime.now().timestamp())
@@ -188,6 +203,10 @@ class BTCPriceService:
             "from": str(from_timestamp),
             "to": str(to_timestamp)
         }
+
+        # Add API key for Pro tier
+        if self.settings.coingecko_api_key:
+            params["x_cg_pro_api_key"] = self.settings.coingecko_api_key
 
         try:
             async with session.get(url, params=params, timeout=30) as resp:
@@ -522,7 +541,7 @@ class BTCPriceService:
 
     async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
         """
-        Fetch BTC price at specific timestamp from CoinGecko.
+        Fetch BTC price at specific timestamp from CoinGecko Pro API.
 
         Args:
             timestamp: Unix timestamp (seconds)
@@ -532,15 +551,22 @@ class BTCPriceService:
         """
         session = await self._get_session()
 
+        # Use Pro API if API key available
+        base_url = "https://pro-api.coingecko.com/api/v3" if self.settings.coingecko_api_key else "https://api.coingecko.com/api/v3"
+
         # CoinGecko historical data endpoint
         # Note: For exact timestamp, we use the 'history' endpoint with date
         date_str = datetime.fromtimestamp(timestamp).strftime("%d-%m-%Y")
-        url = f"https://api.coingecko.com/api/v3/coins/bitcoin/history"
+        url = f"{base_url}/coins/bitcoin/history"
 
         params = {
             "date": date_str,
             "localization": "false"
         }
+
+        # Add API key for Pro tier
+        if self.settings.coingecko_api_key:
+            params["x_cg_pro_api_key"] = self.settings.coingecko_api_key
 
         try:
             async with session.get(url, params=params, timeout=30) as resp:

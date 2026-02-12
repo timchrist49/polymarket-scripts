@@ -44,11 +44,27 @@ class TelegramBot:
         confidence: float,
         position_size: float,
         price: float,
-        reasoning: str
+        reasoning: str,
+        btc_current: Optional[float] = None,
+        btc_price_to_beat: Optional[float] = None
     ):
-        """Send trade execution alert."""
+        """Send trade execution alert with BTC price context."""
         if not self._bot:
             return
+
+        # Build BTC price context if available
+        btc_context = ""
+        if btc_current and btc_price_to_beat:
+            price_diff = btc_current - btc_price_to_beat
+            price_diff_pct = (price_diff / btc_price_to_beat) * 100
+            direction = "📈 UP" if price_diff > 0 else "📉 DOWN" if price_diff < 0 else "➡️ FLAT"
+
+            btc_context = f"""
+**BTC Price Context:**
+Price to Beat: ${btc_price_to_beat:,.2f}
+Current BTC: ${btc_current:,.2f}
+Movement: {direction} {price_diff_pct:+.2f}% (${price_diff:+,.2f})
+"""
 
         message = f"""🎯 **Trade Executed**
 
@@ -56,7 +72,7 @@ Market: `{market_slug}`
 Action: **{action}** ({"UP" if action == "YES" else "DOWN"})
 Confidence: {confidence*100:.0f}%
 Position: ${position_size:.2f} @ {price:.2f}
-
+{btc_context}
 Reasoning: {reasoning}
 
 Expected profit: ~${position_size * (1/price - 1):.2f} if correct

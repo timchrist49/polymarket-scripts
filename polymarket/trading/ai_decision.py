@@ -272,6 +272,35 @@ AGGREGATED SIGNAL:
 - Signal Type: {aggregated.signal_type}
 - Agreement: {aggregated.agreement_multiplier:.2f}x {"(signals align - boosted confidence)" if aggregated.agreement_multiplier > 1.1 else "(signals conflict - reduced confidence)" if aggregated.agreement_multiplier < 0.9 else "(moderate agreement)"}
 
+🎯 ODDS AND EXPECTED VALUE STRATEGY:
+
+Understanding Binary Market Payouts:
+- Buying at LOW odds (< 0.40) = CONTRARIAN bet = Much higher profit when you win
+  Example: Buy $5 @ $0.25 odds → Get 20 shares → Win pays $20 → Profit = $15
+- Buying at HIGH odds (> 0.60) = FOLLOWING CROWD = Much lower profit when you win
+  Example: Buy $5 @ $0.75 odds → Get 6.67 shares → Win pays $6.67 → Profit = $1.67
+
+Current Market Odds Analysis:
+- YES token odds: {yes_price:.2f} {"(CONTRARIAN opportunity - high profit potential!)" if yes_price < 0.40 else "(CROWDED - low profit potential)" if yes_price > 0.60 else "(MODERATE odds)"}
+- NO token odds: {no_price:.2f} {"(CONTRARIAN opportunity - high profit potential!)" if no_price < 0.40 else "(CROWDED - low profit potential)" if no_price > 0.60 else "(MODERATE odds)"}
+
+STRATEGY PRIORITY (CRITICAL):
+1. **PREFER CONTRARIAN BETS** (odds < 0.40) with reasonable confidence (> 0.75)
+   - These trades have 3-5x higher profit potential
+   - Historical data: Contrarian trades average $5.67 profit vs $0.83 for crowd-following
+
+2. **AVOID HIGH-ODDS BETS** (odds > 0.70) unless EXTREMELY high confidence (> 0.95)
+   - Even when you win, profit is minimal
+   - Only justified if signals are overwhelmingly strong
+
+3. **CALCULATE EXPECTED VALUE:**
+   - Low odds bet: 60% win rate × $15 profit = $9.00 EV (GOOD!)
+   - High odds bet: 60% win rate × $1.67 profit = $1.00 EV (POOR!)
+
+4. When both signals and odds align for contrarian bet → STRONG BUY signal
+   - Example: Bearish signals + YES at $0.30 (crowd thinks UP) → Buy NO token
+   - You're betting against the crowd with data supporting your position
+
 RISK PARAMETERS:
 - Confidence threshold: {self.settings.bot_confidence_threshold * 100:.0f}%
 - Max position: {self.settings.bot_max_position_percent * 100:.0f}% of portfolio
@@ -286,10 +315,22 @@ DECISION INSTRUCTIONS:
    - Technical indicators alignment
    - Time remaining (end-of-market = established trend)
 
-2. CONSIDER END-OF-MARKET STRATEGY:
-   - If < 3 minutes remaining AND all signals align → higher confidence justified
-   - Trend is less likely to reverse with limited time
-   - Price-to-beat difference becomes more predictive
+2. TIMING STRATEGY (CRITICAL):
+   ⚠️ PREFER EARLY TRADES - Historical data shows trades with > 10 min remaining have 5x better returns!
+
+   - **> 10 minutes remaining:** OPTIMAL timing (avg $8.31 profit per trade)
+     → Full price movement capture, less rushed analysis
+     → PREFERRED: Place trades early in the 15-min window
+
+   - **5-10 minutes remaining:** ACCEPTABLE if strong signals
+     → Moderate profit potential (avg $0.51 profit per trade)
+
+   - **< 3 minutes remaining:** AVOID unless EXCEPTIONAL circumstances
+     → Very low profit potential (avg $1.66 profit per trade)
+     → Rushed decisions, limited time for position to develop
+     → Only justified if: (a) Extremely strong signals (> 0.95 confidence)
+                         (b) Clear contrarian opportunity (odds < 0.30)
+                         (c) No prior opportunity to enter
 
 3. The aggregated confidence ({aggregated.final_confidence:.2f}) is pre-calculated.
    - You may ADJUST by max ±0.15 if you spot patterns we missed

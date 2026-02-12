@@ -64,13 +64,14 @@ class CryptoPriceStream:
                 self._connected = True
 
                 # Subscribe to BTC prices from Binance source
-                # RTDS subscription format per working implementations
+                # RTDS subscription format per official documentation
+                # NOTE: filters is a plain string (comma-separated symbols), NOT JSON
                 subscribe_msg = {
                     "action": "subscribe",
                     "subscriptions": [{
                         "topic": "crypto_prices",
                         "type": "update",
-                        "filters": json.dumps({"symbol": "btcusdt"})
+                        "filters": "btcusdt"
                     }]
                 }
                 await ws.send(json.dumps(subscribe_msg))

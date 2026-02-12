@@ -518,7 +518,8 @@ class AutoTrader:
 
             # Step 3: Technical Analysis (optional - graceful if unavailable)
             try:
-                price_history = await self.btc_service.get_price_history(minutes=60)
+                # Use 15 minutes for faster analysis (sufficient for RSI/MACD on 15-min markets)
+                price_history = await self.btc_service.get_price_history(minutes=15)
                 indicators = TechnicalAnalysis.calculate_indicators(price_history)
                 logger.info(
                     "Technical indicators",
@@ -818,7 +819,9 @@ class AutoTrader:
                 await self._execute_trade(
                     market, decision, validation.adjusted_position,
                     token_id, token_name, market_price,
-                    trade_id, cycle_start_time
+                    trade_id, cycle_start_time,
+                    btc_current=float(btc_data.price),
+                    btc_price_to_beat=float(price_to_beat) if price_to_beat else None
                 )
 
                 # Track trades for reflection triggers
@@ -968,7 +971,9 @@ class AutoTrader:
         token_name: str,
         market_price: float,
         trade_id: int,
-        cycle_start_time: datetime
+        cycle_start_time: datetime,
+        btc_current: Optional[float] = None,
+        btc_price_to_beat: Optional[float] = None
     ) -> None:
         """Execute a trade order with JIT price fetching and safety checks."""
         try:
@@ -1128,7 +1133,9 @@ class AutoTrader:
                     confidence=decision.confidence,
                     position_size=float(amount),
                     price=execution_price,  # Use fresh execution price
-                    reasoning=decision.reasoning
+                    reasoning=decision.reasoning,
+                    btc_current=btc_current,
+                    btc_price_to_beat=btc_price_to_beat
                 )
             except Exception as e:
                 logger.warning("Failed to send Telegram notification", error=str(e))
@@ -1151,7 +1158,8 @@ class AutoTrader:
                         execution_price=execution_price,
                         price_staleness_seconds=price_staleness_seconds,
                         price_movement_favorable=price_movement_favorable,
-                        skipped_unfavorable_move=False
+                        skipped_unfavorable_move=False,
+                        actual_position_size=float(amount)  # Use risk-adjusted amount, not AI suggestion
                     )
                 except Exception as e:
                     logger.warning("Failed to update execution metrics", error=str(e))

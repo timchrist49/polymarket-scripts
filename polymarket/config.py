@@ -122,10 +122,13 @@ class Settings:
 
     # === BTC Price Service ===
     btc_price_source: str = field(
-        default_factory=lambda: os.getenv("BTC_PRICE_SOURCE", "binance")
+        default_factory=lambda: os.getenv("BTC_PRICE_SOURCE", "coingecko")
     )
     btc_price_cache_seconds: int = field(
         default_factory=lambda: int(os.getenv("BTC_PRICE_CACHE_SECONDS", "30"))
+    )
+    coingecko_api_key: str | None = field(
+        default_factory=lambda: os.getenv("COINGECKO_API_KEY")
     )
 
     # === Trading Bot Configuration ===

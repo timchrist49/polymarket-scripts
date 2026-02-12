@@ -131,7 +131,8 @@ class PerformanceTracker:
         execution_price: Optional[float] = None,
         price_staleness_seconds: Optional[int] = None,
         price_movement_favorable: Optional[bool] = None,
-        skipped_unfavorable_move: bool = False
+        skipped_unfavorable_move: bool = False,
+        actual_position_size: Optional[float] = None
     ) -> None:
         """
         Update trade record with execution metrics from JIT price fetching.
@@ -143,6 +144,7 @@ class PerformanceTracker:
             price_staleness_seconds: Time between analysis and execution
             price_movement_favorable: Whether price moved favorably
             skipped_unfavorable_move: Whether trade was skipped due to safety check
+            actual_position_size: Actual position size after risk management (overrides AI suggestion)
         """
         try:
             # Calculate slippage if we have both prices
@@ -152,22 +154,44 @@ class PerformanceTracker:
 
             # Update the database record
             cursor = self.db.conn.cursor()
-            cursor.execute("""
-                UPDATE trades
-                SET analysis_price = ?,
-                    price_staleness_seconds = ?,
-                    price_slippage_pct = ?,
-                    price_movement_favorable = ?,
-                    skipped_unfavorable_move = ?
-                WHERE id = ?
-            """, (
-                analysis_price,
-                price_staleness_seconds,
-                price_slippage_pct,
-                price_movement_favorable,
-                skipped_unfavorable_move,
-                trade_id
-            ))
+
+            # Build SQL based on whether position_size needs updating
+            if actual_position_size is not None:
+                cursor.execute("""
+                    UPDATE trades
+                    SET analysis_price = ?,
+                        price_staleness_seconds = ?,
+                        price_slippage_pct = ?,
+                        price_movement_favorable = ?,
+                        skipped_unfavorable_move = ?,
+                        position_size = ?
+                    WHERE id = ?
+                """, (
+                    analysis_price,
+                    price_staleness_seconds,
+                    price_slippage_pct,
+                    price_movement_favorable,
+                    skipped_unfavorable_move,
+                    actual_position_size,
+                    trade_id
+                ))
+            else:
+                cursor.execute("""
+                    UPDATE trades
+                    SET analysis_price = ?,
+                        price_staleness_seconds = ?,
+                        price_slippage_pct = ?,
+                        price_movement_favorable = ?,
+                        skipped_unfavorable_move = ?
+                    WHERE id = ?
+                """, (
+                    analysis_price,
+                    price_staleness_seconds,
+                    price_slippage_pct,
+                    price_movement_favorable,
+                    skipped_unfavorable_move,
+                    trade_id
+                ))
 
             self.db.conn.commit()
 
