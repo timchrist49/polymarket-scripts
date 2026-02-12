@@ -689,7 +689,7 @@ class BTCPriceService:
             url = "https://pro-api.coingecko.com/api/v3/derivatives"
             params = {"x_cg_pro_api_key": self.settings.coingecko_api_key}
 
-            async with session.get(url, params=params, timeout=30) as resp:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
 
