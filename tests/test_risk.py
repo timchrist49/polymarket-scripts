@@ -85,3 +85,20 @@ class TestOddsExtraction:
         odds = risk_mgr._extract_odds_for_action("HOLD", market)
 
         assert odds == Decimal("0.50")
+
+    def test_extract_odds_none_value(self):
+        """Handle explicit None values in market data."""
+        settings = Settings()
+        risk_mgr = RiskManager(settings)
+
+        # API sometimes returns explicit None
+        market = {"yes_price": None, "no_price": 0.69}
+        odds = risk_mgr._extract_odds_for_action("YES", market)
+
+        assert odds == Decimal("0.50")  # Should use default, not crash
+
+        # Test NO action with None
+        market = {"yes_price": 0.31, "no_price": None}
+        odds = risk_mgr._extract_odds_for_action("NO", market)
+
+        assert odds == Decimal("0.50")

@@ -200,9 +200,9 @@ class RiskManager:
             Decimal: Odds for the action (0.0 to 1.0), defaults to 0.50
         """
         if action == "YES":
-            odds = market.get("yes_price", 0.50)
+            odds = market.get("yes_price") or 0.50  # Handle None and missing
         elif action == "NO":
-            odds = market.get("no_price", 0.50)
+            odds = market.get("no_price") or 0.50  # Handle None and missing
         else:
             # HOLD or invalid action
             odds = 0.50
