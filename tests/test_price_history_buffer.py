@@ -103,3 +103,38 @@ async def test_get_price_at_returns_none_if_not_found():
     price = await buffer.get_price_at(1770875200, tolerance=30)
 
     assert price is None
+
+
+@pytest.mark.asyncio
+async def test_get_price_range_returns_all_in_range():
+    """Should return all prices in time range."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    # Add 5 prices 1 minute apart
+    for i in range(5):
+        timestamp = 1770875100 + (i * 60)
+        price = Decimal(f"6701{i}.00")
+        await buffer.append(timestamp, price, "polymarket")
+
+    # Query middle 3 entries (inclusive range)
+    entries = await buffer.get_price_range(
+        start=1770875160,  # 2nd entry (index 1)
+        end=1770875280     # 4th entry (index 3)
+    )
+
+    assert len(entries) == 3
+    assert entries[0].price == Decimal("67011.00")
+    assert entries[2].price == Decimal("67013.00")
+
+
+@pytest.mark.asyncio
+async def test_get_price_range_empty_buffer():
+    """Should return empty list for empty buffer."""
+    buffer = PriceHistoryBuffer(retention_hours=24)
+
+    entries = await buffer.get_price_range(
+        start=1770875100,
+        end=1770875200
+    )
+
+    assert entries == []

@@ -159,3 +159,39 @@ class PriceHistoryBuffer:
                 buffer_size=len(self._buffer)
             )
             return None
+
+    async def get_price_range(
+        self,
+        start: int,
+        end: int
+    ) -> List[PriceEntry]:
+        """
+        Get all prices in time range [start, end] inclusive.
+
+        Args:
+            start: Start timestamp (Unix seconds)
+            end: End timestamp (Unix seconds)
+
+        Returns:
+            List of PriceEntry in chronological order
+        """
+        async with self._lock:
+            if not self._buffer:
+                return []
+
+            # Filter entries in range
+            entries = [
+                entry for entry in self._buffer
+                if start <= entry.timestamp <= end
+            ]
+
+            logger.debug(
+                "Price range query",
+                start=start,
+                end=end,
+                duration_seconds=end - start,
+                found_entries=len(entries),
+                buffer_size=len(self._buffer)
+            )
+
+            return entries
