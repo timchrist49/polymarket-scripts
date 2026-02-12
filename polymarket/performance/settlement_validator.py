@@ -29,10 +29,10 @@ class SettlementPriceValidator:
         timestamp: int
     ) -> Optional[Decimal]:
         """
-        Fetch price from multiple sources and validate agreement.
+        Fetch price for settlement with buffer-first approach.
 
-        For recent timestamps (< 1 hour old), use single source (Binance)
-        since we're fetching real-time data, not historical lookups.
+        Now uses 24-hour price buffer, so no age restrictions.
+        Buffer-first fetch handles both recent and historical data.
 
         Args:
             timestamp: Unix timestamp (seconds)
@@ -42,38 +42,30 @@ class SettlementPriceValidator:
         """
         from datetime import datetime
 
-        # Calculate age of timestamp
+        # Calculate age for logging
         now = datetime.now().timestamp()
         age_seconds = now - timestamp
 
-        # For recent data (< 1 hour), just use Binance
-        # Free APIs don't support historical lookups, only current prices
-        if age_seconds < 3600:  # Less than 1 hour old
-            price = await self._fetch_binance_at_timestamp(timestamp)
-            if price:
-                logger.info(
-                    "Settlement price fetched (real-time)",
-                    source="Binance",
-                    price=f"${price:,.2f}",
-                    age_minutes=f"{age_seconds/60:.1f}"
-                )
-                return price
-            else:
-                logger.warning(
-                    "Failed to fetch recent price from Binance",
-                    timestamp=timestamp,
-                    age_seconds=age_seconds
-                )
-                return None
+        # Try buffer-first fetch (handles up to 24h of data)
+        # This checks buffer first, then falls back to Binance API
+        price = await self._fetch_binance_at_timestamp(timestamp)
 
-        # For old data (> 1 hour), skip multi-source validation
-        # Free APIs can't provide historical data
-        logger.warning(
-            "Timestamp too old for free API settlement",
-            timestamp=timestamp,
-            age_hours=f"{age_seconds/3600:.1f}"
-        )
-        return None
+        if price:
+            logger.info(
+                "Settlement price fetched",
+                source="buffer-or-api",
+                price=f"${price:,.2f}",
+                age_minutes=f"{age_seconds/60:.1f}"
+            )
+            return price
+        else:
+            logger.warning(
+                "Failed to fetch settlement price",
+                timestamp=timestamp,
+                age_hours=f"{age_seconds/3600:.1f}",
+                reason="Not in buffer and API unavailable"
+            )
+            return None
 
     def _calculate_spread(self, prices: list[Decimal]) -> float:
         """Calculate price spread percentage."""
@@ -86,7 +78,9 @@ class SettlementPriceValidator:
     async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """Fetch price at timestamp via BTCPriceService (buffer-first, then Binance fallback)."""
         if self._btc_service:
-            return await self._btc_service.get_price_at_timestamp(timestamp)
+            # Call _fetch_binance_at_timestamp directly to avoid circular dependency
+            # (get_price_at_timestamp calls back to settlement validator)
+            return await self._btc_service._fetch_binance_at_timestamp(timestamp)
         return None
 
     async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
