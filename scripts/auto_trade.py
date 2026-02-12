@@ -720,7 +720,7 @@ class AutoTrader:
                         threshold=f"${MIN_MOVEMENT_THRESHOLD}",
                         reason="Wait for clearer directional signal"
                     )
-                    continue  # Skip this market, no trade
+                    return  # Skip this market, no trade
 
             # Build market data dict with ALL context
             # Note: Polymarket returns prices for UP/YES token only
@@ -795,7 +795,7 @@ class AutoTrader:
                         threshold=f"${MIN_YES_MOVEMENT}",
                         reason="Avoid buying exhausted momentum (mean reversion risk)"
                     )
-                    continue  # Skip this trade
+                    return  # Skip this trade
 
             # Map AI decision to correct token based on outcomes
             # Outcomes are typically ["Up", "Down"] or ["Yes", "No"]
