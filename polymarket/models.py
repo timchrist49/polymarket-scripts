@@ -352,13 +352,13 @@ class AggregatedSentiment:
     """Final aggregated sentiment with agreement-based confidence."""
     social: SocialSentiment
     market: MarketSignals
-    funding: FundingRateSignal | None  # New: funding rate signals
-    dominance: BTCDominanceSignal | None  # New: BTC dominance signals
     final_score: float                # Weighted: market 40% + social 20% + funding 20% + dominance 15% + orderbook 5%
     final_confidence: float           # Base confidence * agreement multiplier
     agreement_multiplier: float       # 0.5 (conflict) to 1.5 (perfect agreement)
     signal_type: str                  # "STRONG_BULLISH", "CONFLICTED", etc.
     timestamp: datetime
+    funding: FundingRateSignal | None = None  # New: funding rate signals (optional)
+    dominance: BTCDominanceSignal | None = None  # New: BTC dominance signals (optional)
 
     def validate(self) -> None:
         """Validate field constraints. Raises ValueError if invalid."""
