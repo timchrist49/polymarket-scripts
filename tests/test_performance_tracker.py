@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime
 from decimal import Decimal
 from polymarket.performance.tracker import PerformanceTracker
-from polymarket.models import TradingDecision, BTCPriceData, TechnicalIndicators, AggregatedSentiment, SocialSentiment, MarketSignals
+from polymarket.models import TradingDecision, BTCPriceData, TechnicalIndicators, AggregatedSentiment, SocialSentiment, MarketSignals, Market
 
 @pytest.fixture
 def tracker():
@@ -15,15 +15,15 @@ def tracker():
 @pytest.fixture
 def sample_market():
     """Sample market data."""
-    return {
-        "id": 1362391,
-        "question": "Will BTC go up?",
-        "condition_id": "test",
-        "outcomes": ["Up", "Down"],
-        "best_bid": 0.50,
-        "best_ask": 0.51,
-        "active": True
-    }
+    return Market(
+        id="1362391",
+        condition_id="test",
+        question="Will BTC go up?",
+        outcomes=["Up", "Down"],
+        best_bid=0.50,
+        best_ask=0.51,
+        active=True
+    )
 
 @pytest.fixture
 def sample_decision():

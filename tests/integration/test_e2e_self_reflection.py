@@ -16,7 +16,7 @@ from polymarket.telegram.bot import TelegramBot
 from polymarket.config import Settings
 from polymarket.models import (
     TradingDecision, BTCPriceData, TechnicalIndicators,
-    AggregatedSentiment, SocialSentiment, MarketSignals
+    AggregatedSentiment, SocialSentiment, MarketSignals, Market
 )
 
 
@@ -89,12 +89,14 @@ async def test_complete_workflow_tier1(integration_components):
         market_slug = question.lower().replace(" ", "-").replace("?", "")[:50]
         market_slugs.append(market_slug)
 
-        market = {
-            "id": 1362391 + i,
-            "question": question,
-            "best_bid": 0.50,
-            "best_ask": 0.51
-        }
+        market = Market(
+            id=str(1362391 + i),
+            condition_id="test",
+            question=question,
+            slug=market_slug,
+            best_bid=0.50,
+            best_ask=0.51
+        )
 
         decision = TradingDecision(
             action="YES" if i % 2 == 0 else "NO",

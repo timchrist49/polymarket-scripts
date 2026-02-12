@@ -148,6 +148,16 @@ def main(
         "-o",
         help="Order type: limit or market",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Dry run mode (overrides settings.dry_run)",
+    ),
+    live: bool = typer.Option(
+        False,
+        "--live",
+        help="Live trading mode (overrides --dry-run)",
+    ),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -178,9 +188,14 @@ def main(
 
     logger.info(f"Starting place_order in {settings.mode} mode")
 
-    # Dry run is controlled by DRY_RUN in .env (settings.dry_run)
-    # This overrides the default behavior for automation
-    dry_run = settings.dry_run
+    # Determine dry_run mode: CLI flags override settings
+    # Priority: --live (False) > --dry-run (True) > settings.dry_run
+    if live:
+        dry_run_mode = False
+    elif dry_run:
+        dry_run_mode = True
+    else:
+        dry_run_mode = settings.dry_run
 
     try:
         # Validate trading mode
@@ -237,24 +252,24 @@ def main(
         console.print(f"  Price: {price:.4f}")
         console.print(f"  Size: {size}")
         console.print(f"  Type: {request.order_type}")
-        console.print(f"  Dry Run: {dry_run} (controlled by DRY_RUN in .env)")
+        console.print(f"  Dry Run: {dry_run_mode} (CLI: --dry-run={dry_run}, --live={live})")
         console.print()
 
         if order_type == "market":
             console.print("[yellow]WARNING: MARKET orders are emulated via aggressive LIMIT orders.[/yellow]")
 
-        if dry_run:
+        if dry_run_mode:
             console.print("[cyan]DRY RUN MODE - No order will be submitted[/cyan]\n")
 
         # Confirm for live orders (only if not dry-run and not --yes)
-        if not dry_run and not yes:
+        if not dry_run_mode and not yes:
             confirm = typer.confirm("Submit this order?")
             if not confirm:
                 console.print("[yellow]Order cancelled.[/yellow]")
                 raise typer.Exit(code=0)
 
         # Submit order
-        response = client.create_order(request, dry_run=dry_run)
+        response = client.create_order(request, dry_run=dry_run_mode)
 
         # Display result
         if response.accepted:

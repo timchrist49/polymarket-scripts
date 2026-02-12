@@ -16,7 +16,7 @@ from polymarket.performance.adjuster import ParameterAdjuster
 from polymarket.config import Settings
 from polymarket.models import (
     TradingDecision, BTCPriceData, TechnicalIndicators,
-    AggregatedSentiment, SocialSentiment, MarketSignals
+    AggregatedSentiment, SocialSentiment, MarketSignals, Market
 )
 
 
@@ -36,12 +36,13 @@ def create_sample_trade_data(index: int):
     """Create sample trade data for testing."""
     now = datetime.now()
 
-    market = {
-        "id": 1362391 + index,
-        "question": f"Will BTC go up? {index}",
-        "best_bid": 0.50,
-        "best_ask": 0.51
-    }
+    market = Market(
+        id=str(1362391 + index),
+        condition_id="test",
+        question=f"Will BTC go up? {index}",
+        best_bid=0.50,
+        best_ask=0.51
+    )
 
     decision = TradingDecision(
         action="YES" if index % 2 == 0 else "NO",
