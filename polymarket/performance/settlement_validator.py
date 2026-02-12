@@ -11,17 +11,18 @@ logger = structlog.get_logger()
 class SettlementPriceValidator:
     """Validates historical prices across multiple sources."""
 
-    TOLERANCE_PERCENT = 0.5  # Prices must agree within 0.5%
     MIN_SOURCES = 2          # Need at least 2 sources to validate
 
-    def __init__(self, btc_service=None):
+    def __init__(self, btc_service=None, tolerance_percent: float = 0.5):
         """
         Initialize validator.
 
         Args:
             btc_service: BTCPriceService instance (for fetching)
+            tolerance_percent: Price agreement tolerance (%)
         """
         self._btc_service = btc_service
+        self.tolerance_percent = tolerance_percent
 
     async def get_validated_price(
         self,
@@ -65,14 +66,14 @@ class SettlementPriceValidator:
         for source, price in prices.items():
             deviation_pct = abs(float((price - avg_price) / avg_price * 100))
 
-            if deviation_pct > self.TOLERANCE_PERCENT:
+            if deviation_pct > self.tolerance_percent:
                 logger.error(
                     "Price sources disagree",
                     source=source,
                     price=float(price),
                     avg_price=float(avg_price),
                     deviation_pct=f"{deviation_pct:.2f}%",
-                    tolerance=f"{self.TOLERANCE_PERCENT}%"
+                    tolerance=f"{self.tolerance_percent}%"
                 )
                 return None
 

@@ -44,10 +44,18 @@ class BTCPriceService:
         self._candle_cache = CandleCache()
 
         # Stale data policy
-        self._stale_policy = StaleDataPolicy()
+        self._stale_policy = StaleDataPolicy(
+            max_stale_age_seconds=settings.btc_cache_stale_max_age
+        )
 
         # Settlement validator
-        self._settlement_validator = SettlementPriceValidator(btc_service=self)
+        self._settlement_validator = SettlementPriceValidator(
+            btc_service=self,
+            tolerance_percent=settings.btc_settlement_tolerance_pct
+        )
+
+        # Retry config
+        self._retry_config = RetryConfig.from_settings(settings)
 
     async def start(self):
         """Start Polymarket WebSocket stream."""
@@ -286,7 +294,7 @@ class BTCPriceService:
             return await self._fetch_binance_history(minutes)
 
         result = await fetch_with_fallbacks(
-            lambda: fetch_with_retry(fetch_primary, "Binance"),
+            lambda: fetch_with_retry(fetch_primary, "Binance", self._retry_config),
             [
                 ("CoinGecko", lambda: self._fetch_coingecko_history(minutes)),
                 ("Kraken", lambda: self._fetch_kraken_history(minutes))

@@ -16,6 +16,15 @@ class RetryConfig:
     backoff_factor: float = 2.0    # Double delay each retry
     timeout: int = 30              # 30 seconds per attempt
 
+    @classmethod
+    def from_settings(cls, settings):
+        """Create config from Settings object."""
+        return cls(
+            max_attempts=1 + settings.btc_fetch_max_retries,
+            initial_delay=settings.btc_fetch_retry_delay,
+            timeout=settings.btc_fetch_timeout
+        )
+
 
 async def fetch_with_retry(
     fetch_func: Callable,

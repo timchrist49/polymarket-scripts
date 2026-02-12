@@ -10,10 +10,16 @@ logger = structlog.get_logger()
 class StaleDataPolicy:
     """Manages stale cache usage and failure tracking."""
 
-    MAX_STALE_AGE_SECONDS = 600  # 10 minutes
     CONSECUTIVE_FAILURE_ALERT = 3  # Alert after 3 failures
 
-    def __init__(self):
+    def __init__(self, max_stale_age_seconds: int = 600):
+        """
+        Initialize policy.
+
+        Args:
+            max_stale_age_seconds: Maximum age for stale cache (default 10 min)
+        """
+        self.max_stale_age_seconds = max_stale_age_seconds
         self._consecutive_failures = 0
         self._last_success_time: Optional[datetime] = None
         self._stale_cache: Optional[tuple[Any, datetime]] = None
@@ -43,7 +49,7 @@ class StaleDataPolicy:
         _, cached_at = self._stale_cache
         age = (datetime.now() - cached_at).total_seconds()
 
-        return age < self.MAX_STALE_AGE_SECONDS
+        return age < self.max_stale_age_seconds
 
     def _get_time_since_success(self) -> str:
         """Human-readable time since last success."""
