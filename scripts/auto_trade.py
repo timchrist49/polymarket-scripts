@@ -667,6 +667,11 @@ class AutoTrader:
         cycle_start_time: datetime  # NEW: for JIT execution metrics
     ) -> None:
         """Process a single market for trading decision."""
+
+        # EMERGENCY: Disable YES trades until strategy fixed
+        # YES trades: 10% win rate (9W-81L) = -$170 all-time
+        ENABLE_YES_TRADES = False  # TODO: Re-enable after strategy redesign
+
         try:
             # Get token IDs
             token_ids = market.get_token_ids()
@@ -788,6 +793,16 @@ class AutoTrader:
                 market_data=market_dict,
                 portfolio_value=portfolio_value
             )
+
+            # Skip YES trades if disabled (emergency kill switch)
+            if decision.action == "YES" and not ENABLE_YES_TRADES:
+                logger.warning(
+                    "YES trades disabled - skipping",
+                    market_id=market.id,
+                    confidence=decision.confidence,
+                    reason="YES trades at 10% win rate, disabled until fixed"
+                )
+                return
 
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
             # CHECK FIRST before logging to avoid phantom trades
