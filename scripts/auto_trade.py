@@ -1219,7 +1219,8 @@ class AutoTrader:
                 decision=decision,
                 portfolio_value=portfolio_value,
                 market=market_dict,
-                open_positions=self.open_positions
+                open_positions=self.open_positions,
+                test_mode=self.test_mode.enabled  # NEW: pass test mode flag
             )
 
             if not validation.approved:
