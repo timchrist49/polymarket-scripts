@@ -1046,8 +1046,10 @@ class AutoTrader:
             probability_calculator = ProbabilityCalculator()
 
             # Get historical prices for probability calculation
-            price_5min_ago = await self.btc_service.get_price_at(5) or float(btc_data.price)
-            price_10min_ago = await self.btc_service.get_price_at(10) or float(btc_data.price)
+            import time
+            current_time = int(time.time())
+            price_5min_ago = await self.btc_service.get_price_at_timestamp(current_time - 300) or float(btc_data.price)
+            price_10min_ago = await self.btc_service.get_price_at_timestamp(current_time - 600) or float(btc_data.price)
             volatility_15min = self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
 
             actual_probability = probability_calculator.calculate_directional_probability(

@@ -193,7 +193,7 @@ class BTCPriceService:
 
         # Use Pro API if API key available
         base_url = "https://pro-api.coingecko.com/api/v3" if self.settings.coingecko_api_key else "https://api.coingecko.com/api/v3"
-        url = f"{base_url}/coins/bitcoin/market_chart"
+        url = f"{base_url}/coins/bitcoin/market_chart/range"
 
         # Calculate time range (now - minutes)
         to_timestamp = int(datetime.now().timestamp())
@@ -671,6 +671,71 @@ class BTCPriceService:
             velocity=velocity
         )
 
+    async def get_funding_rate_raw(self, exchanges: list[str] | None = None) -> float | None:
+        """
+        Fetch raw BTC funding rate from derivatives exchanges.
+
+        Tries multiple exchanges with reduced timeout to avoid hanging.
+        Returns the first available funding rate.
+
+        Args:
+            exchanges: List of exchange names to try. Defaults to ['binance', 'bybit', 'okx'].
+
+        Returns:
+            Raw funding rate as decimal (e.g., 0.0001 = 0.01%), or None if unavailable.
+        """
+        if not self.settings.coingecko_api_key:
+            logger.debug("CoinGecko Pro API key required for funding rates")
+            return None
+
+        if exchanges is None:
+            exchanges = ['binance', 'bybit', 'okx']
+
+        session = await self._get_session()
+        url = "https://pro-api.coingecko.com/api/v3/derivatives"
+        params = {"x_cg_pro_api_key": self.settings.coingecko_api_key}
+
+        try:
+            # Reduced timeout to prevent hanging (10s instead of 30s)
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                # Try each exchange in priority order
+                for exchange_name in exchanges:
+                    # Find BTC perpetual contract for this exchange
+                    for ticker in data:
+                        market = ticker.get("market", "").lower()
+                        symbol = ticker.get("symbol", "")
+                        contract_type = ticker.get("contract_type", "")
+
+                        # Match exchange and BTC contract
+                        if (
+                            exchange_name.lower() in market
+                            and "btc" in symbol.lower()
+                            and "usdt" in symbol.lower()
+                            and contract_type == "perpetual"
+                        ):
+                            funding_rate = ticker.get("funding_rate")
+                            if funding_rate is not None:
+                                logger.info(
+                                    "Funding rate fetched",
+                                    exchange=exchange_name,
+                                    funding_rate=f"{float(funding_rate):.6f}",
+                                    rate_pct=f"{float(funding_rate) * 100:.4f}%"
+                                )
+                                return float(funding_rate)
+
+                logger.warning("No funding rate found for any exchange", tried=exchanges)
+                return None
+
+        except asyncio.TimeoutError:
+            logger.warning("Funding rate fetch timeout (10s)", tried=exchanges)
+            return None
+        except Exception as e:
+            logger.warning("Failed to fetch funding rates", error=str(e))
+            return None
+
     async def get_funding_rates(self) -> FundingRateSignal | None:
         """
         Fetch BTC funding rates from Binance futures via CoinGecko Pro API.
@@ -681,80 +746,163 @@ class BTCPriceService:
         Returns:
             FundingRateSignal or None if unavailable
         """
-        if not self.settings.coingecko_api_key:
-            logger.warning("CoinGecko Pro API key required for funding rates")
+        # Use new raw method with reduced timeout
+        funding_rate_decimal = await self.get_funding_rate_raw()
+
+        if funding_rate_decimal is None:
             return None
+
+        # Convert to percentage
+        funding_rate = funding_rate_decimal * 100  # e.g., 0.0001 -> 0.01%
+
+        # Normalize to [-1, 1] range
+        # Typical funding rates: -0.1% to +0.1% (extreme), -0.01% to +0.01% (normal)
+        # Normalize: ±0.05% = ±0.5, ±0.1% = ±1.0
+        funding_rate_normalized = max(min(funding_rate / 0.1, 1.0), -1.0)
+
+        # Score: negative funding rate is bullish (shorts paying longs)
+        # positive funding rate is bearish (longs paying shorts)
+        score = -funding_rate_normalized  # Invert: negative funding = positive score
+
+        # Confidence based on magnitude (higher = more extreme = more confident)
+        confidence = min(abs(funding_rate_normalized), 1.0)
+
+        # Signal classification
+        if funding_rate > 0.05:
+            signal_type = "OVERHEATED"  # Longs overheated, bearish
+        elif funding_rate < -0.05:
+            signal_type = "OVERSOLD"  # Shorts overheated, bullish
+        else:
+            signal_type = "NEUTRAL"
+
+        logger.info(
+            "Funding rate signal generated",
+            funding_rate=f"{funding_rate:.4f}%",
+            score=f"{score:+.2f}",
+            confidence=f"{confidence:.2f}",
+            signal=signal_type
+        )
+
+        return FundingRateSignal(
+            score=score,
+            confidence=confidence,
+            funding_rate=funding_rate,
+            funding_rate_normalized=funding_rate_normalized,
+            signal_type=signal_type,
+            source="multi_exchange",
+            timestamp=datetime.now()
+        )
+
+    async def get_exchange_prices(self, exchanges: list[str] | None = None) -> dict[str, float] | None:
+        """
+        Fetch current BTC price from multiple exchanges for premium comparison.
+
+        Args:
+            exchanges: List of exchange IDs to query. Defaults to ['coinbase', 'binance', 'kraken'].
+
+        Returns:
+            Dictionary mapping exchange name to BTC/USD price, or None if unavailable.
+        """
+        if not self.settings.coingecko_api_key:
+            logger.debug("CoinGecko Pro API key required for multi-exchange prices")
+            return None
+
+        if exchanges is None:
+            exchanges = ['coinbase', 'binance', 'kraken']
 
         try:
             session = await self._get_session()
-            url = "https://pro-api.coingecko.com/api/v3/derivatives"
-            params = {"x_cg_pro_api_key": self.settings.coingecko_api_key}
+            url = "https://pro-api.coingecko.com/api/v3/coins/bitcoin/tickers"
+            params = {
+                "x_cg_pro_api_key": self.settings.coingecko_api_key,
+                "depth": "true"  # Include bid/ask spread
+            }
 
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
 
-                # Find Binance BTCUSDT perpetual contract
-                btc_ticker = None
-                for ticker in data:
-                    if ticker.get("market") == "Binance (Futures)" and ticker.get("symbol") == "BTCUSDT":
-                        if ticker.get("contract_type") == "perpetual":
-                            btc_ticker = ticker
-                            break
+                tickers = data.get("tickers", [])
+                prices = {}
 
-                if not btc_ticker:
-                    logger.warning("Binance BTCUSDT perpetual contract not found")
-                    return None
+                # Extract prices for requested exchanges
+                for ticker in tickers:
+                    exchange_id = ticker.get("market", {}).get("identifier", "").lower()
+                    base = ticker.get("base", "")
+                    target = ticker.get("target", "")
 
-                # Extract funding rate (as decimal, e.g., 0.0001 = 0.01%)
-                funding_rate = btc_ticker.get("funding_rate")
-                if funding_rate is None:
-                    logger.warning("Funding rate not available in ticker data")
-                    return None
+                    # Match BTC/USD or BTC/USDT pairs
+                    if (
+                        base == "BTC"
+                        and target in ["USD", "USDT"]
+                        and any(ex in exchange_id for ex in exchanges)
+                    ):
+                        last_price = ticker.get("last")
+                        if last_price:
+                            # Determine exchange name
+                            exchange_name = None
+                            for ex in exchanges:
+                                if ex in exchange_id:
+                                    exchange_name = ex
+                                    break
 
-                # Convert to percentage
-                funding_rate = float(funding_rate) * 100  # e.g., 0.0001 -> 0.01%
+                            if exchange_name and exchange_name not in prices:
+                                prices[exchange_name] = float(last_price)
 
-                # Normalize to [-1, 1] range
-                # Typical funding rates: -0.1% to +0.1% (extreme), -0.01% to +0.01% (normal)
-                # Normalize: ±0.05% = ±0.5, ±0.1% = ±1.0
-                funding_rate_normalized = max(min(funding_rate / 0.1, 1.0), -1.0)
-
-                # Score: negative funding rate is bullish (shorts paying longs)
-                # positive funding rate is bearish (longs paying shorts)
-                score = -funding_rate_normalized  # Invert: negative funding = positive score
-
-                # Confidence based on magnitude (higher = more extreme = more confident)
-                confidence = min(abs(funding_rate_normalized), 1.0)
-
-                # Signal classification
-                if funding_rate > 0.05:
-                    signal_type = "OVERHEATED"  # Longs overheated, bearish
-                elif funding_rate < -0.05:
-                    signal_type = "OVERSOLD"  # Shorts overheated, bullish
+                if prices:
+                    logger.info(
+                        "Multi-exchange prices fetched",
+                        exchanges=list(prices.keys()),
+                        prices={k: f"${v:,.2f}" for k, v in prices.items()}
+                    )
+                    return prices
                 else:
-                    signal_type = "NEUTRAL"
+                    logger.warning("No exchange prices found", tried=exchanges)
+                    return None
 
-                logger.info(
-                    "Funding rate fetched",
-                    funding_rate=f"{funding_rate:.4f}%",
-                    score=f"{score:+.2f}",
-                    confidence=f"{confidence:.2f}",
-                    signal=signal_type
-                )
+        except asyncio.TimeoutError:
+            logger.warning("Exchange prices fetch timeout (10s)", tried=exchanges)
+            return None
+        except Exception as e:
+            logger.warning("Failed to fetch exchange prices", error=str(e))
+            return None
 
-                return FundingRateSignal(
-                    score=score,
-                    confidence=confidence,
-                    funding_rate=funding_rate,
-                    funding_rate_normalized=funding_rate_normalized,
-                    signal_type=signal_type,
-                    source="binance_futures",
-                    timestamp=datetime.now()
+    async def get_recent_volumes(self, hours: int = 24) -> list[Decimal] | None:
+        """
+        Get recent volume data for volume confirmation analysis.
+
+        Args:
+            hours: Number of hours of volume data to retrieve (default 24).
+
+        Returns:
+            List of volume values in USD, or None if unavailable.
+        """
+        try:
+            # Get historical price data which includes volumes
+            minutes = hours * 60
+            history = await self.get_price_history(minutes=minutes)
+
+            if not history:
+                logger.debug("No price history available for volume data")
+                return None
+
+            # Extract volumes from history
+            volumes = [point.volume for point in history if point.volume > 0]
+
+            if volumes:
+                logger.debug(
+                    "Volume history retrieved",
+                    hours=hours,
+                    data_points=len(volumes),
+                    avg_volume=f"${float(sum(volumes) / len(volumes)):,.0f}"
                 )
+                return volumes
+            else:
+                logger.debug("No volume data in price history")
+                return None
 
         except Exception as e:
-            logger.error("Failed to fetch funding rates", error=str(e))
+            logger.warning("Failed to get volume history", error=str(e))
             return None
 
     async def get_btc_dominance(self) -> BTCDominanceSignal | None:
