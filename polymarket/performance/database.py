@@ -147,6 +147,7 @@ class PerformanceDatabase:
             ("price_slippage_pct", "REAL"),  # Percentage change
             ("price_movement_favorable", "BOOLEAN"),  # Was movement favorable?
             ("skipped_unfavorable_move", "BOOLEAN"),  # Was trade skipped due to safety check?
+            ("execution_status", "TEXT DEFAULT 'pending'"),  # 'pending', 'executed', 'skipped', 'failed'
         ]
 
         for column_name, column_type in new_columns:
