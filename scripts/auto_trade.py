@@ -846,14 +846,23 @@ class AutoTrader:
                 # Volume confirmation for large moves (breakout detection)
                 if abs_diff > 200 and volume_data:  # $200+ move = potential breakout
                     if not volume_data.is_high_volume:
-                        logger.info(
-                            "Skipping large move without volume confirmation",
-                            market_id=market.id,
-                            movement=f"${diff:+,.2f}",
-                            volume_ratio=f"{volume_data.volume_ratio:.2f}x",
-                            reason="Breakouts require volume > 1.5x average"
-                        )
-                        return  # Skip low-volume breakouts
+                        if not self.test_mode.enabled:
+                            logger.info(
+                                "Skipping large move without volume confirmation",
+                                market_id=market.id,
+                                movement=f"${diff:+,.2f}",
+                                volume_ratio=f"{volume_data.volume_ratio:.2f}x",
+                                reason="Breakouts require volume > 1.5x average"
+                            )
+                            return  # Skip low-volume breakouts
+                        else:
+                            logger.info(
+                                "[TEST] Bypassing volume confirmation - data sent to AI",
+                                market_id=market.id,
+                                movement=f"${diff:+,.2f}",
+                                volume_ratio=f"{volume_data.volume_ratio:.2f}x",
+                                bypassed=True
+                            )
 
             # NEW: Enhanced Market Signals from CoinGecko Pro
             # Fetch additional market signals for better edge detection
@@ -906,26 +915,45 @@ class AutoTrader:
 
             # Timeframe alignment check - don't trade against larger trend
             if timeframe_analysis and timeframe_analysis.alignment == "CONFLICTING":
-                logger.info(
-                    "Skipping trade - conflicting timeframes",
-                    market_id=market.id,
-                    daily_trend=timeframe_analysis.daily_trend,
-                    four_hour_trend=timeframe_analysis.four_hour_trend,
-                    reason="Don't trade against larger timeframe trend"
-                )
-                return
+                if not self.test_mode.enabled:
+                    logger.info(
+                        "Skipping trade - conflicting timeframes",
+                        market_id=market.id,
+                        daily_trend=timeframe_analysis.daily_trend,
+                        four_hour_trend=timeframe_analysis.four_hour_trend,
+                        reason="Don't trade against larger timeframe trend"
+                    )
+                    return
+                else:
+                    logger.info(
+                        "[TEST] Bypassing timeframe check - data sent to AI",
+                        market_id=market.id,
+                        daily_trend=timeframe_analysis.daily_trend,
+                        four_hour_trend=timeframe_analysis.four_hour_trend,
+                        bypassed=True
+                    )
 
             # Market regime check - skip unclear/volatile markets
             if regime and regime.regime in ["UNCLEAR", "VOLATILE"]:
-                logger.info(
-                    "Skipping trade - unfavorable market regime",
-                    market_id=market.id,
-                    regime=regime.regime,
-                    volatility=f"{regime.volatility:.2f}%",
-                    confidence=f"{regime.confidence:.2f}",
-                    reason="Only trade in trending or ranging markets"
-                )
-                return
+                if not self.test_mode.enabled:
+                    logger.info(
+                        "Skipping trade - unfavorable market regime",
+                        market_id=market.id,
+                        regime=regime.regime,
+                        volatility=f"{regime.volatility:.2f}%",
+                        confidence=f"{regime.confidence:.2f}",
+                        reason="Only trade in trending or ranging markets"
+                    )
+                    return
+                else:
+                    logger.info(
+                        "[TEST] Bypassing regime check - data sent to AI",
+                        market_id=market.id,
+                        regime=regime.regime,
+                        volatility=f"{regime.volatility:.2f}%",
+                        confidence=f"{regime.confidence:.2f}",
+                        bypassed=True
+                    )
 
             # Fetch and analyze orderbook for execution quality
             orderbook = self.client.get_orderbook(token_ids[0])  # YES token
