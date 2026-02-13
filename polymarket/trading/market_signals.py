@@ -99,7 +99,7 @@ class MarketSignalProcessor:
 
         logger.info(
             "Funding rate signal processed",
-            fr_decimal=f"{funding_rate:.6f}",
+            funding_rate_pct=f"{funding_rate * 100:.4f}%",
             direction=direction,
             confidence=f"{confidence:.2f}",
         )
