@@ -941,14 +941,23 @@ class AutoTrader:
                 if orderbook_analysis:
                     # Skip if spread too wide (poor execution quality)
                     if orderbook_analysis.spread_bps > 500:  # 5% spread
-                        logger.info(
-                            "Skipping trade - spread too wide",
-                            market_id=market.id,
-                            spread_bps=f"{orderbook_analysis.spread_bps:.1f}",
-                            liquidity_score=f"{orderbook_analysis.liquidity_score:.2f}",
-                            reason="Wide spread = poor execution quality"
-                        )
-                        return
+                        if not self.test_mode.enabled:
+                            logger.info(
+                                "Skipping trade - spread too wide",
+                                market_id=market.id,
+                                spread_bps=f"{orderbook_analysis.spread_bps:.1f}",
+                                liquidity_score=f"{orderbook_analysis.liquidity_score:.2f}",
+                                reason="Wide spread = poor execution quality"
+                            )
+                            return
+                        else:
+                            logger.info(
+                                "[TEST] Bypassing spread check - data sent to AI",
+                                market_id=market.id,
+                                spread_bps=f"{orderbook_analysis.spread_bps:.1f}",
+                                liquidity_score=f"{orderbook_analysis.liquidity_score:.2f}",
+                                bypassed=True
+                            )
 
                     # Skip if can't fill order
                     if not orderbook_analysis.can_fill_order:
