@@ -80,7 +80,10 @@ class PerformanceDatabase:
                 actual_outcome TEXT,
                 profit_loss REAL,
                 is_win BOOLEAN,
-                is_missed_opportunity BOOLEAN
+                is_missed_opportunity BOOLEAN,
+
+                -- Test Mode
+                is_test_mode INTEGER DEFAULT 0
             )
         """)
 
@@ -128,6 +131,11 @@ class PerformanceDatabase:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_trades_is_win
             ON trades(is_win)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_trades_test_mode
+            ON trades(is_test_mode)
         """)
 
         self.conn.commit()
@@ -189,8 +197,9 @@ class PerformanceDatabase:
                 analysis_price, price_staleness_seconds, price_slippage_pct,
                 price_movement_favorable, skipped_unfavorable_move,
                 actual_probability, arbitrage_edge, arbitrage_urgency,
-                filled_via, limit_order_timeout
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                filled_via, limit_order_timeout,
+                is_test_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade_data["timestamp"],
             trade_data["market_slug"],
@@ -223,7 +232,8 @@ class PerformanceDatabase:
             trade_data.get("arbitrage_edge"),
             trade_data.get("arbitrage_urgency"),
             trade_data.get("filled_via"),
-            trade_data.get("limit_order_timeout")
+            trade_data.get("limit_order_timeout"),
+            trade_data.get("is_test_mode", 0)
         ))
 
         self.conn.commit()
