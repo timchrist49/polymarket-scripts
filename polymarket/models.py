@@ -231,6 +231,17 @@ class OrderbookData:
     timestamp: datetime
 
 
+@dataclass
+class MarketRegime:
+    """Current market regime classification."""
+    regime: str          # "TRENDING", "RANGING", "VOLATILE", "UNCLEAR"
+    volatility: float    # ATR or price volatility %
+    is_trending: bool    # True if strong directional move
+    trend_direction: str # "UP", "DOWN", "SIDEWAYS"
+    confidence: float    # 0.0-1.0
+    timestamp: datetime
+
+
 # === Sentiment Models ===
 
 @dataclass

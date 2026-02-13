@@ -565,6 +565,33 @@ class AutoTrader:
                     trend="NEUTRAL"
                 )
 
+            # Step 3.5: Market Regime Detection
+            regime = None
+            try:
+                # Calculate price changes from historical data
+                if len(price_history) >= 10:
+                    price_changes = [
+                        ((float(price_history[i].price) - float(price_history[i-1].price)) / float(price_history[i-1].price)) * 100
+                        for i in range(1, min(11, len(price_history)))  # Last 10 changes
+                    ]
+
+                    # Get 24h high/low from btc_data (if available from volume data)
+                    high_24h = float(btc_data.price) * 1.02  # Estimate if not available
+                    low_24h = float(btc_data.price) * 0.98
+
+                    from polymarket.trading.regime_detector import RegimeDetector
+                    regime_detector = RegimeDetector()
+                    regime = regime_detector.detect_regime(
+                        price_changes=price_changes,
+                        current_price=float(btc_data.price),
+                        high_24h=high_24h,
+                        low_24h=low_24h
+                    )
+                else:
+                    logger.warning("Insufficient price history for regime detection")
+            except Exception as e:
+                logger.warning("Regime detection failed", error=str(e))
+
             # Step 4: Aggregate Signals - NEW (includes funding + dominance)
             aggregated_sentiment = self.aggregator.aggregate(
                 social_sentiment,
@@ -609,7 +636,8 @@ class AutoTrader:
                     btc_momentum,  # NEW: pass momentum calculated once per loop
                     cycle_start_time,  # NEW: pass cycle start time for JIT metrics
                     volume_data,  # NEW: volume data for AI context
-                    timeframe_analysis  # NEW: timeframe analysis for AI context
+                    timeframe_analysis,  # NEW: timeframe analysis for AI context
+                    regime  # NEW: market regime for adaptive strategy
                 )
 
             # Step 7: Stop-loss check
@@ -683,7 +711,8 @@ class AutoTrader:
         btc_momentum: dict | None,  # NEW: momentum calculated once per loop
         cycle_start_time: datetime,  # NEW: for JIT execution metrics
         volume_data,  # NEW: volume data for breakout confirmation
-        timeframe_analysis  # NEW: multi-timeframe trend analysis
+        timeframe_analysis,  # NEW: multi-timeframe trend analysis
+        regime  # NEW: market regime detection
     ) -> None:
         """Process a single market for trading decision."""
 
@@ -792,6 +821,18 @@ class AutoTrader:
                     daily_trend=timeframe_analysis.daily_trend,
                     four_hour_trend=timeframe_analysis.four_hour_trend,
                     reason="Don't trade against larger timeframe trend"
+                )
+                return
+
+            # Market regime check - skip unclear/volatile markets
+            if regime and regime.regime in ["UNCLEAR", "VOLATILE"]:
+                logger.info(
+                    "Skipping trade - unfavorable market regime",
+                    market_id=market.id,
+                    regime=regime.regime,
+                    volatility=f"{regime.volatility:.2f}%",
+                    confidence=f"{regime.confidence:.2f}",
+                    reason="Only trade in trending or ranging markets"
                 )
                 return
 
