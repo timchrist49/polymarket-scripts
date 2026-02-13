@@ -15,6 +15,8 @@ import asyncio
 import sys
 import signal
 import logging
+import os
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -99,6 +101,15 @@ async def price_history_cleaner(buffer, interval: int = 3600):
             # Continue running despite errors
 
 
+@dataclass
+class TestModeConfig:
+    """Configuration for test mode trading."""
+    enabled: bool = False
+    max_bet_amount: Decimal = Decimal("1.0")
+    min_confidence: float = 0.70
+    traded_markets: set[str] = field(default_factory=set)
+
+
 class AutoTrader:
     """Main autonomous trading bot orchestrator."""
 
@@ -157,6 +168,28 @@ class AutoTrader:
 
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
+
+        # Initialize test mode
+        self.test_mode = TestModeConfig(
+            enabled=os.getenv("TEST_MODE", "").lower() == "true",
+            max_bet_amount=Decimal("1.0"),
+            min_confidence=0.70,
+            traded_markets=set()
+        )
+
+        # Log test mode status
+        if self.test_mode.enabled:
+            logger.warning(
+                "=" * 70,
+                test_mode=True,
+                banner="TEST MODE ENABLED"
+            )
+            logger.warning(
+                "[TEST] Trading with $1 bets, 70% min confidence, forcing decisions",
+                max_bet=str(self.test_mode.max_bet_amount),
+                min_confidence=self.test_mode.min_confidence
+            )
+            logger.warning("=" * 70)
 
     async def initialize(self) -> None:
         """Initialize async resources before trading cycles."""
@@ -813,6 +846,55 @@ class AutoTrader:
                         )
                         return  # Skip low-volume breakouts
 
+            # NEW: Enhanced Market Signals from CoinGecko Pro
+            # Fetch additional market signals for better edge detection
+            market_signals = None
+            try:
+                from polymarket.trading.market_signals import MarketSignalProcessor, Signal
+
+                signal_processor = MarketSignalProcessor()
+
+                # Fetch funding rates (multi-exchange with timeout protection)
+                funding_rate_raw = await self.btc_service.get_funding_rate_raw()
+                funding_signal = signal_processor.process_funding_rate(funding_rate_raw)
+
+                # Fetch multi-exchange prices for premium comparison
+                exchange_prices = await self.btc_service.get_exchange_prices()
+                premium_signal = signal_processor.process_exchange_premium(exchange_prices)
+
+                # Get recent volumes for volume confirmation
+                recent_volumes = await self.btc_service.get_recent_volumes(hours=24)
+                current_volume = recent_volumes[-1] if recent_volumes else None
+                volume_signal = signal_processor.process_volume_confirmation(
+                    current_volume=current_volume,
+                    recent_volumes=recent_volumes,
+                    movement_usd=abs_diff
+                )
+
+                # Aggregate all signals
+                signals = [funding_signal, premium_signal, volume_signal]
+                market_signals = signal_processor.aggregate_signals(
+                    signals=signals,
+                    weights={
+                        "funding_rate": 0.35,  # 35% weight to funding rates
+                        "exchange_premium": 0.35,  # 35% weight to exchange premium
+                        "volume": 0.30  # 30% weight to volume confirmation
+                    }
+                )
+
+                logger.info(
+                    "Market signals aggregated",
+                    direction=market_signals.direction,
+                    confidence=f"{market_signals.confidence:.2f}",
+                    funding=f"{funding_signal.direction} ({funding_signal.confidence:.2f})",
+                    premium=f"{premium_signal.direction} ({premium_signal.confidence:.2f})",
+                    volume=f"{volume_signal.direction} ({volume_signal.confidence:.2f})"
+                )
+
+            except Exception as e:
+                logger.warning("Failed to fetch market signals, continuing without them", error=str(e))
+                market_signals = None
+
             # Timeframe alignment check - don't trade against larger trend
             if timeframe_analysis and timeframe_analysis.alignment == "CONFLICTING":
                 logger.info(
@@ -948,7 +1030,7 @@ class AutoTrader:
                     confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}"
                 )
 
-            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, and arbitrage
+            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, arbitrage, and market signals
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
@@ -959,7 +1041,8 @@ class AutoTrader:
                 volume_data=volume_data,  # NEW: volume confirmation
                 timeframe_analysis=timeframe_analysis,  # NEW: multi-timeframe analysis
                 regime=regime,  # NEW: market regime detection
-                arbitrage_opportunity=arbitrage_opportunity  # NEW: arbitrage opportunity
+                arbitrage_opportunity=arbitrage_opportunity,  # NEW: arbitrage opportunity
+                market_signals=market_signals  # NEW: CoinGecko Pro market signals
             )
 
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
