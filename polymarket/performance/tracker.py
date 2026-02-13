@@ -242,6 +242,45 @@ class PerformanceTracker:
             profit_loss=f"${profit_loss:.2f}"
         )
 
+    async def update_trade_status(
+        self,
+        trade_id: int,
+        execution_status: str,
+        skip_reason: str = None,
+        skip_type: str = None
+    ) -> None:
+        """
+        Update trade execution status.
+
+        Args:
+            trade_id: Trade ID to update
+            execution_status: 'pending', 'executed', 'skipped', 'failed'
+            skip_reason: Optional reason for skipping
+            skip_type: Optional type of skip (e.g., 'validation', 'risk_check')
+        """
+        try:
+            cursor = self.db.conn.cursor()
+
+            # Just update execution_status for now
+            # (skip_reason and skip_type could be added as columns later if needed)
+            cursor.execute("""
+                UPDATE trades
+                SET execution_status = ?
+                WHERE id = ?
+            """, (execution_status, trade_id))
+
+            self.db.conn.commit()
+
+            logger.debug(
+                "Trade status updated",
+                trade_id=trade_id,
+                status=execution_status,
+                reason=skip_reason
+            )
+
+        except Exception as e:
+            logger.error("Failed to update trade status", trade_id=trade_id, error=str(e))
+
     def close(self):
         """Close database connection."""
         if self._owns_db:

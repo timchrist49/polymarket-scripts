@@ -152,7 +152,8 @@ class TradeSettler:
         # Query trades that:
         # 1. Have action YES or NO (not HOLD)
         # 2. Are not yet settled (is_win IS NULL)
-        # 3. Are old enough (>15 minutes old)
+        # 3. Were actually executed (not skipped) - NEW: prevents phantom trades
+        # 4. Are old enough (>15 minutes old)
         cursor.execute("""
             SELECT
                 id, timestamp, market_slug, action,
@@ -160,6 +161,7 @@ class TradeSettler:
             FROM trades
             WHERE action IN ('YES', 'NO')
               AND is_win IS NULL
+              AND execution_status = 'executed'
               AND datetime(timestamp) < datetime('now', '-15 minutes')
             ORDER BY timestamp ASC
             LIMIT ?

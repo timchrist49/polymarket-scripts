@@ -630,6 +630,32 @@ class AutoTrader:
                 logger.error("Fallback market discovery also failed", error=str(e2))
                 return []
 
+    async def _mark_trade_skipped(
+        self,
+        trade_id: int,
+        reason: str,
+        skip_type: str = "validation"
+    ) -> None:
+        """Mark a trade as skipped in database."""
+        if trade_id <= 0:
+            return
+
+        try:
+            await self.performance_tracker.update_trade_status(
+                trade_id=trade_id,
+                execution_status='skipped',
+                skip_reason=reason,
+                skip_type=skip_type
+            )
+            logger.info(
+                "Trade marked as skipped",
+                trade_id=trade_id,
+                reason=reason,
+                skip_type=skip_type
+            )
+        except Exception as e:
+            logger.error("Failed to mark trade as skipped", error=str(e))
+
     async def _process_market(
         self,
         market: Market,
@@ -763,7 +789,25 @@ class AutoTrader:
                 portfolio_value=portfolio_value
             )
 
-            # Log decision to performance tracker
+            # Additional validation: YES trades need stronger momentum to avoid mean reversion
+            # CHECK FIRST before logging to avoid phantom trades
+            if decision.action == "YES" and price_to_beat:
+                diff, _ = self.market_tracker.calculate_price_difference(
+                    btc_data.price, price_to_beat
+                )
+                MIN_YES_MOVEMENT = 200  # $200 minimum for YES trades (higher threshold)
+
+                if diff < MIN_YES_MOVEMENT:
+                    logger.info(
+                        "Skipping YES trade - insufficient upward momentum",
+                        market_id=market.id,
+                        movement=f"${diff:+,.2f}",
+                        threshold=f"${MIN_YES_MOVEMENT}",
+                        reason="Avoid buying exhausted momentum (mean reversion risk)"
+                    )
+                    return  # Skip WITHOUT creating DB record
+
+            # NOW log decision to performance tracker (only if validation passed)
             trade_id = -1
             try:
                 trade_id = await self.performance_tracker.log_decision(
@@ -779,23 +823,7 @@ class AutoTrader:
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))
                 # Continue trading - don't block on logging failures
-
-            # Additional validation: YES trades need stronger momentum to avoid mean reversion
-            if decision.action == "YES" and price_to_beat:
-                diff, _ = self.market_tracker.calculate_price_difference(
-                    btc_data.price, price_to_beat
-                )
-                MIN_YES_MOVEMENT = 200  # $200 minimum for YES trades (higher threshold)
-
-                if diff < MIN_YES_MOVEMENT:
-                    logger.info(
-                        "Skipping YES trade - insufficient upward momentum",
-                        market_id=market.id,
-                        movement=f"${diff:+,.2f}",
-                        threshold=f"${MIN_YES_MOVEMENT}",
-                        reason="Avoid buying exhausted momentum (mean reversion risk)"
-                    )
-                    return  # Skip this trade
+                trade_id = -1
 
             # Map AI decision to correct token based on outcomes
             # Outcomes are typically ["Up", "Down"] or ["Yes", "No"]
