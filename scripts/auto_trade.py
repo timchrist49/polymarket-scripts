@@ -905,14 +905,17 @@ class AutoTrader:
                 note="DOWN price = 1 - UP bid"
             )
 
-            # Step 1: AI Decision - pass all market context including orderbook
+            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
                 aggregated_sentiment=aggregated_sentiment,
                 market_data=market_dict,
                 portfolio_value=portfolio_value,
-                orderbook_data=orderbook_analysis  # NEW: orderbook depth analysis
+                orderbook_data=orderbook_analysis,  # orderbook depth analysis
+                volume_data=volume_data,  # NEW: volume confirmation
+                timeframe_analysis=timeframe_analysis,  # NEW: multi-timeframe analysis
+                regime=regime  # NEW: market regime detection
             )
 
             # Skip YES trades if disabled (emergency kill switch)

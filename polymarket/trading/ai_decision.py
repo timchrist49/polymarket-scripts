@@ -18,7 +18,10 @@ from polymarket.models import (
     TechnicalIndicators,
     SentimentAnalysis,  # Keep for backwards compatibility
     AggregatedSentiment,
-    TradingDecision
+    TradingDecision,
+    VolumeData,
+    TimeframeAnalysis,
+    MarketRegime
 )
 from polymarket.config import Settings
 
@@ -47,16 +50,20 @@ class AIDecisionService:
         aggregated_sentiment: AggregatedSentiment,
         market_data: dict,
         portfolio_value: Decimal = Decimal("1000"),
-        orderbook_data: "OrderbookData | None" = None  # NEW: orderbook analysis
+        orderbook_data: "OrderbookData | None" = None,  # orderbook analysis
+        volume_data: VolumeData | None = None,  # NEW: volume confirmation
+        timeframe_analysis: TimeframeAnalysis | None = None,  # NEW: multi-timeframe
+        regime: MarketRegime | None = None  # NEW: market regime
     ) -> TradingDecision:
-        """Generate trading decision using AI with aggregated sentiment and orderbook."""
+        """Generate trading decision using AI with regime awareness, volume, and timeframe analysis."""
         try:
             client = self._get_client()
 
             # Build the prompt
             prompt = self._build_prompt(
                 btc_price, technical_indicators, aggregated_sentiment,
-                market_data, portfolio_value, orderbook_data
+                market_data, portfolio_value, orderbook_data,
+                volume_data, timeframe_analysis, regime
             )
 
             # Call OpenAI with GPT-5-Nano parameters
@@ -66,7 +73,24 @@ class AIDecisionService:
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are an autonomous trading bot for Polymarket BTC 15-minute up/down markets. Use reasoning tokens to analyze all signals carefully. Always return valid JSON."
+                            "content": """You are a professional Bitcoin trader analyzing 15-minute markets on Polymarket with regime-aware strategy.
+
+CRITICAL RULES FOR 15-MIN BTC TRADING:
+
+## Market Regime Strategy
+- TRENDING Markets: Follow trend, enter on pullbacks (not extremes)
+- RANGING Markets: Buy support, sell resistance
+- VOLATILE/UNCLEAR Markets: HOLD - Don't trade unclear conditions
+
+## Volume Requirements
+- Breakouts ($200+ moves): REQUIRE volume > 1.5x average
+- Without volume = false breakout = HOLD
+
+## Timeframe Alignment
+- ALIGNED timeframes (daily + 4h same): High confidence trades
+- CONFLICTING timeframes: HOLD - Don't trade against larger trend
+
+Use reasoning tokens to analyze all signals carefully. Always return valid JSON."""
                         },
                         {"role": "user", "content": prompt}
                     ],
@@ -108,9 +132,12 @@ class AIDecisionService:
         aggregated: AggregatedSentiment,
         market: dict,
         portfolio_value: Decimal,
-        orderbook_data: "OrderbookData | None" = None
+        orderbook_data: "OrderbookData | None" = None,
+        volume_data: VolumeData | None = None,
+        timeframe_analysis: TimeframeAnalysis | None = None,
+        regime: MarketRegime | None = None
     ) -> str:
-        """Build the AI prompt with all context including price-to-beat, timing, and orderbook."""
+        """Build the AI prompt with all context including regime, volume, timeframe, and orderbook."""
 
         # Get market outcomes (e.g., ["Up", "Down"])
         outcomes = market.get("outcomes", ["Yes", "No"])
@@ -219,6 +246,66 @@ ACTUAL BTC MOMENTUM (last 5 minutes):
         else:
             momentum_context = "ACTUAL BTC MOMENTUM: Not available (insufficient price history)"
 
+        # NEW: Market Regime context
+        regime_context = ""
+        if regime:
+            regime_context = f"""
+MARKET REGIME ANALYSIS:
+- Regime: {regime.regime}
+- Is Trending: {regime.is_trending}
+- Trend Direction: {regime.trend_direction}
+- Volatility: {regime.volatility:.2f}%
+- Confidence: {regime.confidence:.2f}
+
+⚠️ REGIME-BASED STRATEGY:
+- TRENDING UP: Only YES trades on pullbacks (not at 24h high)
+- TRENDING DOWN: Only NO trades on bounces (not at 24h low)
+- RANGING: YES near support, NO near resistance
+- VOLATILE/UNCLEAR: HOLD - Don't trade unclear conditions
+"""
+        else:
+            regime_context = "MARKET REGIME: Not available (insufficient data)"
+
+        # NEW: Volume context
+        volume_context = ""
+        if volume_data:
+            volume_context = f"""
+VOLUME CONFIRMATION:
+- 24h Volume: ${volume_data.volume_24h:,.0f}
+- Current Hour Volume: ${volume_data.volume_current_hour:,.0f}
+- Average Hour Volume: ${volume_data.volume_avg_hour:,.0f}
+- Volume Ratio: {volume_data.volume_ratio:.2f}x (current / average)
+- High Volume: {volume_data.is_high_volume}
+
+⚠️ VOLUME RULES:
+- For breakouts ($200+ moves): REQUIRE volume_ratio > 1.5x
+- Without volume = false breakout = HOLD
+- Low volume = reduce confidence by 0.1-0.2
+"""
+        else:
+            volume_context = "VOLUME CONFIRMATION: Not available"
+
+        # NEW: Timeframe alignment context
+        timeframe_context = ""
+        if timeframe_analysis:
+            timeframe_context = f"""
+MULTI-TIMEFRAME ANALYSIS:
+- Daily Trend: {timeframe_analysis.daily_trend}
+- 4-Hour Trend: {timeframe_analysis.four_hour_trend}
+- Alignment: {timeframe_analysis.alignment}
+- Daily Support: ${timeframe_analysis.daily_support:,.2f}
+- Daily Resistance: ${timeframe_analysis.daily_resistance:,.2f}
+- Timeframe Confidence: {timeframe_analysis.confidence:.2f}
+
+⚠️ TIMEFRAME RULES:
+- ALIGNED (both BULLISH/BEARISH): High confidence trades allowed
+- CONFLICTING: HOLD - Don't trade against larger trend
+- Current price near daily support = potential YES entry
+- Current price near daily resistance = potential NO entry
+"""
+        else:
+            timeframe_context = "MULTI-TIMEFRAME ANALYSIS: Not available"
+
         # Extract social and market details
         social = aggregated.social
         mkt = aggregated.market
@@ -233,6 +320,12 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 {timing_context}
 
 {momentum_context}
+
+{regime_context}
+
+{volume_context}
+
+{timeframe_context}
 
 CURRENT MARKET DATA:
 - BTC Current Price: ${btc_price.price:,.2f} (source: {btc_price.source})
@@ -312,6 +405,9 @@ RISK PARAMETERS:
 DECISION INSTRUCTIONS:
 1. USE YOUR REASONING TOKENS to analyze:
    - ⚠️ CHECK VALIDATION RULES FIRST - any contradictions?
+   - ⚠️ CHECK MARKET REGIME - is it TRENDING/RANGING/VOLATILE/UNCLEAR?
+   - ⚠️ CHECK TIMEFRAME ALIGNMENT - are daily + 4h aligned or conflicting?
+   - ⚠️ CHECK VOLUME - is there sufficient volume for the move?
    - Price-to-beat direction (is current price up or down from start?)
    - Actual BTC momentum (is BTC moving up or down right now?)
    - Market signals (what does Polymarket sentiment say?)
@@ -335,12 +431,36 @@ DECISION INSTRUCTIONS:
                          (b) Clear contrarian opportunity (odds < 0.30)
                          (c) No prior opportunity to enter
 
-3. The aggregated confidence ({aggregated.final_confidence:.2f}) is pre-calculated.
-   - You may ADJUST by max ±0.15 if you spot patterns we missed
-   - Boost if: All signals strongly align + end-of-market + clear price direction
-   - Reduce if: Conflicting signals or suspicious patterns
+3. REGIME-BASED ENTRY RULES (CRITICAL):
 
-4. Only trade if final confidence >= {self.settings.bot_confidence_threshold}
+   **YES (bet BTC goes UP):**
+   - Market regime must be TRENDING UP or RANGING (near support)
+   - Daily + 4h timeframes must be BULLISH or NEUTRAL (not CONFLICTING)
+   - Current price NOT at 24h high (wait for pullback)
+   - If move > $200, require high volume (volume_ratio > 1.5x)
+   - Confidence > 0.75
+
+   **NO (bet BTC goes DOWN):**
+   - Market regime must be TRENDING DOWN or RANGING (near resistance)
+   - Daily + 4h timeframes must be BEARISH or NEUTRAL (not CONFLICTING)
+   - Current price NOT at 24h low (wait for bounce)
+   - If move > $200, require high volume (volume_ratio > 1.5x)
+   - Confidence > 0.70
+
+   **HOLD (do not trade):**
+   - Regime is VOLATILE or UNCLEAR
+   - Timeframes CONFLICTING
+   - No volume on large moves
+   - Price at extremes (exhausted momentum)
+   - Confidence < 0.70
+   - Unclear market conditions
+
+4. The aggregated confidence ({aggregated.final_confidence:.2f}) is pre-calculated.
+   - You may ADJUST by max ±0.15 if you spot patterns we missed
+   - Boost if: All signals strongly align + end-of-market + clear price direction + regime clear
+   - Reduce if: Conflicting signals, unclear regime, or suspicious patterns
+
+5. Only trade if final confidence >= {self.settings.bot_confidence_threshold}
 
 DECISION FORMAT:
 Return JSON with:
@@ -359,8 +479,11 @@ ACTION MAPPING:
 - Return "HOLD" if signals are unclear or confidence is too low
 
 CRITICAL ALIGNMENT CHECK:
-- BULLISH signals (BTC going UP from price-to-beat) → Buy "{yes_outcome}" token
-- BEARISH signals (BTC going DOWN from price-to-beat) → Buy "{no_outcome}" token
+- BULLISH signals + TRENDING UP/RANGING regime + ALIGNED timeframes → Buy "{yes_outcome}" token
+- BEARISH signals + TRENDING DOWN/RANGING regime + ALIGNED timeframes → Buy "{no_outcome}" token
+- If regime is VOLATILE/UNCLEAR → HOLD (wait for clarity)
+- If timeframes CONFLICTING → HOLD (don't trade against larger trend)
+- If large move without volume → HOLD (false breakout)
 - If price-to-beat shows +2% but you're bearish → HOLD (conflicting signals)
 """
 
