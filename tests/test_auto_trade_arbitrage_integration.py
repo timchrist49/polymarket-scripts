@@ -95,6 +95,12 @@ async def test_arbitrage_data_flow():
     trader.client.get_orderbook = Mock(return_value=MagicMock())
 
     trader.market_tracker = Mock()
+    trader.market_tracker.parse_market_start = Mock(return_value=datetime(2026, 2, 13, 11, 15, 0, tzinfo=timezone.utc))
+    trader.market_tracker.calculate_time_remaining = Mock(return_value=900)  # 15 minutes in seconds
+    trader.market_tracker.is_end_of_market = Mock(return_value=False)
+    trader.market_tracker.get_price_to_beat = Mock(return_value=66000.0)
+    trader.market_tracker.calculate_price_difference = Mock(return_value=(200.0, 0.30))
+
     trader.performance_tracker = Mock()
     trader.performance_tracker.log_decision = AsyncMock(return_value=1)
 
@@ -107,6 +113,7 @@ async def test_arbitrage_data_flow():
     mock_market.active = True
     mock_market.question = "Will BTC be up?"
     mock_market.outcomes = ["Up", "Down"]
+    mock_market.get_token_ids = Mock(return_value=["token-123", "token-456"])
 
     mock_btc_data = Mock()
     mock_btc_data.price = Decimal("66200.0")
