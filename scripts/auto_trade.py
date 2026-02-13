@@ -105,7 +105,7 @@ async def price_history_cleaner(buffer, interval: int = 3600):
 class TestModeConfig:
     """Configuration for test mode trading."""
     enabled: bool = False
-    max_bet_amount: Decimal = Decimal("1.0")
+    max_bet_amount: Decimal = Decimal("5.0")
     min_confidence: float = 0.70
     traded_markets: set[str] = field(default_factory=set)
 
@@ -172,7 +172,7 @@ class AutoTrader:
         # Initialize test mode
         self.test_mode = TestModeConfig(
             enabled=os.getenv("TEST_MODE", "").lower() == "true",
-            max_bet_amount=Decimal("1.0"),
+            max_bet_amount=Decimal("5.0"),
             min_confidence=0.70,
             traded_markets=set()
         )
@@ -185,7 +185,7 @@ class AutoTrader:
                 banner="TEST MODE ENABLED"
             )
             logger.warning(
-                "[TEST] Trading with $1 bets, 70% min confidence, forcing decisions",
+                "[TEST] Trading with $5 bets, 70% min confidence, forcing decisions",
                 max_bet=str(self.test_mode.max_bet_amount),
                 min_confidence=self.test_mode.min_confidence
             )
