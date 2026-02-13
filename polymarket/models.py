@@ -213,6 +213,24 @@ class TimeframeAnalysis:
     timestamp: datetime
 
 
+@dataclass
+class OrderbookData:
+    """Polymarket orderbook depth analysis."""
+    bid_ask_spread: float         # Spread in % (tight = liquid)
+    spread_bps: float              # Spread in basis points
+    liquidity_score: float         # 0.0-1.0 (high = good liquidity)
+    order_imbalance: float         # -1.0 (ask heavy) to +1.0 (bid heavy)
+    imbalance_direction: str       # "BUY_PRESSURE", "SELL_PRESSURE", "BALANCED"
+    bid_depth_100bps: float        # Total bid liquidity within 100bps
+    ask_depth_100bps: float        # Total ask liquidity within 100bps
+    bid_depth_200bps: float        # Total bid liquidity within 200bps
+    ask_depth_200bps: float        # Total ask liquidity within 200bps
+    best_bid: float                # Top bid price
+    best_ask: float                # Top ask price
+    can_fill_order: bool           # Enough liquidity for trade
+    timestamp: datetime
+
+
 # === Sentiment Models ===
 
 @dataclass
