@@ -429,3 +429,44 @@ class AggregatedSentiment:
             self.funding.validate()
         if self.dominance:
             self.dominance.validate()
+
+
+# === Arbitrage Models ===
+
+@dataclass
+class ArbitrageOpportunity:
+    """Detected arbitrage opportunity from price feed lag."""
+
+    market_id: str
+    actual_probability: float  # Calculated from price momentum
+    polymarket_yes_odds: float  # Current market odds
+    polymarket_no_odds: float
+    edge_percentage: float  # Size of mispricing
+    recommended_action: Literal["BUY_YES", "BUY_NO", "HOLD"]
+    confidence_boost: float  # Amount to boost AI confidence
+    urgency: Literal["HIGH", "MEDIUM", "LOW"]
+    expected_profit_pct: float  # Expected ROI if correct
+
+    def __post_init__(self):
+        """Validate field values."""
+        if self.recommended_action not in ["BUY_YES", "BUY_NO", "HOLD"]:
+            raise ValueError(f"Invalid action: {self.recommended_action}")
+        if self.urgency not in ["HIGH", "MEDIUM", "LOW"]:
+            raise ValueError(f"Invalid urgency: {self.urgency}")
+        if not 0.0 <= self.actual_probability <= 1.0:
+            raise ValueError(f"Invalid probability: {self.actual_probability}")
+        if not 0.0 <= self.polymarket_yes_odds <= 1.0:
+            raise ValueError(f"Invalid YES odds: {self.polymarket_yes_odds}")
+        if not 0.0 <= self.polymarket_no_odds <= 1.0:
+            raise ValueError(f"Invalid NO odds: {self.polymarket_no_odds}")
+
+
+@dataclass
+class LimitOrderStrategy:
+    """Strategy parameters for smart limit order execution."""
+
+    target_price: float  # Price to place limit order at
+    timeout_seconds: int  # How long to wait before fallback
+    fallback_to_market: bool  # Whether to use market order if timeout
+    urgency: Literal["HIGH", "MEDIUM", "LOW"]
+    price_improvement_pct: float  # How much better than market
