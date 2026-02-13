@@ -317,6 +317,41 @@ class PolymarketClient:
 
         return None
 
+    def get_orderbook(self, token_id: str, depth: int = 20) -> dict | None:
+        """
+        Fetch orderbook for a token from CLOB API.
+
+        Args:
+            token_id: Token ID to get orderbook for
+            depth: Number of levels to fetch (default 20)
+
+        Returns:
+            Orderbook dict with 'bids' and 'asks' arrays
+        """
+        try:
+            url = f"{self._settings.clob_url}/book"
+            params = {
+                "token_id": token_id,
+                "side": "both"
+            }
+
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+
+            # Format: {"bids": [[price, size], ...], "asks": [[price, size], ...]}
+            logger.debug(
+                f"Orderbook fetched for token {token_id[:8]}...",
+                bids=len(data.get('bids', [])),
+                asks=len(data.get('asks', []))
+            )
+
+            return data
+
+        except Exception as e:
+            logger.error(f"Failed to fetch orderbook for {token_id[:8]}...: {e}")
+            return None
+
     def _get_clob_client(self):
         """Lazy initialize CLOB client (only in trading mode)."""
         if self._mode != "trading":
