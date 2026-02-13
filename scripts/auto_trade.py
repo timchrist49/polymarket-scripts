@@ -44,7 +44,7 @@ from polymarket.trading.smart_order_executor import SmartOrderExecutor
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
-from polymarket.performance.adjuster import ParameterAdjuster, AdjustmentTier
+from polymarket.performance.adjuster import ParameterAdjuster, AdjustmentTier, get_repo_root
 from polymarket.performance.settler import TradeSettler
 from polymarket.telegram.bot import TelegramBot
 
@@ -376,8 +376,8 @@ class AutoTrader:
         if self.settings.emergency_pause_enabled:
             return True
 
-        # Check for emergency pause file
-        pause_file = Path(__file__).parent.parent / ".emergency_pause"
+        # Check for emergency pause file in repository root
+        pause_file = get_repo_root() / ".emergency_pause"
         return pause_file.exists()
 
     async def _get_btc_momentum(
@@ -720,41 +720,6 @@ class AutoTrader:
         regime  # NEW: market regime detection
     ) -> None:
         """Process a single market for trading decision."""
-
-        # Time-based trading filter (research-backed optimal hours)
-        from datetime import datetime, timezone
-        current_hour_utc = datetime.now(timezone.utc).hour
-
-        # Optimal trading window: 11 AM - 1 PM UTC (research-backed)
-        OPTIMAL_HOURS = range(11, 13)  # 11:00-12:59 UTC
-
-        # Avoid worst hours: 12 AM - 6 AM UTC (low liquidity, high volatility)
-        AVOID_HOURS = range(0, 6)
-
-        if current_hour_utc in AVOID_HOURS:
-            logger.info(
-                "Skipping trade - outside trading hours",
-                market_id=market.id,
-                current_hour=current_hour_utc,
-                reason="Avoid 12 AM - 6 AM UTC (low liquidity)"
-            )
-            return
-
-        # Reduce position size outside optimal hours
-        in_optimal_window = current_hour_utc in OPTIMAL_HOURS
-        position_size_multiplier = 1.0 if in_optimal_window else 0.7
-
-        logger.debug(
-            "Trading hours check",
-            current_hour=current_hour_utc,
-            in_optimal_window=in_optimal_window,
-            multiplier=position_size_multiplier
-        )
-
-        # EMERGENCY: Disable YES trades until strategy fixed
-        # YES trades: 10% win rate (9W-81L) = -$170 all-time
-        ENABLE_YES_TRADES = False  # TODO: Re-enable after strategy redesign
-
         try:
             # Get token IDs
             token_ids = market.get_token_ids()
@@ -997,16 +962,6 @@ class AutoTrader:
                 arbitrage_opportunity=arbitrage_opportunity  # NEW: arbitrage opportunity
             )
 
-            # Skip YES trades if disabled (emergency kill switch)
-            if decision.action == "YES" and not ENABLE_YES_TRADES:
-                logger.warning(
-                    "YES trades disabled - skipping",
-                    market_id=market.id,
-                    confidence=decision.confidence,
-                    reason="YES trades at 10% win rate, disabled until fixed"
-                )
-                return
-
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
             # CHECK FIRST before logging to avoid phantom trades
             if decision.action == "YES" and price_to_beat:
@@ -1069,20 +1024,6 @@ class AutoTrader:
                     confidence=f"{decision.confidence:.2f}",
                     reasoning=decision.reasoning,
                     position_size=str(decision.position_size)
-                )
-
-            # Apply time-based position size multiplier
-            base_position_size = decision.position_size
-            decision.position_size = base_position_size * Decimal(str(position_size_multiplier))
-
-            if position_size_multiplier != 1.0:
-                logger.info(
-                    "Position size adjusted for trading hours",
-                    base_size=f"${base_position_size:.2f}",
-                    multiplier=position_size_multiplier,
-                    adjusted_size=f"${decision.position_size:.2f}",
-                    current_hour=current_hour_utc,
-                    in_optimal_window=in_optimal_window
                 )
 
             # Skip if HOLD decision
