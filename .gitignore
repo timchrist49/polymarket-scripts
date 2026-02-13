@@ -68,3 +68,4 @@ Thumbs.db
 *.db
 *.sqlite
 logs/*.old
+.worktrees/
