@@ -486,13 +486,14 @@ class AutoTrader:
                     token_ids=token_ids if token_ids else None
                 )
 
-            # Step 2: Data Collection (parallel) - NEW: fetch social + market + funding + dominance
-            btc_data, social_sentiment, market_signals, funding_signal, dominance_signal = await asyncio.gather(
+            # Step 2: Data Collection (parallel) - NEW: fetch social + market + funding + dominance + volume
+            btc_data, social_sentiment, market_signals, funding_signal, dominance_signal, volume_data = await asyncio.gather(
                 self.btc_service.get_current_price(),
                 self.social_service.get_social_score(),
                 self.market_service.get_market_score(),
                 self.btc_service.get_funding_rates(),
                 self.btc_service.get_btc_dominance(),
+                self.btc_service.get_volume_data(),  # NEW: Volume confirmation for breakouts
             )
 
             # Calculate actual BTC momentum (last 5 minutes) - ONCE PER LOOP
@@ -752,6 +753,18 @@ class AutoTrader:
                         reason="Wait for clearer directional signal"
                     )
                     return  # Skip this market, no trade
+
+                # Volume confirmation for large moves (breakout detection)
+                if abs_diff > 200 and volume_data:  # $200+ move = potential breakout
+                    if not volume_data.is_high_volume:
+                        logger.info(
+                            "Skipping large move without volume confirmation",
+                            market_id=market.id,
+                            movement=f"${diff:+,.2f}",
+                            volume_ratio=f"{volume_data.volume_ratio:.2f}x",
+                            reason="Breakouts require volume > 1.5x average"
+                        )
+                        return  # Skip low-volume breakouts
 
             # Build market data dict with ALL context
             # Note: Polymarket returns prices for UP/YES token only

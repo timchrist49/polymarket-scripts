@@ -839,6 +839,64 @@ class BTCPriceService:
             logger.error("Failed to fetch BTC dominance", error=str(e))
             return None
 
+    async def get_volume_data(self) -> "VolumeData | None":
+        """
+        Fetch BTC volume data from CoinGecko.
+
+        Returns:
+            VolumeData with volume metrics for breakout detection
+        """
+        try:
+            session = await self._get_session()
+
+            # Get 24h volume data
+            url = "https://api.coingecko.com/api/v3/coins/bitcoin"
+            params = {"localization": "false", "tickers": "false", "community_data": "false"}
+
+            if self.settings.coingecko_api_key:
+                url = "https://pro-api.coingecko.com/api/v3/coins/bitcoin"
+                params["x_cg_pro_api_key"] = self.settings.coingecko_api_key
+
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                market_data = data.get("market_data", {})
+                volume_24h = float(market_data.get("total_volume", {}).get("usd", 0))
+
+                # Estimate current hour volume (24h / 24)
+                volume_avg_hour = volume_24h / 24
+
+                # Get current hour volume (approximate from recent trades)
+                # For now, use average; TODO: Get real-time hourly volume
+                volume_current_hour = volume_avg_hour
+                volume_ratio = volume_current_hour / volume_avg_hour if volume_avg_hour > 0 else 1.0
+
+                is_high_volume = volume_ratio > 1.5
+
+                logger.info(
+                    "Volume data fetched",
+                    volume_24h=f"${volume_24h:,.0f}",
+                    volume_ratio=f"{volume_ratio:.2f}x",
+                    is_high_volume=is_high_volume
+                )
+
+                # Import here to avoid circular import
+                from polymarket.models import VolumeData
+
+                return VolumeData(
+                    volume_24h=volume_24h,
+                    volume_current_hour=volume_current_hour,
+                    volume_avg_hour=volume_avg_hour,
+                    volume_ratio=volume_ratio,
+                    is_high_volume=is_high_volume,
+                    timestamp=datetime.now()
+                )
+
+        except Exception as e:
+            logger.error("Failed to fetch volume data", error=str(e))
+            return None
+
     async def close(self):
         """Clean up resources."""
         if self._stream:

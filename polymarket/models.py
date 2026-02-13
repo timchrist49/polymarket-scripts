@@ -190,6 +190,17 @@ class PriceChange:
     velocity: Decimal  # $/minute
 
 
+@dataclass
+class VolumeData:
+    """BTC trading volume data."""
+    volume_24h: float           # 24-hour volume in USD
+    volume_current_hour: float  # Current hour volume
+    volume_avg_hour: float      # Average hourly volume (last 24h)
+    volume_ratio: float         # Current / Average (spike detection)
+    is_high_volume: bool        # volume_ratio > 1.5
+    timestamp: datetime
+
+
 # === Sentiment Models ===
 
 @dataclass
