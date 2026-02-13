@@ -31,19 +31,21 @@ class ArbitrageDetector:
 
     def detect_arbitrage(
         self,
-        market_id: str,
         actual_probability: float,
-        polymarket_yes_odds: float,
-        polymarket_no_odds: float
+        market_yes_odds: float,
+        market_no_odds: float,
+        market_id: str,
+        ai_base_confidence: float = 0.75
     ) -> ArbitrageOpportunity:
         """
         Detect arbitrage opportunities by comparing actual vs market odds.
 
         Args:
-            market_id: Polymarket market ID
             actual_probability: Calculated probability from ProbabilityCalculator
-            polymarket_yes_odds: Current YES odds on Polymarket
-            polymarket_no_odds: Current NO odds on Polymarket
+            market_yes_odds: Current YES odds on Polymarket
+            market_no_odds: Current NO odds on Polymarket
+            market_id: Polymarket market ID
+            ai_base_confidence: Base confidence for AI decision (default 0.75)
 
         Returns:
             ArbitrageOpportunity with action, confidence boost, urgency
@@ -51,10 +53,10 @@ class ArbitrageDetector:
         Example:
             >>> detector = ArbitrageDetector()
             >>> opp = detector.detect_arbitrage(
-            ...     market_id="btc-market-1",
             ...     actual_probability=0.68,
-            ...     polymarket_yes_odds=0.55,
-            ...     polymarket_no_odds=0.45
+            ...     market_yes_odds=0.55,
+            ...     market_no_odds=0.45,
+            ...     market_id="btc-market-1"
             ... )
             >>> print(f"Action: {opp.recommended_action}")
             Action: BUY_YES
@@ -65,19 +67,23 @@ class ArbitrageDetector:
         """
 
         # Calculate edges for YES and NO
-        yes_edge = actual_probability - polymarket_yes_odds
-        no_edge = (1.0 - actual_probability) - polymarket_no_odds
+        yes_edge = actual_probability - market_yes_odds
+        no_edge = (1.0 - actual_probability) - market_no_odds
 
         # Determine which edge is larger (absolute value) and positive
         # We only trade if the edge is positive (mispricing in our favor)
         if yes_edge >= self.MIN_EDGE and yes_edge >= no_edge:
             action = "BUY_YES"
             edge = yes_edge
-            expected_profit = (actual_probability / polymarket_yes_odds) - 1.0
+            # Expected profit = ROI on Polymarket (deterministic)
+            # Buy YES at market_yes_odds, win pays $1.00
+            expected_profit = ((1.0 - market_yes_odds) / market_yes_odds) if market_yes_odds > 0 else 0.0
         elif no_edge >= self.MIN_EDGE and no_edge > yes_edge:
             action = "BUY_NO"
             edge = no_edge
-            expected_profit = ((1.0 - actual_probability) / polymarket_no_odds) - 1.0
+            # Expected profit = ROI on Polymarket (deterministic)
+            # Buy NO at market_no_odds, win pays $1.00
+            expected_profit = ((1.0 - market_no_odds) / market_no_odds) if market_no_odds > 0 else 0.0
         else:
             action = "HOLD"
             edge = max(yes_edge, no_edge)  # Store the larger edge for reporting
@@ -105,8 +111,8 @@ class ArbitrageDetector:
                 action=action,
                 edge_pct=f"{edge:.2%}",
                 actual_prob=f"{actual_probability:.2%}",
-                yes_odds=f"{polymarket_yes_odds:.2%}",
-                no_odds=f"{polymarket_no_odds:.2%}",
+                yes_odds=f"{market_yes_odds:.2%}",
+                no_odds=f"{market_no_odds:.2%}",
                 confidence_boost=f"{confidence_boost:.2%}",
                 urgency=urgency,
                 expected_profit_pct=f"{expected_profit:.2%}"
@@ -115,8 +121,8 @@ class ArbitrageDetector:
         return ArbitrageOpportunity(
             market_id=market_id,
             actual_probability=actual_probability,
-            polymarket_yes_odds=polymarket_yes_odds,
-            polymarket_no_odds=polymarket_no_odds,
+            polymarket_yes_odds=market_yes_odds,
+            polymarket_no_odds=market_no_odds,
             edge_percentage=edge,
             recommended_action=action,
             confidence_boost=confidence_boost,

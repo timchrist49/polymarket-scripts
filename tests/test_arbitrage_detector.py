@@ -12,10 +12,10 @@ def test_detect_yes_arbitrage():
     # Actual probability is 68%, but market prices YES at 55%
     # Edge = 0.68 - 0.55 = 0.13 (13%)
     opp = detector.detect_arbitrage(
-        market_id="test-market-1",
         actual_probability=0.68,
-        polymarket_yes_odds=0.55,
-        polymarket_no_odds=0.45
+        market_yes_odds=0.55,
+        market_no_odds=0.45,
+        market_id="test-market-1"
     )
 
     assert isinstance(opp, ArbitrageOpportunity)
@@ -27,7 +27,7 @@ def test_detect_yes_arbitrage():
     assert opp.recommended_action == "BUY_YES"
     assert opp.confidence_boost == approx(0.20, abs=1e-9)  # Min(0.13 * 2, 0.20) = 0.20 (capped)
     assert opp.urgency == "MEDIUM"  # 10% <= 13% < 15%
-    assert opp.expected_profit_pct == approx(0.2364, abs=0.01)  # (0.68/0.55 - 1)
+    assert opp.expected_profit_pct == approx(0.8182, abs=0.01)  # (1.0 - 0.55) / 0.55
 
 
 def test_detect_no_arbitrage():
@@ -37,17 +37,17 @@ def test_detect_no_arbitrage():
     # Actual probability is 35%, implied NO probability is 65%
     # Market prices NO at 60%, edge = 0.65 - 0.60 = 0.05 (5%)
     opp = detector.detect_arbitrage(
-        market_id="test-market-2",
         actual_probability=0.35,
-        polymarket_yes_odds=0.40,
-        polymarket_no_odds=0.60
+        market_yes_odds=0.40,
+        market_no_odds=0.60,
+        market_id="test-market-2"
     )
 
     assert opp.recommended_action == "BUY_NO"
     assert opp.edge_percentage == approx(0.05, abs=1e-9)
     assert opp.confidence_boost == approx(0.10, abs=1e-9)  # 0.05 * 2 = 0.10
     assert opp.urgency == "LOW"  # 5% < 10%
-    assert opp.expected_profit_pct == approx(0.0833, abs=0.01)  # (0.65/0.60 - 1)
+    assert opp.expected_profit_pct == approx(0.6667, abs=0.01)  # (1.0 - 0.60) / 0.60
 
 
 def test_no_arbitrage_opportunity():
@@ -57,10 +57,10 @@ def test_no_arbitrage_opportunity():
     # Actual probability is 52%, market prices YES at 50%
     # Edge = 0.52 - 0.50 = 0.02 (2%, below 5% MIN_EDGE)
     opp = detector.detect_arbitrage(
-        market_id="test-market-3",
         actual_probability=0.52,
-        polymarket_yes_odds=0.50,
-        polymarket_no_odds=0.50
+        market_yes_odds=0.50,
+        market_no_odds=0.50,
+        market_id="test-market-3"
     )
 
     assert opp.recommended_action == "HOLD"
@@ -77,10 +77,10 @@ def test_high_edge_urgency():
     # Actual probability is 75%, market prices YES at 55%
     # Edge = 0.75 - 0.55 = 0.20 (20%, >= 15%)
     opp = detector.detect_arbitrage(
-        market_id="test-market-4",
         actual_probability=0.75,
-        polymarket_yes_odds=0.55,
-        polymarket_no_odds=0.45
+        market_yes_odds=0.55,
+        market_no_odds=0.45,
+        market_id="test-market-4"
     )
 
     assert opp.edge_percentage == approx(0.20, abs=1e-9)
@@ -93,18 +93,18 @@ def test_confidence_boost_scales_with_edge():
 
     # Test 6% edge (avoiding floating point precision issues near MIN_EDGE)
     opp_6pct = detector.detect_arbitrage(
-        market_id="test-6pct",
         actual_probability=0.62,
-        polymarket_yes_odds=0.56,
-        polymarket_no_odds=0.44
+        market_yes_odds=0.56,
+        market_no_odds=0.44,
+        market_id="test-6pct"
     )
 
     # Test 10% edge
     opp_10pct = detector.detect_arbitrage(
-        market_id="test-10pct",
         actual_probability=0.65,
-        polymarket_yes_odds=0.55,
-        polymarket_no_odds=0.45
+        market_yes_odds=0.55,
+        market_no_odds=0.45,
+        market_id="test-10pct"
     )
 
     assert opp_6pct.confidence_boost == approx(0.12, abs=1e-9)  # 0.06 * 2 = 0.12
@@ -118,10 +118,10 @@ def test_confidence_boost_capped_at_20pct():
 
     # Extreme edge: 30%
     opp = detector.detect_arbitrage(
-        market_id="test-extreme",
         actual_probability=0.85,
-        polymarket_yes_odds=0.55,
-        polymarket_no_odds=0.45
+        market_yes_odds=0.55,
+        market_no_odds=0.45,
+        market_id="test-extreme"
     )
 
     # Edge = 0.30, boost would be 0.60 without cap
