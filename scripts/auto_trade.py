@@ -1349,7 +1349,7 @@ class AutoTrader:
         favorable_warn_threshold = self.settings.trade_max_favorable_warn_pct
 
         # Check unfavorable movement
-        if not is_favorable and abs(price_change_pct) > unfavorable_threshold:
+        if not self.test_mode.enabled and not is_favorable and abs(price_change_pct) > unfavorable_threshold:
             reason = (
                 f"Price moved {price_change_pct:+.2f}% worse "
                 f"(threshold: {unfavorable_threshold}%)"
