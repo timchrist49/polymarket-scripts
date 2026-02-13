@@ -1099,8 +1099,42 @@ class AutoTrader:
                 timeframe_analysis=timeframe_analysis,  # NEW: multi-timeframe analysis
                 regime=regime,  # NEW: market regime detection
                 arbitrage_opportunity=arbitrage_opportunity,  # NEW: arbitrage opportunity
-                market_signals=market_signals  # NEW: CoinGecko Pro market signals
+                market_signals=market_signals,  # NEW: CoinGecko Pro market signals
+                force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
+
+            # Test mode: Force YES/NO and check confidence threshold
+            if self.test_mode.enabled:
+                # If AI returned HOLD despite force_trade, override based on sentiment
+                if decision.action == "HOLD":
+                    # Determine direction from sentiment score
+                    decision.action = "YES" if aggregated_sentiment.final_score > 0 else "NO"
+                    logger.warning(
+                        "[TEST] AI returned HOLD - forcing direction from sentiment",
+                        market_id=market.id,
+                        sentiment_score=aggregated_sentiment.final_score,
+                        forced_action=decision.action
+                    )
+
+                # Check minimum confidence threshold
+                if decision.confidence < self.test_mode.min_confidence:
+                    logger.info(
+                        "[TEST] Skipping trade - confidence below threshold",
+                        market_id=market.id,
+                        ai_confidence=f"{decision.confidence:.2f}",
+                        min_required=f"{self.test_mode.min_confidence:.2f}",
+                        action=decision.action
+                    )
+                    return
+
+                # Override position size to test amount
+                logger.info(
+                    "[TEST] Overriding position size",
+                    market_id=market.id,
+                    ai_suggested=f"${decision.position_size:.2f}",
+                    test_override=f"${self.test_mode.max_bet_amount:.2f}"
+                )
+                decision.position_size = self.test_mode.max_bet_amount
 
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
             # CHECK FIRST before logging to avoid phantom trades

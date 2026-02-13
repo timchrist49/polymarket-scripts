@@ -55,9 +55,11 @@ class AIDecisionService:
         volume_data: VolumeData | None = None,  # NEW: volume confirmation
         timeframe_analysis: TimeframeAnalysis | None = None,  # NEW: multi-timeframe
         regime: MarketRegime | None = None,  # NEW: market regime
-        arbitrage_opportunity: "ArbitrageOpportunity | None" = None  # NEW: arbitrage detection
+        arbitrage_opportunity: "ArbitrageOpportunity | None" = None,  # NEW: arbitrage detection
+        market_signals: "Any | None" = None,  # NEW: CoinGecko Pro market signals
+        force_trade: bool = False  # NEW: TEST MODE - force YES/NO decision
     ) -> TradingDecision:
-        """Generate trading decision using AI with regime awareness, volume, timeframe, and arbitrage."""
+        """Generate trading decision using AI with regime awareness, volume, timeframe, arbitrage, and market signals."""
         try:
             client = self._get_client()
 
@@ -66,7 +68,7 @@ class AIDecisionService:
                 btc_price, technical_indicators, aggregated_sentiment,
                 market_data, portfolio_value, orderbook_data,
                 volume_data, timeframe_analysis, regime,
-                arbitrage_opportunity
+                arbitrage_opportunity, market_signals, force_trade
             )
 
             # Call OpenAI with GPT-5-Nano parameters
@@ -139,9 +141,32 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
         volume_data: VolumeData | None = None,
         timeframe_analysis: TimeframeAnalysis | None = None,
         regime: MarketRegime | None = None,
-        arbitrage_opportunity: "ArbitrageOpportunity | None" = None
+        arbitrage_opportunity: "ArbitrageOpportunity | None" = None,
+        market_signals: "Any | None" = None,
+        force_trade: bool = False
     ) -> str:
-        """Build the AI prompt with all context including regime, volume, timeframe, and orderbook."""
+        """Build the AI prompt with all context including regime, volume, timeframe, orderbook, and market signals."""
+
+        # NEW: Build force_trade instruction if enabled
+        if force_trade:
+            force_trade_instruction = """
+⚠️ TEST MODE ACTIVE - FORCED TRADING
+═══════════════════════════════════════════════════════════════════
+CRITICAL: You MUST return either "YES" or "NO" - HOLD is NOT allowed.
+
+Use ALL available data to make the most informed decision:
+- Technical indicators (RSI, MACD, trend)
+- CoinGecko Pro signals (funding rates, exchange premium, volume)
+- Sentiment analysis
+- Market regime and volatility
+- Timeframe alignment
+
+If signals are mixed or unclear, favor the direction suggested by
+the strongest signal with highest confidence. Make a decision.
+═══════════════════════════════════════════════════════════════════
+"""
+        else:
+            force_trade_instruction = ""
 
         # Get market outcomes (e.g., ["Up", "Down"])
         outcomes = market.get("outcomes", ["Yes", "No"])
@@ -356,6 +381,116 @@ Rely on technical indicators, sentiment, and regime analysis.
 ═══════════════════════════════════════════════════════════════════
 """
 
+        # NEW: Market signals from CoinGecko Pro
+        market_signals_context = ""
+        if market_signals:
+            # Build context from composite signal
+            direction_icon = {"bullish": "🟢", "bearish": "🔴", "neutral": "⚪"}.get(market_signals.direction, "⚪")
+
+            signal_details = []
+            for signal in market_signals.contributing_signals:
+                signal_icon = {"bullish": "🟢", "bearish": "🔴", "neutral": "⚪"}.get(signal.direction, "⚪")
+                signal_details.append(
+                    f"  {signal_icon} {signal.signal_type.upper()}: {signal.direction.upper()} "
+                    f"(confidence: {signal.confidence:.2f})"
+                )
+
+                # Add metadata details
+                if signal.metadata:
+                    if signal.signal_type == "funding_rate" and "rate_pct" in signal.metadata:
+                        signal_details.append(f"     ├─ Rate: {signal.metadata['rate_pct']:.4f}%")
+                    elif signal.signal_type == "exchange_premium" and "premiums" in signal.metadata:
+                        premiums_str = ", ".join(f"{k}: {v:.2f}%" for k, v in signal.metadata["premiums"].items())
+                        signal_details.append(f"     ├─ Premiums: {premiums_str}")
+                    elif signal.signal_type == "volume" and "percentile" in signal.metadata:
+                        signal_details.append(f"     ├─ Volume Percentile: {signal.metadata['percentile']:.1f}%")
+
+            market_signals_context = f"""
+═══════════════════════════════════════════════════════════════════
+📊 COINGECKO PRO MARKET SIGNALS
+═══════════════════════════════════════════════════════════════════
+
+COMPOSITE SIGNAL:
+{direction_icon} Direction: {market_signals.direction.upper()}
+└─ Confidence: {market_signals.confidence:.2f}
+
+CONTRIBUTING SIGNALS:
+{chr(10).join(signal_details)}
+
+SIGNAL WEIGHTS:
+""" + "\n".join(f"- {k}: {v:.0%}" for k, v in market_signals.weights.items()) + """
+
+⚠️ MANDATORY SIGNAL INTEGRATION RULES:
+
+You MUST apply these quantified rules when making your decision:
+
+1️⃣ DIRECTION DETERMINATION (Up or Down):
+   ├─ If market_signals.confidence > 0.6 AND direction = "BULLISH" → FAVOR YES
+   ├─ If market_signals.confidence > 0.6 AND direction = "BEARISH" → FAVOR NO
+   ├─ If market_signals.confidence < 0.4 OR direction = "NEUTRAL" → Ignore signals
+   └─ Strong signals (>0.7 confidence) can override weak technical indicators
+
+2️⃣ CONFIDENCE ADJUSTMENT (Bet or Not):
+
+   A) ALIGNMENT (signals match technical/sentiment direction):
+      ├─ High signal confidence (>0.7) → BOOST final confidence by +0.10 to +0.15
+      ├─ Medium signal confidence (0.5-0.7) → BOOST final confidence by +0.05 to +0.10
+      └─ Low signal confidence (0.4-0.5) → Minimal boost +0.02 to +0.05
+
+   B) CONFLICT (signals contradict technical/sentiment):
+      ├─ High signal confidence (>0.7) → REDUCE confidence by -0.15 OR recommend HOLD
+      ├─ Medium signal confidence (0.5-0.7) → REDUCE confidence by -0.10
+      └─ Low signal confidence (0.4-0.5) → REDUCE confidence by -0.05
+
+3️⃣ INTEGRATION EXAMPLES:
+
+   Example A - Strong Alignment:
+   - Technical: BULLISH (RSI oversold, MACD positive)
+   - Signals: BULLISH (confidence 0.75)
+   - Assessment: ALIGNED → Apply +0.12 boost
+   - Calculation: Base 0.70 + 0.12 = 0.82 final confidence
+   - Decision: Strong YES with high confidence
+
+   Example B - Strong Conflict:
+   - Technical: BEARISH (RSI overbought, MACD negative)
+   - Signals: BULLISH (confidence 0.72)
+   - Assessment: CONFLICT → Reduce -0.13 OR HOLD
+   - Calculation: Base 0.65 - 0.13 = 0.52 (borderline) OR HOLD
+   - Decision: Either weak YES or HOLD (prefer HOLD with strong conflicts)
+
+   Example C - Weak Signals:
+   - Technical: BULLISH
+   - Signals: NEUTRAL (confidence 0.35)
+   - Assessment: IGNORE → No adjustment
+   - Calculation: Base 0.68 + 0.00 = 0.68 final confidence
+   - Decision: Proceed with technical analysis only
+
+4️⃣ REASONING OUTPUT REQUIREMENT:
+
+   Your reasoning MUST explicitly show:
+   - Base confidence before signal adjustment
+   - Market signals direction and confidence level
+   - Whether signals ALIGN or CONFLICT with primary analysis
+   - Exact confidence adjustment applied (+/- specific amount)
+   - Final confidence after adjustment
+
+   Example format:
+   "Technical indicators BULLISH (base confidence: 0.70). Market signals: BULLISH
+   (0.75 confidence). Signals ALIGN strongly. Applying +0.12 confidence boost.
+   Final confidence: 0.82. Strong YES signal."
+
+═══════════════════════════════════════════════════════════════════
+"""
+        else:
+            market_signals_context = """
+═══════════════════════════════════════════════════════════════════
+📊 COINGECKO PRO MARKET SIGNALS
+═══════════════════════════════════════════════════════════════════
+Market signals not available (API timeout or rate limit).
+Proceed with standard technical and sentiment analysis.
+═══════════════════════════════════════════════════════════════════
+"""
+
         # Extract social and market details
         social = aggregated.social
         mkt = aggregated.market
@@ -378,6 +513,10 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 {timeframe_context}
 
 {arbitrage_context}
+
+{market_signals_context}
+
+{force_trade_instruction}
 
 CURRENT MARKET DATA:
 - BTC Current Price: ${btc_price.price:,.2f} (source: {btc_price.source})
@@ -519,7 +658,7 @@ Return JSON with:
 {{
   "action": "YES" | "NO" | "HOLD",
   "confidence": 0.0-1.0,
-  "reasoning": "Brief explanation with reasoning chain (2-3 sentences)",
+  "reasoning": "MUST include: (1) Base confidence before signals, (2) Market signals direction & confidence, (3) Alignment or conflict assessment, (4) Signal adjustment applied (+/- amount), (5) Final confidence. Example: 'Technical BULLISH (base: 0.70). Signals: BULLISH (0.75). ALIGNED. Applied +0.12 boost. Final: 0.82.'",
   "confidence_adjustment": "+0.1" or "-0.05" or "0.0",
   "position_size": "amount in USDC as number",
   "stop_loss": "odds threshold to cancel bet (0.0-1.0)"
