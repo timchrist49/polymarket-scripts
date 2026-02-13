@@ -98,10 +98,9 @@ class MarketSignalProcessor:
             reason = "balanced"
 
         logger.info(
-            "Funding rate signal processed",
-            funding_rate_pct=f"{funding_rate * 100:.4f}%",
-            direction=direction,
-            confidence=f"{confidence:.2f}",
+            f"Funding rate signal processed: {funding_rate * 100:.4f}% ({direction})",
+            signal_direction=direction,
+            signal_confidence=f"{confidence:.2f}",
         )
 
         return Signal(
