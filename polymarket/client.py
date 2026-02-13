@@ -519,6 +519,162 @@ class PolymarketClient:
                 error_message=str(e),
             )
 
+    async def place_limit_order(
+        self,
+        token_id: str,
+        side: Literal["BUY", "SELL"],
+        price: float,
+        size: float,
+        tick_size: float = 0.01
+    ) -> dict:
+        """
+        Place a GTC (Good-Til-Cancelled) limit order.
+
+        Limit orders:
+        - Earn maker rebates instead of paying taker fees
+        - May not fill before market expires
+        - Priced to be slightly better than current market
+
+        Args:
+            token_id: Token to trade
+            side: BUY or SELL
+            price: Limit price (0.0-1.0)
+            size: Order size in shares
+            tick_size: Price tick size (default 0.01)
+
+        Returns:
+            Order response with orderID and status
+
+        Raises:
+            ValidationError: If parameters are invalid
+            UpstreamAPIError: If API call fails
+        """
+        # CRITICAL: Verify trading mode is enabled
+        if self._mode != "trading":
+            raise ValidationError("Limit orders require TRADING mode")
+
+        # Validate token_id format
+        if not token_id or not isinstance(token_id, str) or len(token_id) < 10:
+            raise ValidationError(f"Invalid token_id format: {token_id}")
+
+        # Validate inputs
+        if not 0.0 <= price <= 1.0:
+            raise ValidationError(f"Price must be 0.0-1.0, got {price}")
+        if size <= 0:
+            raise ValidationError(f"Size must be positive, got {size}")
+        if side not in ["BUY", "SELL"]:
+            raise ValidationError(f"Side must be BUY or SELL, got {side}")
+
+        # CRITICAL: Validate tick_size before division
+        if tick_size <= 0 or tick_size > 1.0:
+            raise ValidationError(f"tick_size must be 0 < tick_size <= 1.0, got {tick_size}")
+
+        # Round price to tick size and clamp to valid range
+        price = round(price / tick_size) * tick_size
+        # CRITICAL: Clamp to valid range after rounding to handle floating-point edge cases
+        price = max(0.0, min(1.0, price))
+
+        # Get CLOB client
+        clob = self._get_clob_client()
+
+        try:
+            logger.info(
+                f"Placing limit order: token={token_id}, side={side}, "
+                f"price={price}, size={size}, type=GTC"
+            )
+
+            # Create limit order (GTC = Good-Til-Cancelled)
+            order_response = clob.post_order(
+                token_id=token_id,
+                side=side,
+                price=price,
+                size=size,
+                order_type="GTC"  # Will stay open until filled or cancelled
+            )
+
+            logger.info(
+                f"Limit order placed: order_id={order_response.get('orderID')}, "
+                f"status={order_response.get('status')}"
+            )
+
+            return order_response
+
+        except ValidationError:
+            raise  # Re-raise our own validation errors without wrapping
+        except Exception as e:
+            logger.error(f"Failed to place limit order: {e}")
+            raise UpstreamAPIError(f"Limit order failed: {e}") from e
+
+
+    async def check_order_status(self, order_id: str) -> dict:
+        """
+        Check status of an order by ID.
+
+        Args:
+            order_id: Order ID to check
+
+        Returns:
+            Order status with fillAmount, status, etc.
+
+        Possible statuses:
+        - LIVE: Order is active
+        - MATCHED: Order fully filled
+        - PARTIALLY_MATCHED: Order partially filled
+        - CANCELLED: Order was cancelled
+        """
+        # CRITICAL: Validate order_id to prevent undefined API behavior
+        if not order_id or not isinstance(order_id, str):
+            raise ValidationError(f"Invalid order_id: {order_id}")
+
+        clob = self._get_clob_client()
+
+        try:
+            order = clob.get_order(order_id)
+
+            logger.debug(
+                f"Order status checked: order_id={order_id}, "
+                f"status={order.get('status')}, fill_amount={order.get('fillAmount', '0')}"
+            )
+
+            return order
+
+        except ValidationError:
+            raise  # Re-raise our own validation errors without wrapping
+        except Exception as e:
+            logger.error(f"Failed to check order status for {order_id}: {e}")
+            raise UpstreamAPIError(f"Status check failed: {e}") from e
+
+
+    async def cancel_order(self, order_id: str) -> dict:
+        """
+        Cancel a live order.
+
+        Args:
+            order_id: Order ID to cancel
+
+        Returns:
+            Cancellation response
+        """
+        # CRITICAL: Validate order_id to prevent undefined API behavior
+        if not order_id or not isinstance(order_id, str):
+            raise ValidationError(f"Invalid order_id: {order_id}")
+
+        clob = self._get_clob_client()
+
+        try:
+            logger.info(f"Cancelling order: {order_id}")
+
+            result = clob.cancel(order_id)
+
+            logger.info(f"Order cancelled: {order_id}")
+            return result
+
+        except ValidationError:
+            raise  # Re-raise our own validation errors without wrapping
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id}: {e}")
+            raise UpstreamAPIError(f"Cancel failed: {e}") from e
+
     def get_portfolio_summary(self) -> PortfolioSummary:
         """
         Get portfolio summary including open orders and positions.
