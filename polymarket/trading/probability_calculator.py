@@ -58,6 +58,14 @@ class ProbabilityCalculator:
             Probability UP: 72.34%
         """
 
+        # Input validation
+        if current_price <= 0 or price_5min_ago <= 0 or price_10min_ago <= 0:
+            raise ValueError("Prices must be positive")
+        if volatility_15min < 0:
+            raise ValueError("Volatility cannot be negative")
+        if not -1.0 <= orderbook_imbalance <= 1.0:
+            raise ValueError(f"Orderbook imbalance must be in [-1.0, 1.0], got {orderbook_imbalance}")
+
         # Step 1: Calculate momentum (weighted recent > older)
         momentum_5min = (current_price - price_5min_ago) / price_5min_ago
         momentum_10min = (current_price - price_10min_ago) / price_10min_ago

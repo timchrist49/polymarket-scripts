@@ -144,3 +144,45 @@ def test_probability_bounds():
 
     # Should be clipped to 0.05 min
     assert prob_down >= 0.05
+
+
+def test_invalid_prices():
+    """Test that negative/zero prices raise ValueError."""
+    calc = ProbabilityCalculator()
+    with pytest.raises(ValueError, match="Prices must be positive"):
+        calc.calculate_directional_probability(
+            current_price=-66200.0,  # Invalid
+            price_5min_ago=66000.0,
+            price_10min_ago=65900.0,
+            volatility_15min=0.005,
+            time_remaining_seconds=600,
+            orderbook_imbalance=0.0
+        )
+
+
+def test_invalid_volatility():
+    """Test that negative volatility raises ValueError."""
+    calc = ProbabilityCalculator()
+    with pytest.raises(ValueError, match="Volatility cannot be negative"):
+        calc.calculate_directional_probability(
+            current_price=66200.0,
+            price_5min_ago=66000.0,
+            price_10min_ago=65900.0,
+            volatility_15min=-0.005,  # Invalid
+            time_remaining_seconds=600,
+            orderbook_imbalance=0.0
+        )
+
+
+def test_invalid_orderbook_imbalance():
+    """Test that invalid orderbook imbalance raises ValueError."""
+    calc = ProbabilityCalculator()
+    with pytest.raises(ValueError, match="Orderbook imbalance"):
+        calc.calculate_directional_probability(
+            current_price=66200.0,
+            price_5min_ago=66000.0,
+            price_10min_ago=65900.0,
+            volatility_15min=0.005,
+            time_remaining_seconds=600,
+            orderbook_imbalance=5.0  # Invalid
+        )
