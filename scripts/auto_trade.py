@@ -38,6 +38,9 @@ from polymarket.trading.technical import TechnicalAnalysis
 from polymarket.trading.ai_decision import AIDecisionService
 from polymarket.trading.risk import RiskManager
 from polymarket.trading.market_tracker import MarketTracker
+from polymarket.trading.probability_calculator import ProbabilityCalculator
+from polymarket.trading.arbitrage_detector import ArbitrageDetector
+from polymarket.trading.smart_order_executor import SmartOrderExecutor
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
@@ -935,7 +938,52 @@ class AutoTrader:
                 note="DOWN price = 1 - UP bid"
             )
 
-            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime
+            # NEW: Calculate actual probability from price momentum
+            probability_calculator = ProbabilityCalculator()
+
+            # Get historical prices for probability calculation
+            price_5min_ago = await self.btc_service.get_price_at(5) or float(btc_data.price)
+            price_10min_ago = await self.btc_service.get_price_at(10) or float(btc_data.price)
+            volatility_15min = self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
+
+            actual_probability = probability_calculator.calculate_directional_probability(
+                current_price=float(btc_data.price),
+                price_5min_ago=price_5min_ago,
+                price_10min_ago=price_10min_ago,
+                volatility_15min=volatility_15min,
+                time_remaining_seconds=time_remaining or 900,
+                orderbook_imbalance=orderbook_analysis.order_imbalance if orderbook_analysis else 0.0
+            )
+
+            logger.info(
+                "Probability calculation",
+                actual_probability=f"{actual_probability:.2%}",
+                current_price=btc_data.price,
+                price_5min_ago=price_5min_ago,
+                volatility=f"{volatility_15min:.4f}"
+            )
+
+            # NEW: Detect arbitrage opportunity
+            arbitrage_detector = ArbitrageDetector()
+            arbitrage_opportunity = arbitrage_detector.detect_arbitrage(
+                actual_probability=actual_probability,
+                market_yes_odds=market_dict['yes_price'],
+                market_no_odds=market_dict['no_price'],
+                market_id=market.id,
+                ai_base_confidence=aggregated_sentiment.final_confidence
+            )
+
+            if arbitrage_opportunity:
+                logger.info(
+                    "Arbitrage opportunity detected",
+                    market_id=market.id,
+                    edge_percentage=f"{arbitrage_opportunity.edge_percentage:.1%}",
+                    recommended_action=arbitrage_opportunity.recommended_action,
+                    urgency=arbitrage_opportunity.urgency,
+                    confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}"
+                )
+
+            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, and arbitrage
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
@@ -945,7 +993,8 @@ class AutoTrader:
                 orderbook_data=orderbook_analysis,  # orderbook depth analysis
                 volume_data=volume_data,  # NEW: volume confirmation
                 timeframe_analysis=timeframe_analysis,  # NEW: multi-timeframe analysis
-                regime=regime  # NEW: market regime detection
+                regime=regime,  # NEW: market regime detection
+                arbitrage_opportunity=arbitrage_opportunity  # NEW: arbitrage opportunity
             )
 
             # Skip YES trades if disabled (emergency kill switch)
@@ -1073,7 +1122,8 @@ class AutoTrader:
                     token_id, token_name, market_price,
                     trade_id, cycle_start_time,
                     btc_current=float(btc_data.price),
-                    btc_price_to_beat=float(price_to_beat) if price_to_beat else None
+                    btc_price_to_beat=float(price_to_beat) if price_to_beat else None,
+                    arbitrage_opportunity=arbitrage_opportunity
                 )
 
                 # Track trades for reflection triggers
@@ -1225,7 +1275,8 @@ class AutoTrader:
         trade_id: int,
         cycle_start_time: datetime,
         btc_current: Optional[float] = None,
-        btc_price_to_beat: Optional[float] = None
+        btc_price_to_beat: Optional[float] = None,
+        arbitrage_opportunity = None
     ) -> None:
         """Execute a trade order with JIT price fetching and safety checks."""
         try:
@@ -1345,37 +1396,58 @@ class AutoTrader:
                 price_change_pct=f"{((execution_price - analysis_price) / analysis_price * 100):+.2f}%"
             )
 
-            # Create order request with fresh execution price
-            order_request = OrderRequest(
+            # NEW: Execute using smart limit orders (saves 3-6% in fees)
+            smart_executor = SmartOrderExecutor()
+
+            # Determine urgency from arbitrage opportunity
+            urgency = arbitrage_opportunity.urgency if arbitrage_opportunity else "MEDIUM"
+
+            execution_result = await smart_executor.execute_smart_order(
+                client=self.client,
                 token_id=token_id,
-                side="BUY",  # Always BUY for our decision (YES or NO token)
-                price=execution_price,  # Use fresh execution price
-                size=float(amount),
-                order_type="market"
+                side="BUY",
+                amount=float(amount),
+                urgency=urgency,
+                current_best_ask=fresh_market.best_ask if fresh_market.best_ask else execution_price,
+                current_best_bid=fresh_market.best_bid if fresh_market.best_bid else execution_price - 0.01,
+                tick_size=0.001
             )
 
-            result = self.client.create_order(order_request, dry_run=False)
-
-            # Only log success if order was actually placed
-            if result and result.order_id:
-                logger.info(
-                    "Trade executed",
-                    market_id=market.id,
-                    action=decision.action,
-                    token=token_name,
-                    amount=str(amount),
-                    order_id=result.order_id
-                )
-            else:
+            # Check execution result
+            if execution_result["status"] != "FILLED":
                 logger.warning(
-                    "Order placement failed",
+                    "Order not filled",
                     market_id=market.id,
-                    action=decision.action,
                     token=token_name,
-                    amount=str(amount),
-                    result=str(result) if result else "None"
+                    status=execution_result["status"],
+                    reason=execution_result.get("message", "Unknown")
                 )
-                return  # Abort trade execution
+                # Update metrics with skip
+                if trade_id > 0:
+                    await self.performance_tracker.update_execution_metrics(
+                        trade_id=trade_id,
+                        analysis_price=analysis_price,
+                        execution_price=execution_price,
+                        price_staleness_seconds=price_staleness_seconds,
+                        price_movement_favorable=price_movement_favorable,
+                        skipped_unfavorable_move=True
+                    )
+                return  # Skip this trade
+
+            order_id = execution_result["order_id"]
+            filled_via = execution_result.get("filled_via", "limit")
+
+            # Log success with arbitrage edge
+            logger.info(
+                "Trade executed",
+                market_id=market.id,
+                action=decision.action,
+                token=token_name,
+                amount=str(amount),
+                order_id=order_id,
+                filled_via=filled_via,
+                arbitrage_edge=f"{arbitrage_opportunity.edge_percentage:.1%}" if arbitrage_opportunity else "N/A"
+            )
 
             # Send Telegram notification
             try:
