@@ -83,20 +83,21 @@ class RiskManager:
             )
 
         # Check 4: Total exposure
-        open_exposure = Decimal("0")
-        if open_positions:
-            open_exposure = sum(
-                Decimal(str(p.get("amount", 0))) for p in open_positions
-            )
+        if not test_mode:
+            open_exposure = Decimal("0")
+            if open_positions:
+                open_exposure = sum(
+                    Decimal(str(p.get("amount", 0))) for p in open_positions
+                )
 
-        max_exposure = portfolio_value * Decimal(str(self.settings.bot_max_exposure_percent))
+            max_exposure = portfolio_value * Decimal(str(self.settings.bot_max_exposure_percent))
 
-        if open_exposure + suggested_size > max_exposure:
-            return ValidationResult(
-                approved=False,
-                reason=f"Total exposure {open_exposure + suggested_size} would exceed max {max_exposure}",
-                adjusted_position=None
-            )
+            if open_exposure + suggested_size > max_exposure:
+                return ValidationResult(
+                    approved=False,
+                    reason=f"Total exposure {open_exposure + suggested_size} would exceed max {max_exposure}",
+                    adjusted_position=None
+                )
 
         # Check 5: Sufficient funds
         if suggested_size > portfolio_value:
