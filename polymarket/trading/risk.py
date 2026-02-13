@@ -30,7 +30,8 @@ class RiskManager:
         decision: TradingDecision,
         portfolio_value: Decimal,
         market: dict,
-        open_positions: Optional[list[dict]] = None
+        open_positions: Optional[list[dict]] = None,
+        test_mode: bool = False
     ) -> ValidationResult:
         """Validate a trading decision against risk rules."""
 
