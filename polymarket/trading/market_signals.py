@@ -99,7 +99,7 @@ class MarketSignalProcessor:
 
         logger.info(
             "Funding rate signal processed",
-            funding_rate_value=f"{funding_rate:.6f}",
+            fr_decimal=f"{funding_rate:.6f}",
             direction=direction,
             confidence=f"{confidence:.2f}",
         )
@@ -270,7 +270,7 @@ class MarketSignalProcessor:
 
         logger.info(
             "Volume confirmation signal processed",
-            volume=str(current_volume),
+            current_vol=str(current_volume),
             percentile=f"{percentile:.1f}",
             movement_usd=f"${movement_usd:.2f}",
             direction=direction,
