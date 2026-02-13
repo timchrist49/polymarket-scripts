@@ -1026,20 +1026,6 @@ class AutoTrader:
                     position_size=str(decision.position_size)
                 )
 
-            # Apply time-based position size multiplier
-            base_position_size = decision.position_size
-            decision.position_size = base_position_size * Decimal(str(position_size_multiplier))
-
-            if position_size_multiplier != 1.0:
-                logger.info(
-                    "Position size adjusted for trading hours",
-                    base_size=f"${base_position_size:.2f}",
-                    multiplier=position_size_multiplier,
-                    adjusted_size=f"${decision.position_size:.2f}",
-                    current_hour=current_hour_utc,
-                    in_optimal_window=in_optimal_window
-                )
-
             # Skip if HOLD decision
             if decision.action == "HOLD" or token_id is None:
                 logger.info(
