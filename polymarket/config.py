@@ -181,6 +181,28 @@ class Settings:
         default_factory=lambda: float(os.getenv("BTC_SETTLEMENT_TOLERANCE_PCT", "0.5"))
     )
 
+    # === Arbitrage System Configuration ===
+    arbitrage_min_edge_pct: float = field(
+        default_factory=lambda: float(os.getenv("ARBITRAGE_MIN_EDGE_PCT", "0.05"))  # 5% minimum
+    )
+    arbitrage_high_edge_pct: float = field(
+        default_factory=lambda: float(os.getenv("ARBITRAGE_HIGH_EDGE_PCT", "0.10"))  # 10%+ = high urgency
+    )
+    arbitrage_extreme_edge_pct: float = field(
+        default_factory=lambda: float(os.getenv("ARBITRAGE_EXTREME_EDGE_PCT", "0.15"))  # 15%+ = extreme
+    )
+
+    # Limit order timeouts
+    limit_order_timeout_high: int = field(
+        default_factory=lambda: int(os.getenv("LIMIT_ORDER_TIMEOUT_HIGH", "30"))  # 30s
+    )
+    limit_order_timeout_medium: int = field(
+        default_factory=lambda: int(os.getenv("LIMIT_ORDER_TIMEOUT_MEDIUM", "60"))  # 60s
+    )
+    limit_order_timeout_low: int = field(
+        default_factory=lambda: int(os.getenv("LIMIT_ORDER_TIMEOUT_LOW", "120"))  # 120s
+    )
+
     # === Bot Logging ===
     bot_log_decisions: bool = field(
         default_factory=lambda: os.getenv("BOT_LOG_DECISIONS", "true").lower() == "true"
