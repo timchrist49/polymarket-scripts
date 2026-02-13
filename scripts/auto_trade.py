@@ -825,14 +825,23 @@ class AutoTrader:
                 MIN_MOVEMENT_THRESHOLD = 100  # $100 minimum BTC movement
                 abs_diff = abs(diff)
                 if abs_diff < MIN_MOVEMENT_THRESHOLD:
-                    logger.info(
-                        "Skipping market - insufficient BTC movement",
-                        market_id=market.id,
-                        movement=f"${abs_diff:.2f}",
-                        threshold=f"${MIN_MOVEMENT_THRESHOLD}",
-                        reason="Wait for clearer directional signal"
-                    )
-                    return  # Skip this market, no trade
+                    if not self.test_mode.enabled:
+                        logger.info(
+                            "Skipping market - insufficient BTC movement",
+                            market_id=market.id,
+                            movement=f"${abs_diff:.2f}",
+                            threshold=f"${MIN_MOVEMENT_THRESHOLD}",
+                            reason="Wait for clearer directional signal"
+                        )
+                        return  # Skip this market, no trade
+                    else:
+                        logger.info(
+                            "[TEST] Bypassing movement threshold - data sent to AI",
+                            market_id=market.id,
+                            movement=f"${abs_diff:.2f}",
+                            threshold=f"${MIN_MOVEMENT_THRESHOLD}",
+                            bypassed=True
+                        )
 
                 # Volume confirmation for large moves (breakout detection)
                 if abs_diff > 200 and volume_data:  # $200+ move = potential breakout
