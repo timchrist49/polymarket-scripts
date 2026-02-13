@@ -1036,7 +1036,10 @@ class AutoTrader:
                     aggregated=aggregated_sentiment,
                     price_to_beat=price_to_beat,
                     time_remaining_seconds=time_remaining,
-                    is_end_phase=is_end_of_market
+                    is_end_phase=is_end_of_market,
+                    actual_probability=arbitrage_opportunity.actual_probability if arbitrage_opportunity else None,
+                    arbitrage_edge=arbitrage_opportunity.edge_percentage if arbitrage_opportunity else None,
+                    arbitrage_urgency=arbitrage_opportunity.urgency if arbitrage_opportunity else None
                 )
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))
@@ -1483,7 +1486,9 @@ class AutoTrader:
                         price_staleness_seconds=price_staleness_seconds,
                         price_movement_favorable=price_movement_favorable,
                         skipped_unfavorable_move=False,
-                        actual_position_size=float(amount)  # Use risk-adjusted amount, not AI suggestion
+                        actual_position_size=float(amount),  # Use risk-adjusted amount, not AI suggestion
+                        filled_via=execution_result.get("filled_via"),
+                        limit_order_timeout=execution_result.get("timeout_used")
                     )
                 except Exception as e:
                     logger.warning("Failed to update execution metrics", error=str(e))

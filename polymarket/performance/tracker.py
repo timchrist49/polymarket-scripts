@@ -36,7 +36,10 @@ class PerformanceTracker:
         aggregated: AggregatedSentiment,
         price_to_beat: Optional[Decimal] = None,
         time_remaining_seconds: Optional[int] = None,
-        is_end_phase: bool = False
+        is_end_phase: bool = False,
+        actual_probability: float | None = None,
+        arbitrage_edge: float | None = None,
+        arbitrage_urgency: str | None = None
     ) -> int:
         """
         Log a trading decision to the database.
@@ -93,7 +96,12 @@ class PerformanceTracker:
                 "no_price": 1 - market.best_bid if market.best_bid else 0.5,
                 "executed_price": market.best_ask if decision.action == "YES"
                                 else (1 - market.best_bid if market.best_bid else 0.5) if decision.action == "NO"
-                                else None
+                                else None,
+
+                # Arbitrage tracking
+                "actual_probability": actual_probability,
+                "arbitrage_edge": arbitrage_edge,
+                "arbitrage_urgency": arbitrage_urgency
             }
 
             trade_id = self.db.log_trade(trade_data)
@@ -132,7 +140,9 @@ class PerformanceTracker:
         price_staleness_seconds: Optional[int] = None,
         price_movement_favorable: Optional[bool] = None,
         skipped_unfavorable_move: bool = False,
-        actual_position_size: Optional[float] = None
+        actual_position_size: Optional[float] = None,
+        filled_via: Optional[str] = None,
+        limit_order_timeout: Optional[int] = None
     ) -> None:
         """
         Update trade record with execution metrics from JIT price fetching.
@@ -145,6 +155,8 @@ class PerformanceTracker:
             price_movement_favorable: Whether price moved favorably
             skipped_unfavorable_move: Whether trade was skipped due to safety check
             actual_position_size: Actual position size after risk management (overrides AI suggestion)
+            filled_via: How the order was filled ('market', 'limit', 'limit_partial')
+            limit_order_timeout: Timeout used for limit orders (seconds)
         """
         try:
             # Calculate slippage if we have both prices
@@ -164,7 +176,9 @@ class PerformanceTracker:
                         price_slippage_pct = ?,
                         price_movement_favorable = ?,
                         skipped_unfavorable_move = ?,
-                        position_size = ?
+                        position_size = ?,
+                        filled_via = ?,
+                        limit_order_timeout = ?
                     WHERE id = ?
                 """, (
                     analysis_price,
@@ -173,6 +187,8 @@ class PerformanceTracker:
                     price_movement_favorable,
                     skipped_unfavorable_move,
                     actual_position_size,
+                    filled_via,
+                    limit_order_timeout,
                     trade_id
                 ))
             else:
@@ -182,7 +198,9 @@ class PerformanceTracker:
                         price_staleness_seconds = ?,
                         price_slippage_pct = ?,
                         price_movement_favorable = ?,
-                        skipped_unfavorable_move = ?
+                        skipped_unfavorable_move = ?,
+                        filled_via = ?,
+                        limit_order_timeout = ?
                     WHERE id = ?
                 """, (
                     analysis_price,
@@ -190,6 +208,8 @@ class PerformanceTracker:
                     price_slippage_pct,
                     price_movement_favorable,
                     skipped_unfavorable_move,
+                    filled_via,
+                    limit_order_timeout,
                     trade_id
                 ))
 

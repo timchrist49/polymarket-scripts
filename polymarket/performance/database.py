@@ -133,7 +133,7 @@ class PerformanceDatabase:
         self.conn.commit()
 
     def _migrate_schema(self):
-        """Add new columns for JIT price fetching metrics."""
+        """Add new columns for JIT price fetching metrics and arbitrage tracking."""
         cursor = self.conn.cursor()
 
         # Get existing columns
@@ -148,6 +148,12 @@ class PerformanceDatabase:
             ("price_movement_favorable", "BOOLEAN"),  # Was movement favorable?
             ("skipped_unfavorable_move", "BOOLEAN"),  # Was trade skipped due to safety check?
             ("execution_status", "TEXT DEFAULT 'pending'"),  # 'pending', 'executed', 'skipped', 'failed'
+            # Arbitrage tracking columns
+            ("actual_probability", "REAL"),  # Calculated probability from price momentum
+            ("arbitrage_edge", "REAL"),  # Edge percentage over market odds
+            ("arbitrage_urgency", "TEXT"),  # 'LOW', 'MEDIUM', 'HIGH'
+            ("filled_via", "TEXT"),  # 'market', 'limit', 'limit_partial'
+            ("limit_order_timeout", "INTEGER"),  # Timeout used for limit orders (seconds)
         ]
 
         for column_name, column_type in new_columns:
@@ -181,8 +187,10 @@ class PerformanceDatabase:
                 rsi, macd, trend,
                 yes_price, no_price, executed_price,
                 analysis_price, price_staleness_seconds, price_slippage_pct,
-                price_movement_favorable, skipped_unfavorable_move
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                price_movement_favorable, skipped_unfavorable_move,
+                actual_probability, arbitrage_edge, arbitrage_urgency,
+                filled_via, limit_order_timeout
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade_data["timestamp"],
             trade_data["market_slug"],
@@ -210,7 +218,12 @@ class PerformanceDatabase:
             trade_data.get("price_staleness_seconds"),
             trade_data.get("price_slippage_pct"),
             trade_data.get("price_movement_favorable"),
-            trade_data.get("skipped_unfavorable_move", False)
+            trade_data.get("skipped_unfavorable_move", False),
+            trade_data.get("actual_probability"),
+            trade_data.get("arbitrage_edge"),
+            trade_data.get("arbitrage_urgency"),
+            trade_data.get("filled_via"),
+            trade_data.get("limit_order_timeout")
         ))
 
         self.conn.commit()
