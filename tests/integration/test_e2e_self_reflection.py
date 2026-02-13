@@ -351,9 +351,9 @@ async def test_complete_workflow_tier3_rejected(integration_components):
     # Should be rejected
     assert result is False
 
-    # Emergency pause file should exist
-    from pathlib import Path
-    pause_file = Path("/root/polymarket-scripts/.emergency_pause")
+    # Emergency pause file should exist in repository root
+    from polymarket.performance.adjuster import get_repo_root
+    pause_file = get_repo_root() / ".emergency_pause"
     assert pause_file.exists(), "Emergency pause file should be created"
 
     # Clean up pause file

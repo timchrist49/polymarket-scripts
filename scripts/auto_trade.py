@@ -44,7 +44,7 @@ from polymarket.trading.smart_order_executor import SmartOrderExecutor
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
-from polymarket.performance.adjuster import ParameterAdjuster, AdjustmentTier
+from polymarket.performance.adjuster import ParameterAdjuster, AdjustmentTier, get_repo_root
 from polymarket.performance.settler import TradeSettler
 from polymarket.telegram.bot import TelegramBot
 
@@ -376,8 +376,8 @@ class AutoTrader:
         if self.settings.emergency_pause_enabled:
             return True
 
-        # Check for emergency pause file
-        pause_file = Path(__file__).parent.parent / ".emergency_pause"
+        # Check for emergency pause file in repository root
+        pause_file = get_repo_root() / ".emergency_pause"
         return pause_file.exists()
 
     async def _get_btc_momentum(

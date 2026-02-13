@@ -282,7 +282,8 @@ async def test_trigger_emergency_pause(mock_settings):
     adjuster = ParameterAdjuster(mock_settings, db=db, telegram=telegram)
 
     # Clean up any existing emergency pause file
-    pause_file = Path(__file__).parent.parent / ".emergency_pause"
+    from polymarket.performance.adjuster import get_repo_root
+    pause_file = get_repo_root() / ".emergency_pause"
     if pause_file.exists():
         pause_file.unlink()
 
@@ -324,11 +325,11 @@ async def test_trigger_emergency_pause(mock_settings):
 @pytest.mark.asyncio
 async def test_emergency_pause_file_stops_trading():
     """Test that emergency pause file is detected."""
-    from pathlib import Path
+    from polymarket.performance.adjuster import get_repo_root
 
     # This would be tested in the trading bot integration test
     # Here we just verify the file mechanism works
-    pause_file = Path(__file__).parent.parent / ".emergency_pause"
+    pause_file = get_repo_root() / ".emergency_pause"
 
     # Clean up first
     if pause_file.exists():

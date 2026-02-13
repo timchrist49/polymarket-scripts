@@ -2,7 +2,9 @@
 
 from enum import Enum
 from typing import Tuple, Dict, Optional, TYPE_CHECKING
+import subprocess
 import structlog
+from pathlib import Path
 
 from polymarket.config import Settings
 
@@ -11,6 +13,27 @@ if TYPE_CHECKING:
     from polymarket.telegram.bot import TelegramBot
 
 logger = structlog.get_logger()
+
+
+def get_repo_root() -> Path:
+    """
+    Get git repository root (works in worktrees, submodules, etc).
+
+    Uses --git-common-dir to find the shared .git directory, then navigates
+    to parent to get the main repository root (not worktree root).
+    """
+    try:
+        # Get common git directory (shared across worktrees)
+        git_common_dir = subprocess.check_output(
+            ['git', 'rev-parse', '--git-common-dir'],
+            text=True,
+            stderr=subprocess.DEVNULL
+        ).strip()
+        # Navigate up from .git to repository root
+        return Path(git_common_dir).parent
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback to relative path if git command fails
+        return Path(__file__).parent.parent.parent
 
 
 class AdjustmentTier(Enum):
@@ -303,11 +326,8 @@ Reason: {reason}
 
     def _set_emergency_pause(self):
         """Write emergency pause flag to file for trading bot to check."""
-        import os
-        from pathlib import Path
-
-        # Write to .emergency_pause file in project root
-        pause_file = Path(__file__).parent.parent.parent / ".emergency_pause"
+        # Write to .emergency_pause file in repository root
+        pause_file = get_repo_root() / ".emergency_pause"
 
         try:
             pause_file.write_text("EMERGENCY_PAUSE_ACTIVE\n")
