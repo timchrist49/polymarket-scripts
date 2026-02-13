@@ -268,12 +268,11 @@ class MarketSignalProcessor:
             reason = "normal"
 
         logger.info(
-            "Volume confirmation signal processed",
-            current_vol=str(current_volume),
-            percentile=f"{percentile:.1f}",
+            f"Volume confirmation signal processed: {current_volume:,.0f} ({direction})",
+            signal_direction=direction,
+            signal_confidence=f"{confidence:.2f}",
+            vol_percentile=f"{percentile:.1f}",
             movement_usd=f"${movement_usd:.2f}",
-            direction=direction,
-            confidence=f"{confidence:.2f}",
         )
 
         return Signal(
