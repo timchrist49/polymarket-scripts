@@ -33,7 +33,19 @@ class RiskManager:
         open_positions: Optional[list[dict]] = None,
         test_mode: bool = False
     ) -> ValidationResult:
-        """Validate a trading decision against risk rules."""
+        """Validate a trading decision against risk rules.
+
+        Args:
+            decision: The trading decision to validate
+            portfolio_value: Current portfolio value in USD
+            market: Market data containing prices and status
+            open_positions: List of currently open positions (optional)
+            test_mode: If True, bypass production safety checks (odds, exposure, duplicates)
+                      while maintaining core validations (confidence, funds, market status)
+
+        Returns:
+            ValidationResult: Validation outcome with approval status and adjusted position size
+        """
 
         # Check 1: Confidence threshold
         if decision.confidence < self.settings.bot_confidence_threshold:
