@@ -9,6 +9,7 @@ import asyncio
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import statistics
 import structlog
 
 import ccxt.async_support as ccxt
@@ -928,6 +929,55 @@ class BTCPriceService:
         except Exception as e:
             logger.error(f"Failed to get price at {hours}h offset", error=str(e))
             return None
+
+    def calculate_15min_volatility(self) -> float:
+        """
+        Calculate 15-minute volatility as standard deviation of returns.
+
+        Returns:
+            Volatility as decimal (e.g., 0.005 = 0.5%), defaults to 0.005 on error
+        """
+        try:
+            # Get prices from last 15 minutes (900 seconds)
+            if not self._stream or not self._stream.price_buffer:
+                logger.debug("Buffer not available, returning default volatility")
+                return 0.005
+
+            prices = self._stream.price_buffer.get_price_range(duration_seconds=900)
+
+            if len(prices) < 2:
+                logger.debug("Insufficient price data for volatility", count=len(prices))
+                return 0.005
+
+            # Calculate returns (percentage change between consecutive prices)
+            returns = []
+            for i in range(1, len(prices)):
+                prev_price = float(prices[i-1].price)
+                curr_price = float(prices[i].price)
+
+                if prev_price > 0:
+                    ret = (curr_price - prev_price) / prev_price
+                    returns.append(ret)
+
+            if len(returns) < 2:
+                logger.debug("Insufficient returns for volatility", count=len(returns))
+                return 0.005
+
+            # Calculate standard deviation
+            volatility = statistics.stdev(returns)
+
+            logger.debug(
+                "Calculated 15min volatility",
+                volatility=f"{volatility:.4f}",
+                price_count=len(prices),
+                return_count=len(returns)
+            )
+
+            return volatility
+
+        except Exception as e:
+            logger.error("Failed to calculate volatility", error=str(e))
+            return 0.005
 
     async def close(self):
         """Clean up resources."""

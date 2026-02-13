@@ -177,3 +177,42 @@ async def test_fetch_binance_at_timestamp_buffer_disabled():
         assert price == Decimal("68000.00")
 
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_calculate_15min_volatility():
+    """Test 15-minute volatility calculation."""
+    settings = Settings()
+    service = BTCPriceService(settings)
+
+    # Start service to initialize buffer
+    await service.start()
+    await asyncio.sleep(0.5)
+
+    # Mock the price buffer with 4 sample prices
+    # Prices: 67000, 67200, 67100, 67300
+    # Returns: (67200-67000)/67000 = 0.00298..., (67100-67200)/67200 = -0.00149..., (67300-67100)/67100 = 0.00298...
+    mock_prices = [
+        PricePoint(price=Decimal("67000"), volume=Decimal("100"), timestamp=datetime.now()),
+        PricePoint(price=Decimal("67200"), volume=Decimal("100"), timestamp=datetime.now()),
+        PricePoint(price=Decimal("67100"), volume=Decimal("100"), timestamp=datetime.now()),
+        PricePoint(price=Decimal("67300"), volume=Decimal("100"), timestamp=datetime.now()),
+    ]
+
+    # Mock the buffer's get_price_range method
+    if service._stream and service._stream.price_buffer:
+        # Use MagicMock instead of patch.object to return the list directly (not a coroutine)
+        service._stream.price_buffer.get_price_range = MagicMock(return_value=mock_prices)
+
+        volatility = service.calculate_15min_volatility()
+
+        # Verify volatility is within reasonable range
+        assert volatility > 0.0
+        assert volatility < 0.10  # 10% is unreasonably high for 15min
+
+        # Verify it's not the default value (indicates calculation worked)
+        assert volatility != 0.005
+    else:
+        pytest.skip("Buffer not available")
+
+    await service.close()
