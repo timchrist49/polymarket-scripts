@@ -1168,7 +1168,8 @@ class AutoTrader:
                     is_end_phase=is_end_of_market,
                     actual_probability=arbitrage_opportunity.actual_probability if arbitrage_opportunity else None,
                     arbitrage_edge=arbitrage_opportunity.edge_percentage if arbitrage_opportunity else None,
-                    arbitrage_urgency=arbitrage_opportunity.urgency if arbitrage_opportunity else None
+                    arbitrage_urgency=arbitrage_opportunity.urgency if arbitrage_opportunity else None,
+                    is_test_mode=self.test_mode.enabled
                 )
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))

@@ -39,7 +39,8 @@ class PerformanceTracker:
         is_end_phase: bool = False,
         actual_probability: float | None = None,
         arbitrage_edge: float | None = None,
-        arbitrage_urgency: str | None = None
+        arbitrage_urgency: str | None = None,
+        is_test_mode: bool = False
     ) -> int:
         """
         Log a trading decision to the database.
@@ -101,7 +102,10 @@ class PerformanceTracker:
                 # Arbitrage tracking
                 "actual_probability": actual_probability,
                 "arbitrage_edge": arbitrage_edge,
-                "arbitrage_urgency": arbitrage_urgency
+                "arbitrage_urgency": arbitrage_urgency,
+
+                # Test mode flag
+                "is_test_mode": 1 if is_test_mode else 0
             }
 
             trade_id = self.db.log_trade(trade_data)
