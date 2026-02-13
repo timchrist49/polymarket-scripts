@@ -754,6 +754,17 @@ class AutoTrader:
     ) -> None:
         """Process a single market for trading decision."""
         try:
+            # In test mode, skip if we've already traded this market
+            if self.test_mode.enabled:
+                if market.id in self.test_mode.traded_markets:
+                    logger.info(
+                        "[TEST] Skipping market - already traded in this session",
+                        market_id=market.id,
+                        market_question=market.question[:80] if market.question else "",
+                        traded_count=len(self.test_mode.traded_markets)
+                    )
+                    return
+
             # Get token IDs
             token_ids = market.get_token_ids()
             if not token_ids:
@@ -1521,6 +1532,15 @@ class AutoTrader:
                 filled_via=filled_via,
                 arbitrage_edge=f"{arbitrage_opportunity.edge_percentage:.1%}" if arbitrage_opportunity else "N/A"
             )
+
+            # Mark market as traded in test mode
+            if self.test_mode.enabled:
+                self.test_mode.traded_markets.add(market.id)
+                logger.info(
+                    "[TEST] Market marked as traded",
+                    market_id=market.id,
+                    total_traded_markets=len(self.test_mode.traded_markets)
+                )
 
             # Send Telegram notification
             try:
