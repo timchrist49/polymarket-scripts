@@ -510,6 +510,20 @@ class AutoTrader:
                     change_pct=f"{btc_momentum['momentum_pct']:+.2f}%"
                 )
 
+            # Multi-timeframe analysis (daily + 4h trend alignment)
+            price_4h_ago = await self.btc_service.get_price_at_offset(hours=4)
+            price_24h_ago = await self.btc_service.get_price_at_offset(hours=24)
+
+            timeframe_analysis = None
+            if price_4h_ago and price_24h_ago:
+                from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer
+                timeframe_analyzer = TimeframeAnalyzer()
+                timeframe_analysis = await timeframe_analyzer.analyze_timeframes(
+                    current_price=float(btc_data.price),
+                    price_4h_ago=float(price_4h_ago),
+                    price_24h_ago=float(price_24h_ago)
+                )
+
             logger.info(
                 "Data collected",
                 btc_price=f"${btc_data.price:,.2f}",
@@ -593,7 +607,9 @@ class AutoTrader:
                     aggregated_sentiment,  # CHANGED: pass aggregated instead of social
                     portfolio_value,
                     btc_momentum,  # NEW: pass momentum calculated once per loop
-                    cycle_start_time  # NEW: pass cycle start time for JIT metrics
+                    cycle_start_time,  # NEW: pass cycle start time for JIT metrics
+                    volume_data,  # NEW: volume data for AI context
+                    timeframe_analysis  # NEW: timeframe analysis for AI context
                 )
 
             # Step 7: Stop-loss check
@@ -665,7 +681,9 @@ class AutoTrader:
         aggregated_sentiment,  # CHANGED from sentiment
         portfolio_value: Decimal,
         btc_momentum: dict | None,  # NEW: momentum calculated once per loop
-        cycle_start_time: datetime  # NEW: for JIT execution metrics
+        cycle_start_time: datetime,  # NEW: for JIT execution metrics
+        volume_data,  # NEW: volume data for breakout confirmation
+        timeframe_analysis  # NEW: multi-timeframe trend analysis
     ) -> None:
         """Process a single market for trading decision."""
 
@@ -765,6 +783,17 @@ class AutoTrader:
                             reason="Breakouts require volume > 1.5x average"
                         )
                         return  # Skip low-volume breakouts
+
+            # Timeframe alignment check - don't trade against larger trend
+            if timeframe_analysis and timeframe_analysis.alignment == "CONFLICTING":
+                logger.info(
+                    "Skipping trade - conflicting timeframes",
+                    market_id=market.id,
+                    daily_trend=timeframe_analysis.daily_trend,
+                    four_hour_trend=timeframe_analysis.four_hour_trend,
+                    reason="Don't trade against larger timeframe trend"
+                )
+                return
 
             # Build market data dict with ALL context
             # Note: Polymarket returns prices for UP/YES token only

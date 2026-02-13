@@ -6,8 +6,8 @@ Provides current price, historical data, and price change calculations.
 """
 
 import asyncio
-import decimal
-from datetime import datetime, timedelta
+from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import structlog
 
@@ -131,10 +131,10 @@ class BTCPriceService:
         try:
             ticker = await self._binance.fetch_ticker("BTC/USDT")
             return BTCPriceData(
-                price=decimal.Decimal(str(ticker["last"])),
+                price=Decimal(str(ticker["last"])),
                 timestamp=datetime.fromtimestamp(ticker["timestamp"] / 1000),
                 source="binance",
-                volume_24h=decimal.Decimal(str(ticker["baseVolume"]))
+                volume_24h=Decimal(str(ticker["baseVolume"]))
             )
         except Exception as e:
             logger.error("Binance fetch failed", error=str(e))
@@ -172,10 +172,10 @@ class BTCPriceService:
             btc = data["bitcoin"]
 
             return BTCPriceData(
-                price=decimal.Decimal(str(btc["usd"])),
+                price=Decimal(str(btc["usd"])),
                 timestamp=datetime.fromtimestamp(btc["last_updated_at"]),
                 source="coingecko_pro" if self.settings.coingecko_api_key else "coingecko",
-                volume_24h=decimal.Decimal(str(btc.get("usd_24h_vol", 0)))
+                volume_24h=Decimal(str(btc.get("usd_24h_vol", 0)))
             )
 
     async def _fetch_coingecko_history(self, minutes: int = 60) -> list[PricePoint]:
@@ -223,8 +223,8 @@ class BTCPriceService:
                     volume = volumes[i][1] if i < len(volumes) else 0
 
                     result.append(PricePoint(
-                        price=decimal.Decimal(str(price)),
-                        volume=decimal.Decimal(str(volume)),
+                        price=Decimal(str(price)),
+                        volume=Decimal(str(volume)),
                         timestamp=datetime.fromtimestamp(timestamp_ms / 1000)
                     ))
 
@@ -283,8 +283,8 @@ class BTCPriceService:
                     volume = candle[6]
 
                     result.append(PricePoint(
-                        price=decimal.Decimal(str(close_price)),
-                        volume=decimal.Decimal(str(volume)),
+                        price=Decimal(str(close_price)),
+                        volume=Decimal(str(volume)),
                         timestamp=datetime.fromtimestamp(timestamp)
                     ))
 
@@ -337,7 +337,7 @@ class BTCPriceService:
                     result = [
                         PricePoint(
                             price=entry.price,
-                            volume=decimal.Decimal("0"),  # Volume not stored in buffer
+                            volume=Decimal("0"),  # Volume not stored in buffer
                             timestamp=datetime.fromtimestamp(entry.timestamp)
                         )
                         for entry in buffer_entries
@@ -416,14 +416,14 @@ class BTCPriceService:
 
             return [
                 PricePoint(
-                    price=decimal.Decimal(str(candle[4])),  # Close price
-                    volume=decimal.Decimal(str(candle[5])),  # Volume
+                    price=Decimal(str(candle[4])),  # Close price
+                    volume=Decimal(str(candle[5])),  # Volume
                     timestamp=datetime.fromtimestamp(candle[0] / 1000)
                 )
                 for candle in data
             ]
 
-    async def get_price_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+    async def get_price_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """
         Get BTC price at a specific Unix timestamp with validation.
 
@@ -448,7 +448,7 @@ class BTCPriceService:
         )
         return None
 
-    async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+    async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """
         Fetch BTC price at specific timestamp from Binance.
 
@@ -521,7 +521,7 @@ class BTCPriceService:
 
                 # Return OPEN price of the candle (at exact timestamp, not 1 min later)
                 # data[0] = [open_time, open, high, low, close, volume, close_time, ...]
-                price = decimal.Decimal(str(data[0][1]))
+                price = Decimal(str(data[0][1]))
                 logger.debug(
                     "Fetched Binance historical price",
                     timestamp=timestamp,
@@ -539,7 +539,7 @@ class BTCPriceService:
                         error=str(e) or type(e).__name__)
             return None
 
-    async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+    async def _fetch_coingecko_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """
         Fetch BTC price at specific timestamp from CoinGecko Pro API.
 
@@ -598,14 +598,14 @@ class BTCPriceService:
                     time_diff_seconds=f"{time_diff:.0f}"
                 )
 
-                return decimal.Decimal(str(price))
+                return Decimal(str(price))
 
         except Exception as e:
             logger.error("Failed to fetch CoinGecko price at timestamp",
                         timestamp=timestamp, error=str(e))
             return None
 
-    async def _fetch_kraken_at_timestamp(self, timestamp: int) -> Optional[decimal.Decimal]:
+    async def _fetch_kraken_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """
         Fetch BTC price at specific timestamp from Kraken.
 
@@ -641,7 +641,7 @@ class BTCPriceService:
                     close_price = ohlc_data[0][4]  # Close price
                     logger.debug("Fetched Kraken price at timestamp",
                                 timestamp=timestamp, price=f"${close_price}")
-                    return decimal.Decimal(str(close_price))
+                    return Decimal(str(close_price))
 
                 return None
 
@@ -661,7 +661,7 @@ class BTCPriceService:
 
         change_amount = current.price - old.price
         change_percent = float(change_amount / old.price * 100)
-        velocity = change_amount / decimal.Decimal(window_minutes)
+        velocity = change_amount / Decimal(window_minutes)
 
         return PriceChange(
             current_price=current.price,
@@ -895,6 +895,38 @@ class BTCPriceService:
 
         except Exception as e:
             logger.error("Failed to fetch volume data", error=str(e))
+            return None
+
+    async def get_price_at_offset(self, hours: int) -> Decimal | None:
+        """
+        Get BTC price at a time offset (hours ago).
+
+        Args:
+            hours: Number of hours back to get price
+
+        Returns:
+            BTC price at that time, or None if unavailable
+        """
+        try:
+            from datetime import timedelta
+
+            # Calculate target timestamp
+            target_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+            target_timestamp = int(target_time.timestamp())
+
+            # Use existing method to get price at timestamp
+            price = await self.get_price_at_timestamp(target_timestamp)
+
+            if price:
+                logger.debug(
+                    f"Price {hours}h ago",
+                    price=f"${price:,.2f}"
+                )
+
+            return price
+
+        except Exception as e:
+            logger.error(f"Failed to get price at {hours}h offset", error=str(e))
             return None
 
     async def close(self):
