@@ -21,7 +21,8 @@ from polymarket.models import (
     TradingDecision,
     VolumeData,
     TimeframeAnalysis,
-    MarketRegime
+    MarketRegime,
+    ArbitrageOpportunity
 )
 from polymarket.config import Settings
 
@@ -53,9 +54,10 @@ class AIDecisionService:
         orderbook_data: "OrderbookData | None" = None,  # orderbook analysis
         volume_data: VolumeData | None = None,  # NEW: volume confirmation
         timeframe_analysis: TimeframeAnalysis | None = None,  # NEW: multi-timeframe
-        regime: MarketRegime | None = None  # NEW: market regime
+        regime: MarketRegime | None = None,  # NEW: market regime
+        arbitrage_opportunity: "ArbitrageOpportunity | None" = None  # NEW: arbitrage detection
     ) -> TradingDecision:
-        """Generate trading decision using AI with regime awareness, volume, and timeframe analysis."""
+        """Generate trading decision using AI with regime awareness, volume, timeframe, and arbitrage."""
         try:
             client = self._get_client()
 
@@ -63,7 +65,8 @@ class AIDecisionService:
             prompt = self._build_prompt(
                 btc_price, technical_indicators, aggregated_sentiment,
                 market_data, portfolio_value, orderbook_data,
-                volume_data, timeframe_analysis, regime
+                volume_data, timeframe_analysis, regime,
+                arbitrage_opportunity
             )
 
             # Call OpenAI with GPT-5-Nano parameters
@@ -135,7 +138,8 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
         orderbook_data: "OrderbookData | None" = None,
         volume_data: VolumeData | None = None,
         timeframe_analysis: TimeframeAnalysis | None = None,
-        regime: MarketRegime | None = None
+        regime: MarketRegime | None = None,
+        arbitrage_opportunity: "ArbitrageOpportunity | None" = None
     ) -> str:
         """Build the AI prompt with all context including regime, volume, timeframe, and orderbook."""
 
@@ -306,6 +310,52 @@ MULTI-TIMEFRAME ANALYSIS:
         else:
             timeframe_context = "MULTI-TIMEFRAME ANALYSIS: Not available"
 
+        # NEW: Arbitrage opportunity context
+        arbitrage_context = ""
+        if arbitrage_opportunity and arbitrage_opportunity.edge_percentage >= 0.05:
+            arbitrage_context = f"""
+═══════════════════════════════════════════════════════════════════
+🎯 ARBITRAGE OPPORTUNITY DETECTED
+═══════════════════════════════════════════════════════════════════
+
+PROBABILITY ANALYSIS:
+├─ Actual Probability (calculated): {arbitrage_opportunity.actual_probability:.1%}
+├─ Polymarket YES Odds: {arbitrage_opportunity.polymarket_yes_odds:.1%}
+├─ Polymarket NO Odds: {arbitrage_opportunity.polymarket_no_odds:.1%}
+└─ **EDGE: {arbitrage_opportunity.edge_percentage:+.1%}**
+
+ARBITRAGE SIGNAL:
+├─ Recommended Action: **{arbitrage_opportunity.recommended_action}**
+├─ Confidence Boost: +{arbitrage_opportunity.confidence_boost:.2f}
+├─ Urgency: {arbitrage_opportunity.urgency}
+└─ Expected Profit: +{arbitrage_opportunity.expected_profit_pct:.1%} if correct
+
+⚠️ ARBITRAGE TRADING STRATEGY:
+This is a QUANTIFIED MISPRICING based on:
+1. Real-time BTC price momentum analysis
+2. Comparison to lagging Polymarket odds
+3. Statistical probability calculation
+
+CONFIDENCE SCALING:
+- Edge 5-10%: Moderate opportunity (confidence boost: +0.10 to +0.20)
+- Edge 10-15%: Strong opportunity (confidence boost: +0.20, urgency: MEDIUM)
+- Edge 15%+: Extreme opportunity (confidence boost: +0.20, urgency: HIGH)
+
+The larger the edge, the higher your confidence should be.
+Edges of 10%+ justify high confidence (0.85-0.95).
+
+═══════════════════════════════════════════════════════════════════
+"""
+        else:
+            arbitrage_context = """
+═══════════════════════════════════════════════════════════════════
+🎯 ARBITRAGE STATUS
+═══════════════════════════════════════════════════════════════════
+No significant arbitrage edge detected (< 5%).
+Rely on technical indicators, sentiment, and regime analysis.
+═══════════════════════════════════════════════════════════════════
+"""
+
         # Extract social and market details
         social = aggregated.social
         mkt = aggregated.market
@@ -326,6 +376,8 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 {volume_context}
 
 {timeframe_context}
+
+{arbitrage_context}
 
 CURRENT MARKET DATA:
 - BTC Current Price: ${btc_price.price:,.2f} (source: {btc_price.source})
