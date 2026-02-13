@@ -210,3 +210,34 @@ if not self.test_mode.enabled and price_movement_pct > unfavorable_threshold:
 3. Monitor for 1-2 trading cycles (~6-10 minutes)
 4. Verify trades execute successfully
 5. If successful: document behavior and keep test mode active for CoinGecko signals validation
+
+---
+
+## Implementation Notes
+
+**Completed:** 2026-02-13
+
+**Changes made:**
+1. Added `test_mode: bool = False` parameter to `RiskManager.validate_decision()`
+2. Bypassed 3 risk checks in test mode: odds (check 3a), exposure (check 4), duplicates (check 6)
+3. Modified `auto_trade.py` to pass `test_mode=self.test_mode.enabled` to risk manager
+4. Bypassed YES momentum check with `not self.test_mode.enabled` conditional
+5. Bypassed unfavorable price movement check with `not self.test_mode.enabled` conditional
+
+**Commits:**
+- `7f0509d` - feat: add test_mode parameter to risk manager validate_decision
+- `5276166` - docs: add docstring for test_mode parameter
+- `4be50ed` - feat: bypass odds check in test mode
+- `c365af1` - feat: bypass total exposure check in test mode
+- `a3b6bde` - feat: bypass duplicate position check in test mode
+- `2ffc5a8` - feat: pass test_mode flag to risk manager
+- `af5e54a` - feat: bypass YES momentum check in test mode
+- `d9e759f` - feat: bypass unfavorable price movement check in test mode
+
+**Integration Verification:**
+- Bot successfully restarts with test mode enabled
+- All validation bypasses confirmed working
+- AI decisions at 70%+ confidence trigger trade attempts
+- Test mode enforces $1 position size as designed
+- Zero risk manager rejection messages in test mode
+- Note: Order execution requires minimum $5 (Polymarket API constraint)
