@@ -46,16 +46,17 @@ class AIDecisionService:
         technical_indicators: TechnicalIndicators,
         aggregated_sentiment: AggregatedSentiment,
         market_data: dict,
-        portfolio_value: Decimal = Decimal("1000")
+        portfolio_value: Decimal = Decimal("1000"),
+        orderbook_data: "OrderbookData | None" = None  # NEW: orderbook analysis
     ) -> TradingDecision:
-        """Generate trading decision using AI with aggregated sentiment."""
+        """Generate trading decision using AI with aggregated sentiment and orderbook."""
         try:
             client = self._get_client()
 
             # Build the prompt
             prompt = self._build_prompt(
                 btc_price, technical_indicators, aggregated_sentiment,
-                market_data, portfolio_value
+                market_data, portfolio_value, orderbook_data
             )
 
             # Call OpenAI with GPT-5-Nano parameters
@@ -106,9 +107,10 @@ class AIDecisionService:
         technical: TechnicalIndicators,
         aggregated: AggregatedSentiment,
         market: dict,
-        portfolio_value: Decimal
+        portfolio_value: Decimal,
+        orderbook_data: "OrderbookData | None" = None
     ) -> str:
-        """Build the AI prompt with all context including price-to-beat and timing."""
+        """Build the AI prompt with all context including price-to-beat, timing, and orderbook."""
 
         # Get market outcomes (e.g., ["Up", "Down"])
         outcomes = market.get("outcomes", ["Yes", "No"])
@@ -265,6 +267,7 @@ MARKET MICROSTRUCTURE (Polymarket CLOB, last 5-15 min):
 - Volume: {mkt.volume_ratio:.1f}x normal (score: {mkt.volume_score:+.2f})
 - Momentum: {mkt.momentum_direction} (score: {mkt.momentum_score:+.2f})
 - Signal: {mkt.signal_type}
+{self._format_orderbook_section(orderbook_data)}
 
 AGGREGATED SIGNAL:
 - Final Score: {aggregated.final_score:+.2f} (market 60% + social 40%)
@@ -359,6 +362,29 @@ CRITICAL ALIGNMENT CHECK:
 - BULLISH signals (BTC going UP from price-to-beat) → Buy "{yes_outcome}" token
 - BEARISH signals (BTC going DOWN from price-to-beat) → Buy "{no_outcome}" token
 - If price-to-beat shows +2% but you're bearish → HOLD (conflicting signals)
+"""
+
+    def _format_orderbook_section(self, orderbook_data: "OrderbookData | None") -> str:
+        """Format orderbook data section for AI prompt."""
+        if not orderbook_data:
+            return ""
+
+        return f"""
+
+ORDERBOOK DEPTH ANALYSIS (Execution Quality):
+- Bid-Ask Spread: {orderbook_data.spread_bps:.1f} bps
+- Liquidity Score: {orderbook_data.liquidity_score:.2f}/1.0 {"(EXCELLENT)" if orderbook_data.liquidity_score > 0.7 else "(POOR - risk of slippage)" if orderbook_data.liquidity_score < 0.4 else "(MODERATE)"}
+- Order Imbalance: {orderbook_data.order_imbalance:+.2f} ({orderbook_data.imbalance_direction})
+- Bid Depth (100bps): ${orderbook_data.bid_depth_100bps:.2f}
+- Ask Depth (100bps): ${orderbook_data.ask_depth_100bps:.2f}
+- Can Fill $8 Order: {orderbook_data.can_fill_order}
+
+ORDERBOOK INTERPRETATION:
+- Tight spread (<200bps) = liquid market, good execution quality
+- Wide spread (>500bps) = illiquid, should HOLD (already filtered)
+- Buy pressure (imbalance >+0.2) = bullish institutional flow signal
+- Sell pressure (imbalance <-0.2) = bearish institutional flow signal
+- Insufficient depth = cannot fill order (already filtered)
 """
 
     def _parse_decision(self, data: dict, token_id: str) -> TradingDecision:

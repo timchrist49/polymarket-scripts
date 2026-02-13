@@ -795,6 +795,41 @@ class AutoTrader:
                 )
                 return
 
+            # Fetch and analyze orderbook for execution quality
+            orderbook = self.client.get_orderbook(token_ids[0])  # YES token
+            orderbook_analysis = None
+            if orderbook:
+                from polymarket.trading.orderbook_analyzer import OrderbookAnalyzer
+                analyzer = OrderbookAnalyzer()
+                orderbook_analysis = analyzer.analyze_orderbook(
+                    orderbook,
+                    target_size=8.0  # Base position size
+                )
+
+                if orderbook_analysis:
+                    # Skip if spread too wide (poor execution quality)
+                    if orderbook_analysis.spread_bps > 500:  # 5% spread
+                        logger.info(
+                            "Skipping trade - spread too wide",
+                            market_id=market.id,
+                            spread_bps=f"{orderbook_analysis.spread_bps:.1f}",
+                            liquidity_score=f"{orderbook_analysis.liquidity_score:.2f}",
+                            reason="Wide spread = poor execution quality"
+                        )
+                        return
+
+                    # Skip if can't fill order
+                    if not orderbook_analysis.can_fill_order:
+                        logger.info(
+                            "Skipping trade - insufficient liquidity",
+                            market_id=market.id,
+                            liquidity_score=f"{orderbook_analysis.liquidity_score:.2f}",
+                            bid_depth=f"${orderbook_analysis.bid_depth_100bps:.2f}",
+                            ask_depth=f"${orderbook_analysis.ask_depth_100bps:.2f}",
+                            reason="Not enough depth to fill order"
+                        )
+                        return
+
             # Build market data dict with ALL context
             # Note: Polymarket returns prices for UP/YES token only
             # DOWN/NO price is complementary: 1 - UP_price
@@ -827,13 +862,14 @@ class AutoTrader:
                 note="DOWN price = 1 - UP bid"
             )
 
-            # Step 1: AI Decision - CHANGED: pass aggregated_sentiment
+            # Step 1: AI Decision - pass all market context including orderbook
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
-                aggregated_sentiment=aggregated_sentiment,  # CHANGED
+                aggregated_sentiment=aggregated_sentiment,
                 market_data=market_dict,
-                portfolio_value=portfolio_value
+                portfolio_value=portfolio_value,
+                orderbook_data=orderbook_analysis  # NEW: orderbook depth analysis
             )
 
             # Skip YES trades if disabled (emergency kill switch)
