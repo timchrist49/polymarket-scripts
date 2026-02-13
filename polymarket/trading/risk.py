@@ -108,7 +108,7 @@ class RiskManager:
             )
 
         # Check 6: Not already positioned in this market
-        if open_positions:
+        if not test_mode and open_positions:
             for pos in open_positions:
                 if pos.get("token_id") == decision.token_id:
                     return ValidationResult(
