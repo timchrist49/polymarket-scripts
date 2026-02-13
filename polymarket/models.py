@@ -152,6 +152,8 @@ class PortfolioSummary(BaseModel):
     usdc_balance: float = 0.0  # Available USDC for trading (CLOB balance)
     positions_value: float = 0.0  # Total value of all positions at current prices
     total_value: float = 0.0  # Total portfolio value (cash + positions)
+    purchase_value: float = 0.0  # Original purchase cost of positions
+    unrealized_pl: float = 0.0  # Current value - Purchase value
 
 
 class BalanceInfo(BaseModel):

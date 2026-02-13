@@ -563,29 +563,47 @@ class PolymarketClient:
                 total_notional += float(order.get("size", 0)) * float(order.get("price", 0))
 
             # Calculate positions from trades (buy = +position, sell = -position)
+            # Also track purchase cost for P/L calculation
+            purchase_costs: dict[str, float] = {}  # token_id -> total cost
+
             for trade in trades:
                 asset_id = trade.get("asset_id", "")
                 side = trade.get("side", "").upper()
                 size = float(trade.get("size", 0))
+                price = float(trade.get("price", 0))
 
                 if side == "BUY":
                     positions[asset_id] = positions.get(asset_id, 0) + size
+                    # Track purchase cost (size * price = cost in USDC)
+                    purchase_costs[asset_id] = purchase_costs.get(asset_id, 0) + (size * price)
                 elif side == "SELL":
                     positions[asset_id] = positions.get(asset_id, 0) - size
+                    # Reduce purchase cost proportionally when selling
+                    if asset_id in purchase_costs and positions.get(asset_id, 0) > 0:
+                        # Reduce cost proportionally to quantity sold
+                        cost_per_share = purchase_costs[asset_id] / (positions[asset_id] + size)
+                        purchase_costs[asset_id] -= size * cost_per_share
 
             # Remove zero positions
             positions = {k: v for k, v in positions.items() if abs(v) > 0.0001}
 
-            # Calculate position values at current market prices
+            # Calculate position values at current market prices and total purchase cost
             positions_value = 0.0
+            purchase_value = 0.0
+
             for token_id, quantity in positions.items():
                 try:
                     price_data = client.get_last_trade_price(token_id)
-                    price = float(price_data.get("price", 0))
-                    positions_value += abs(quantity) * price
+                    current_price = float(price_data.get("price", 0))
+                    positions_value += abs(quantity) * current_price
+
+                    # Add purchase cost for this position
+                    purchase_value += purchase_costs.get(token_id, 0)
                 except Exception as e:
                     logger.debug(f"Could not get price for {token_id}: {e}")
 
+            # Calculate unrealized P/L
+            unrealized_pl = positions_value - purchase_value
             total_value = usdc_balance + positions_value
 
             return PortfolioSummary(
@@ -597,6 +615,8 @@ class PolymarketClient:
                 usdc_balance=usdc_balance,
                 positions_value=positions_value,
                 total_value=total_value,
+                purchase_value=purchase_value,  # NEW
+                unrealized_pl=unrealized_pl,    # NEW
             )
 
         except Exception as e:

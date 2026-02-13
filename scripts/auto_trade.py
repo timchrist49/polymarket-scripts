@@ -618,6 +618,8 @@ class AutoTrader:
                     total_value=f"${portfolio.total_value:.2f}",
                     usdc_balance=f"${portfolio.usdc_balance:.2f}",
                     positions_value=f"${portfolio.positions_value:.2f}",
+                    purchase_value=f"${portfolio.purchase_value:.2f}",  # NEW
+                    unrealized_pl=f"${portfolio.unrealized_pl:+.2f}",  # NEW
                     using_balance=f"${portfolio_value:.2f}"
                 )
                 if portfolio_value == 0:
