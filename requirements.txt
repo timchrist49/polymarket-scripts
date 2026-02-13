@@ -20,6 +20,7 @@ openai>=1.0.0            # OpenAI API
 tavily-python>=0.3.0     # Tavily search
 pandas>=2.0.0            # Data analysis
 numpy>=1.24.0            # Numerical computing
+scipy>=1.11.0            # Scientific computing (probability distributions)
 aiohttp>=3.9.0           # Async HTTP
 python-telegram-bot>=20.0 # Telegram bot API
 
