@@ -584,13 +584,16 @@ class PolymarketClient:
             )
 
             # Create limit order (GTC = Good-Til-Cancelled)
-            order_response = clob.post_order(
+            from py_clob_client.clob_types import OrderArgs
+
+            order_args = OrderArgs(
                 token_id=token_id,
                 side=side,
                 price=price,
-                size=size,
-                order_type="GTC"  # Will stay open until filled or cancelled
+                size=size
             )
+
+            order_response = clob.create_and_post_order(order_args)
 
             logger.info(
                 f"Limit order placed: order_id={order_response.get('orderID')}, "
