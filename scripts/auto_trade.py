@@ -917,7 +917,7 @@ class AutoTrader:
                     confidence=f"{market_signals.confidence:.2f}",
                     funding=f"{funding_signal.direction} ({funding_signal.confidence:.2f})",
                     premium=f"{premium_signal.direction} ({premium_signal.confidence:.2f})",
-                    volume=f"{volume_signal.direction} ({volume_signal.confidence:.2f})"
+                    volume_signal_data=f"{volume_signal.direction} ({volume_signal.confidence:.2f})"
                 )
 
             except Exception as e:
@@ -1048,8 +1048,10 @@ class AutoTrader:
             # Get historical prices for probability calculation
             import time
             current_time = int(time.time())
-            price_5min_ago = await self.btc_service.get_price_at_timestamp(current_time - 300) or float(btc_data.price)
-            price_10min_ago = await self.btc_service.get_price_at_timestamp(current_time - 600) or float(btc_data.price)
+            price_5min_result = await self.btc_service.get_price_at_timestamp(current_time - 300)
+            price_5min_ago = float(price_5min_result) if price_5min_result else float(btc_data.price)
+            price_10min_result = await self.btc_service.get_price_at_timestamp(current_time - 600)
+            price_10min_ago = float(price_10min_result) if price_10min_result else float(btc_data.price)
             volatility_15min = self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
 
             actual_probability = probability_calculator.calculate_directional_probability(

@@ -1091,7 +1091,10 @@ class BTCPriceService:
                 logger.debug("Buffer not available, returning default volatility")
                 return 0.005
 
-            prices = self._stream.price_buffer.get_price_range(duration_seconds=900)
+            import time
+            end_time = int(time.time())
+            start_time = end_time - 900  # 15 minutes ago
+            prices = await self._stream.price_buffer.get_price_range(start_time, end_time)
 
             if len(prices) < 2:
                 logger.debug("Insufficient price data for volatility", count=len(prices))
