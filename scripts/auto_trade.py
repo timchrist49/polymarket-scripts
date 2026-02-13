@@ -721,36 +721,6 @@ class AutoTrader:
     ) -> None:
         """Process a single market for trading decision."""
 
-        # Time-based trading filter (research-backed optimal hours)
-        from datetime import datetime, timezone
-        current_hour_utc = datetime.now(timezone.utc).hour
-
-        # Optimal trading window: 11 AM - 1 PM UTC (research-backed)
-        OPTIMAL_HOURS = range(11, 13)  # 11:00-12:59 UTC
-
-        # Avoid worst hours: 12 AM - 6 AM UTC (low liquidity, high volatility)
-        AVOID_HOURS = range(0, 6)
-
-        if current_hour_utc in AVOID_HOURS:
-            logger.info(
-                "Skipping trade - outside trading hours",
-                market_id=market.id,
-                current_hour=current_hour_utc,
-                reason="Avoid 12 AM - 6 AM UTC (low liquidity)"
-            )
-            return
-
-        # Reduce position size outside optimal hours
-        in_optimal_window = current_hour_utc in OPTIMAL_HOURS
-        position_size_multiplier = 1.0 if in_optimal_window else 0.7
-
-        logger.debug(
-            "Trading hours check",
-            current_hour=current_hour_utc,
-            in_optimal_window=in_optimal_window,
-            multiplier=position_size_multiplier
-        )
-
         # EMERGENCY: Disable YES trades until strategy fixed
         # YES trades: 10% win rate (9W-81L) = -$170 all-time
         ENABLE_YES_TRADES = False  # TODO: Re-enable after strategy redesign
