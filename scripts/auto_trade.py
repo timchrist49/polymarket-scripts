@@ -1142,7 +1142,7 @@ class AutoTrader:
 
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
             # CHECK FIRST before logging to avoid phantom trades
-            if decision.action == "YES" and price_to_beat:
+            if decision.action == "YES" and price_to_beat and not self.test_mode.enabled:
                 diff, _ = self.market_tracker.calculate_price_difference(
                     btc_data.price, price_to_beat
                 )
