@@ -470,3 +470,12 @@ class LimitOrderStrategy:
     fallback_to_market: bool  # Whether to use market order if timeout
     urgency: Literal["HIGH", "MEDIUM", "LOW"]
     price_improvement_pct: float  # How much better than market
+
+    def __post_init__(self):
+        """Validate field values."""
+        if self.urgency not in ["HIGH", "MEDIUM", "LOW"]:
+            raise ValueError(f"Invalid urgency: {self.urgency}")
+        if not 0.0 <= self.target_price <= 1.0:
+            raise ValueError(f"Invalid target_price: {self.target_price}")
+        if self.timeout_seconds < 0:
+            raise ValueError(f"timeout_seconds must be >= 0, got {self.timeout_seconds}")

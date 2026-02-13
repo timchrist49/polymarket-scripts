@@ -159,3 +159,83 @@ def test_limit_order_strategy_creation():
     assert strategy.fallback_to_market is True
     assert strategy.urgency == "HIGH"
     assert strategy.price_improvement_pct == 0.02
+
+def test_limit_order_strategy_urgency_validation():
+    """Test urgency validation for LimitOrderStrategy."""
+    with pytest.raises(ValueError, match="Invalid urgency"):
+        LimitOrderStrategy(
+            target_price=0.58,
+            timeout_seconds=30,
+            fallback_to_market=True,
+            urgency="INVALID",  # Should fail
+            price_improvement_pct=0.02
+        )
+
+def test_limit_order_strategy_target_price_validation():
+    """Test target_price bounds validation."""
+    # Test price > 1.0
+    with pytest.raises(ValueError, match="Invalid target_price"):
+        LimitOrderStrategy(
+            target_price=1.5,  # Invalid
+            timeout_seconds=30,
+            fallback_to_market=True,
+            urgency="HIGH",
+            price_improvement_pct=0.02
+        )
+
+    # Test price < 0.0
+    with pytest.raises(ValueError, match="Invalid target_price"):
+        LimitOrderStrategy(
+            target_price=-0.1,  # Invalid
+            timeout_seconds=30,
+            fallback_to_market=True,
+            urgency="HIGH",
+            price_improvement_pct=0.02
+        )
+
+def test_limit_order_strategy_timeout_validation():
+    """Test timeout_seconds validation."""
+    with pytest.raises(ValueError, match="timeout_seconds must be >= 0"):
+        LimitOrderStrategy(
+            target_price=0.58,
+            timeout_seconds=-10,  # Invalid
+            fallback_to_market=True,
+            urgency="HIGH",
+            price_improvement_pct=0.02
+        )
+
+def test_limit_order_strategy_all_urgencies():
+    """Test all valid urgency levels for LimitOrderStrategy."""
+    for urgency in ["HIGH", "MEDIUM", "LOW"]:
+        strategy = LimitOrderStrategy(
+            target_price=0.58,
+            timeout_seconds=30,
+            fallback_to_market=True,
+            urgency=urgency,
+            price_improvement_pct=0.02
+        )
+        assert strategy.urgency == urgency
+
+def test_limit_order_strategy_boundary_values():
+    """Test boundary values for LimitOrderStrategy."""
+    # Test minimum valid values
+    strategy_min = LimitOrderStrategy(
+        target_price=0.0,
+        timeout_seconds=0,
+        fallback_to_market=False,
+        urgency="LOW",
+        price_improvement_pct=0.0
+    )
+    assert strategy_min.target_price == 0.0
+    assert strategy_min.timeout_seconds == 0
+
+    # Test maximum valid values
+    strategy_max = LimitOrderStrategy(
+        target_price=1.0,
+        timeout_seconds=3600,
+        fallback_to_market=True,
+        urgency="HIGH",
+        price_improvement_pct=0.5
+    )
+    assert strategy_max.target_price == 1.0
+    assert strategy_max.timeout_seconds == 3600
