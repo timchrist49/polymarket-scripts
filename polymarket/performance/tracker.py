@@ -40,6 +40,7 @@ class PerformanceTracker:
         actual_probability: float | None = None,
         arbitrage_edge: float | None = None,
         arbitrage_urgency: str | None = None,
+        timeframe_analysis: Optional['TimeframeAnalysis'] = None,
         is_test_mode: bool = False
     ) -> int:
         """
@@ -61,6 +62,20 @@ class PerformanceTracker:
         try:
             # Extract market slug
             market_slug = market.slug or market.id
+
+            # Extract timeframe data if available
+            tf_15m_dir = None
+            tf_1h_dir = None
+            tf_4h_dir = None
+            tf_alignment = None
+            tf_modifier = None
+
+            if timeframe_analysis:
+                tf_15m_dir = timeframe_analysis.tf_15m.direction
+                tf_1h_dir = timeframe_analysis.tf_1h.direction
+                tf_4h_dir = timeframe_analysis.tf_4h.direction
+                tf_alignment = timeframe_analysis.alignment_score
+                tf_modifier = timeframe_analysis.confidence_modifier
 
             # Build trade data dict
             trade_data = {
@@ -103,6 +118,13 @@ class PerformanceTracker:
                 "actual_probability": actual_probability,
                 "arbitrage_edge": arbitrage_edge,
                 "arbitrage_urgency": arbitrage_urgency,
+
+                # Timeframe analysis
+                "timeframe_15m_direction": tf_15m_dir,
+                "timeframe_1h_direction": tf_1h_dir,
+                "timeframe_4h_direction": tf_4h_dir,
+                "timeframe_alignment": tf_alignment,
+                "confidence_modifier": tf_modifier,
 
                 # Test mode flag
                 "is_test_mode": 1 if is_test_mode else 0

@@ -33,6 +33,9 @@ class PerformanceDatabase:
         self._create_indexes()
         self._migrate_schema()
 
+        # Run migrations
+        self._migrate_add_timeframe_columns()
+
         logger.info("Performance database initialized", db_path=db_path)
 
     def _create_tables(self):
@@ -174,6 +177,38 @@ class PerformanceDatabase:
 
         self.conn.commit()
 
+    def _migrate_add_timeframe_columns(self):
+        """Add timeframe analysis columns to trades table."""
+        try:
+            cursor = self.conn.cursor()
+
+            # Check if columns already exist
+            cursor.execute("PRAGMA table_info(trades)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            if 'timeframe_15m_direction' not in columns:
+                cursor.execute("""
+                    ALTER TABLE trades ADD COLUMN timeframe_15m_direction TEXT
+                """)
+                cursor.execute("""
+                    ALTER TABLE trades ADD COLUMN timeframe_1h_direction TEXT
+                """)
+                cursor.execute("""
+                    ALTER TABLE trades ADD COLUMN timeframe_4h_direction TEXT
+                """)
+                cursor.execute("""
+                    ALTER TABLE trades ADD COLUMN timeframe_alignment TEXT
+                """)
+                cursor.execute("""
+                    ALTER TABLE trades ADD COLUMN confidence_modifier REAL
+                """)
+                self.conn.commit()
+                logger.info("Database migration: Added timeframe columns")
+
+        except Exception as e:
+            logger.error("Failed to migrate database", error=str(e))
+            raise
+
     def log_trade(self, trade_data: dict) -> int:
         """
         Log a trade decision to the database.
@@ -198,8 +233,10 @@ class PerformanceDatabase:
                 price_movement_favorable, skipped_unfavorable_move,
                 actual_probability, arbitrage_edge, arbitrage_urgency,
                 filled_via, limit_order_timeout,
+                timeframe_15m_direction, timeframe_1h_direction, timeframe_4h_direction,
+                timeframe_alignment, confidence_modifier,
                 is_test_mode
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade_data["timestamp"],
             trade_data["market_slug"],
@@ -233,6 +270,11 @@ class PerformanceDatabase:
             trade_data.get("arbitrage_urgency"),
             trade_data.get("filled_via"),
             trade_data.get("limit_order_timeout"),
+            trade_data.get("timeframe_15m_direction"),
+            trade_data.get("timeframe_1h_direction"),
+            trade_data.get("timeframe_4h_direction"),
+            trade_data.get("timeframe_alignment"),
+            trade_data.get("confidence_modifier"),
             trade_data.get("is_test_mode", 0)
         ))
 
