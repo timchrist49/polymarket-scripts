@@ -1238,6 +1238,43 @@ class AutoTrader:
                 force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
 
+            # NEW: Conflict detection and confidence adjustment
+            conflict_detector = SignalConflictDetector()
+            conflict_analysis = conflict_detector.analyze_conflicts(
+                btc_direction="UP" if (price_to_beat and btc_data.price > price_to_beat) else "DOWN",
+                technical_trend=indicators.trend,
+                sentiment_direction="BULLISH" if aggregated_sentiment.final_score > 0 else "BEARISH",
+                regime_trend=regime.trend_direction if regime else None,
+                timeframe_alignment=timeframe_analysis.alignment_score if timeframe_analysis else None,
+                market_signals_direction=market_signals.direction if market_signals else None,
+                market_signals_confidence=market_signals.confidence if market_signals else None
+            )
+
+            # Apply conflict analysis
+            if conflict_analysis.should_hold:
+                logger.warning(
+                    "AUTO-HOLD due to SEVERE signal conflicts",
+                    market_id=market.id,
+                    severity=conflict_analysis.severity.value,
+                    conflicts=conflict_analysis.conflicts_detected
+                )
+                return  # Don't trade
+
+            # Apply confidence penalty
+            if conflict_analysis.confidence_penalty != 0.0:
+                original_confidence = decision.confidence
+                decision.confidence += conflict_analysis.confidence_penalty
+                decision.confidence = max(0.0, min(1.0, decision.confidence))  # Clamp to 0-1
+
+                logger.info(
+                    "Applied conflict penalty",
+                    market_id=market.id,
+                    original=f"{original_confidence:.2f}",
+                    penalty=f"{conflict_analysis.confidence_penalty:+.2f}",
+                    final=f"{decision.confidence:.2f}",
+                    conflicts=conflict_analysis.conflicts_detected
+                )
+
             # Test mode: Force YES/NO and check confidence threshold
             if self.test_mode.enabled:
                 # If AI returned HOLD despite force_trade, override based on sentiment
@@ -1373,6 +1410,53 @@ class AutoTrader:
                     reason=validation.reason
                 )
                 return
+
+            # NEW: JIT odds validation (fetch fresh odds before execution)
+            fresh_market = self.client.get_market_by_slug(market.slug)
+            if fresh_market:
+                yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
+                no_odds_fresh = 1.0 - yes_odds_fresh
+
+                # Check if AI's chosen side still qualifies
+                if decision.action == "YES" and yes_odds_fresh <= 0.75:
+                    logger.info(
+                        "Skipping trade - YES odds below threshold at execution time",
+                        market_id=market.id,
+                        odds=f"{yes_odds_fresh:.2%}",
+                        threshold="75%"
+                    )
+                    return
+                elif decision.action == "NO" and no_odds_fresh <= 0.75:
+                    logger.info(
+                        "Skipping trade - NO odds below threshold at execution time",
+                        market_id=market.id,
+                        odds=f"{no_odds_fresh:.2%}",
+                        threshold="75%"
+                    )
+                    return
+
+                # Store odds for paper trade logging
+                odds_yes = yes_odds_fresh
+                odds_no = no_odds_fresh
+                odds_qualified = (
+                    (decision.action == "YES" and yes_odds_fresh > 0.75) or
+                    (decision.action == "NO" and no_odds_fresh > 0.75)
+                )
+            else:
+                # If we can't fetch fresh odds, use cached
+                if cached_odds:
+                    odds_yes = cached_odds.yes_odds
+                    odds_no = cached_odds.no_odds
+                    odds_qualified = (
+                        (decision.action == "YES" and cached_odds.yes_qualifies) or
+                        (decision.action == "NO" and cached_odds.no_qualifies)
+                    )
+                else:
+                    # No odds available, log warning but continue
+                    logger.warning("No odds available for validation", market_id=market.id)
+                    odds_yes = 0.50
+                    odds_no = 0.50
+                    odds_qualified = False
 
             # Step 3: Execute Trade
             if self.settings.mode == "trading":
