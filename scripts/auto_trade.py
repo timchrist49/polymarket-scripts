@@ -1084,19 +1084,12 @@ class AutoTrader:
 
             actual_probability = probability_calculator.calculate_directional_probability(
                 current_price=float(btc_data.price),
+                target_price=float(price_to_beat) if price_to_beat else float(btc_data.price),
                 price_5min_ago=price_5min_ago,
                 price_10min_ago=price_10min_ago,
                 volatility_15min=volatility_15min,
                 time_remaining_seconds=time_remaining or 900,
                 orderbook_imbalance=orderbook_analysis.order_imbalance if orderbook_analysis else 0.0
-            )
-
-            logger.info(
-                "Probability calculation",
-                actual_probability=f"{actual_probability:.2%}",
-                current_price=btc_data.price,
-                price_5min_ago=price_5min_ago,
-                volatility=f"{volatility_15min:.4f}"
             )
 
             # NEW: Detect arbitrage opportunity
