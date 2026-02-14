@@ -319,7 +319,8 @@ class PerformanceTracker:
         trade_id: int,
         actual_outcome: str,
         profit_loss: float,
-        is_win: bool
+        is_win: bool,
+        fee_paid: float = 0.0
     ) -> None:
         """
         Update trade record with settlement outcome.
@@ -327,8 +328,9 @@ class PerformanceTracker:
         Args:
             trade_id: Trade ID to update
             actual_outcome: "YES" or "NO"
-            profit_loss: Dollar profit/loss
+            profit_loss: Dollar profit/loss (after fees)
             is_win: Whether trade won
+            fee_paid: Fee paid on winning trades (default: 0.0)
         """
         cursor = self.db.conn.cursor()
 
@@ -336,9 +338,10 @@ class PerformanceTracker:
             UPDATE trades
             SET actual_outcome = ?,
                 profit_loss = ?,
-                is_win = ?
+                is_win = ?,
+                fee_paid = ?
             WHERE id = ?
-        """, (actual_outcome, profit_loss, is_win, trade_id))
+        """, (actual_outcome, profit_loss, is_win, fee_paid, trade_id))
 
         self.db.conn.commit()
 
@@ -347,7 +350,8 @@ class PerformanceTracker:
             trade_id=trade_id,
             outcome=actual_outcome,
             is_win=is_win,
-            profit_loss=f"${profit_loss:.2f}"
+            profit_loss=f"${profit_loss:.2f}",
+            fee_paid=f"${fee_paid:.2f}"
         )
 
     async def update_trade_status(

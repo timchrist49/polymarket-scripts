@@ -80,13 +80,13 @@ class TradeSettler:
         actual_outcome: str,
         position_size: float,
         executed_price: float
-    ) -> tuple[float, bool]:
+    ) -> tuple[float, bool, float]:
         """
         Calculate profit/loss for a settled trade.
 
         Polymarket binary mechanics:
         - Shares bought: position_size / executed_price
-        - If win: Payout = shares × $1.00
+        - If win: Payout = shares × $1.00, minus 2% fee on winnings
         - If loss: Payout = $0
 
         Args:
@@ -96,7 +96,7 @@ class TradeSettler:
             executed_price: Price paid per share
 
         Returns:
-            (profit_loss, is_win)
+            (profit_loss, is_win, fee_paid)
         """
         shares = position_size / executed_price
 
@@ -104,14 +104,19 @@ class TradeSettler:
            (action == "NO" and actual_outcome == "NO"):
             # Win - each share worth $1
             payout = shares * 1.00
-            profit_loss = payout - position_size
+            gross_profit = payout - position_size
+
+            # Polymarket charges 2% fee on winnings only
+            fee_paid = gross_profit * 0.02 if gross_profit > 0 else 0.0
+            profit_loss = gross_profit - fee_paid
             is_win = True
         else:
             # Loss - shares worth $0
             profit_loss = -position_size
+            fee_paid = 0.0
             is_win = False
 
-        return profit_loss, is_win
+        return profit_loss, is_win, fee_paid
 
     async def _get_btc_price_at_timestamp(self, timestamp: int) -> Optional[float]:
         """
@@ -325,7 +330,7 @@ class TradeSettler:
                     )
 
                     # Calculate profit/loss using VERIFIED data
-                    profit_loss, is_win = self._calculate_profit_loss(
+                    profit_loss, is_win, fee_paid = self._calculate_profit_loss(
                         action=trade['action'],
                         actual_outcome=actual_outcome,
                         position_size=actual_size,  # Use verified size
@@ -338,7 +343,8 @@ class TradeSettler:
                             trade_id=trade['id'],
                             actual_outcome=actual_outcome,
                             profit_loss=profit_loss,
-                            is_win=is_win
+                            is_win=is_win,
+                            fee_paid=fee_paid
                         )
                     else:
                         # Direct update for testing
@@ -347,9 +353,10 @@ class TradeSettler:
                             UPDATE trades
                             SET actual_outcome = ?,
                                 profit_loss = ?,
-                                is_win = ?
+                                is_win = ?,
+                                fee_paid = ?
                             WHERE id = ?
-                        """, (actual_outcome, profit_loss, is_win, trade['id']))
+                        """, (actual_outcome, profit_loss, is_win, fee_paid, trade['id']))
                         self.db.conn.commit()
 
                     # Update stats
