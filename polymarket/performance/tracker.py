@@ -385,7 +385,7 @@ class PerformanceTracker:
         win_rate = wins / len(settled) if settled else 0.0
 
         # Total P&L from settled trades
-        total_pnl = sum(Decimal(str(t[2])) for t in settled if t[2] is not None)
+        total_pnl = sum((Decimal(str(t[2])) for t in settled if t[2] is not None), Decimal('0'))
 
         # Average metrics
         avg_edge = sum(t[3] or 0 for t in trades) / total_trades
