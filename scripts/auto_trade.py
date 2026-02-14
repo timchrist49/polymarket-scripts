@@ -43,6 +43,7 @@ from polymarket.trading.market_tracker import MarketTracker
 from polymarket.trading.probability_calculator import ProbabilityCalculator
 from polymarket.trading.arbitrage_detector import ArbitrageDetector
 from polymarket.trading.smart_order_executor import SmartOrderExecutor
+from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer, TimeframeAnalysis
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
@@ -156,6 +157,10 @@ class AutoTrader:
         # Give settler access to tracker for updates
         self.trade_settler._tracker = self.performance_tracker
 
+        # Multi-timeframe analysis
+        # Note: Analyzer will be initialized after btc_service starts and buffer is available
+        self.timeframe_analyzer: Optional[TimeframeAnalyzer] = None
+
         # State tracking
         self.cycle_count = 0
         self.trades_today = 0
@@ -203,6 +208,15 @@ class AutoTrader:
         await self.btc_service.start()
         logger.info("Initialized Polymarket WebSocket for BTC prices")
         logger.info("Performance tracking enabled")
+
+        # Initialize multi-timeframe analyzer with price buffer
+        if self.btc_service._stream and self.btc_service._stream.price_buffer:
+            self.timeframe_analyzer = TimeframeAnalyzer(
+                price_buffer=self.btc_service._stream.price_buffer
+            )
+            logger.info("Multi-timeframe analyzer initialized")
+        else:
+            logger.warning("Price buffer not available - timeframe analysis will be disabled")
 
         # Start cleanup scheduler in background
         asyncio.create_task(self.cleanup_scheduler.start())
@@ -552,19 +566,19 @@ class AutoTrader:
                     change_pct=f"{btc_momentum['momentum_pct']:+.2f}%"
                 )
 
-            # Multi-timeframe analysis (daily + 4h trend alignment)
-            price_4h_ago = await self.btc_service.get_price_at_offset(hours=4)
-            price_24h_ago = await self.btc_service.get_price_at_offset(hours=24)
-
+            # Multi-timeframe trend analysis
             timeframe_analysis = None
-            if price_4h_ago and price_24h_ago:
-                from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer
-                timeframe_analyzer = TimeframeAnalyzer()
-                timeframe_analysis = await timeframe_analyzer.analyze_timeframes(
-                    current_price=float(btc_data.price),
-                    price_4h_ago=float(price_4h_ago),
-                    price_24h_ago=float(price_24h_ago)
-                )
+            if self.test_mode.enabled and self.timeframe_analyzer:
+                timeframe_analysis = await self.timeframe_analyzer.analyze()
+                if timeframe_analysis:
+                    logger.info(
+                        "Multi-timeframe analysis",
+                        tf_15m=timeframe_analysis.tf_15m.direction,
+                        tf_1h=timeframe_analysis.tf_1h.direction,
+                        tf_4h=timeframe_analysis.tf_4h.direction,
+                        alignment=timeframe_analysis.alignment_score,
+                        modifier=f"{timeframe_analysis.confidence_modifier:+.1%}"
+                    )
 
             logger.info(
                 "Data collected",
@@ -931,13 +945,13 @@ class AutoTrader:
                 market_signals = None
 
             # Timeframe alignment check - don't trade against larger trend
-            if timeframe_analysis and timeframe_analysis.alignment == "CONFLICTING":
+            if timeframe_analysis and timeframe_analysis.alignment_score == "CONFLICTING":
                 if not self.test_mode.enabled:
                     logger.info(
                         "Skipping trade - conflicting timeframes",
                         market_id=market.id,
-                        daily_trend=timeframe_analysis.daily_trend,
-                        four_hour_trend=timeframe_analysis.four_hour_trend,
+                        tf_1h_trend=timeframe_analysis.tf_1h.direction,
+                        tf_4h_trend=timeframe_analysis.tf_4h.direction,
                         reason="Don't trade against larger timeframe trend"
                     )
                     return
@@ -945,8 +959,8 @@ class AutoTrader:
                     logger.info(
                         "[TEST] Bypassing timeframe check - data sent to AI",
                         market_id=market.id,
-                        daily_trend=timeframe_analysis.daily_trend,
-                        four_hour_trend=timeframe_analysis.four_hour_trend,
+                        tf_1h_trend=timeframe_analysis.tf_1h.direction,
+                        tf_4h_trend=timeframe_analysis.tf_4h.direction,
                         bypassed=True
                     )
 
