@@ -1204,7 +1204,8 @@ class AutoTrader:
                     actual_probability=arbitrage_opportunity.actual_probability if arbitrage_opportunity else None,
                     arbitrage_edge=arbitrage_opportunity.edge_percentage if arbitrage_opportunity else None,
                     arbitrage_urgency=arbitrage_opportunity.urgency if arbitrage_opportunity else None,
-                    is_test_mode=self.test_mode.enabled
+                    is_test_mode=self.test_mode.enabled,
+                    timeframe_analysis=timeframe_analysis
                 )
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))
@@ -1290,6 +1291,18 @@ class AutoTrader:
 
                 # Check for consecutive losses trigger (based on database)
                 await self._check_consecutive_losses()
+
+                # Send test mode report every 20 trades
+                if self.test_mode.enabled:
+                    # Check if we've hit report milestone (every 20 trades)
+                    if self.total_trades > 0 and self.total_trades % 20 == 0:
+                        try:
+                            metrics = self.performance_tracker.calculate_test_mode_metrics(last_n_trades=20)
+                            if metrics:
+                                trade_range = f"Trades {self.total_trades - 19}-{self.total_trades}"
+                                await self.telegram_bot.send_test_mode_report(metrics, trade_range)
+                        except Exception as e:
+                            logger.error("Failed to send test mode report", error=str(e))
 
             else:
                 logger.info(
