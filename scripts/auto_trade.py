@@ -106,9 +106,11 @@ async def price_history_cleaner(buffer, interval: int = 3600):
 class TestModeConfig:
     """Configuration for test mode trading."""
     enabled: bool = False
+    paper_trading: bool = True  # NEW: No real money in test mode
     min_bet_amount: Decimal = Decimal("5.0")
     max_bet_amount: Decimal = Decimal("10.0")
     min_confidence: float = 0.70
+    min_odds_threshold: float = 0.75  # NEW: Odds requirement
     min_arbitrage_edge: float = 0.02
     traded_markets: set[str] = field(default_factory=set)
 

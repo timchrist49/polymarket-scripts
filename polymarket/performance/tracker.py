@@ -460,6 +460,99 @@ class PerformanceTracker:
             timeframe_alignment_stats=alignment_stats
         )
 
+    def log_paper_trade(
+        self,
+        market: "Market",
+        decision: "TradingDecision",
+        btc_data: "BTCPriceData",
+        executed_price: float,
+        position_size: float,
+        price_to_beat: Decimal | None,
+        time_remaining_seconds: int | None,
+        signal_lag_detected: bool,
+        signal_lag_reason: str | None,
+        conflict_severity: str,
+        conflicts_list: list[str],
+        odds_yes: float,
+        odds_no: float,
+        odds_qualified: bool
+    ) -> int:
+        """
+        Log a paper trade (simulated trade that wasn't executed).
+
+        Args:
+            market: Market object
+            decision: AI trading decision
+            btc_data: Current BTC price data
+            executed_price: Simulated execution price
+            position_size: Position size that would have been traded
+            price_to_beat: Starting price for market
+            time_remaining_seconds: Time remaining in market
+            signal_lag_detected: Whether signal lag was detected
+            signal_lag_reason: Reason for signal lag (if detected)
+            conflict_severity: 'NONE', 'MINOR', 'MODERATE', 'SEVERE'
+            conflicts_list: List of conflict descriptions
+            odds_yes: YES token odds at time of decision
+            odds_no: NO token odds at time of decision
+            odds_qualified: Whether chosen side met > 75% threshold
+
+        Returns:
+            Paper trade ID
+        """
+        import json
+        from datetime import timezone
+
+        # Calculate simulated shares
+        simulated_shares = position_size / executed_price
+
+        # Insert paper trade
+        cursor = self.db.conn.cursor()
+        cursor.execute("""
+            INSERT INTO paper_trades (
+                timestamp, market_id, market_slug, question, action, confidence, reasoning,
+                executed_price, position_size, simulated_shares,
+                btc_price_current, btc_price_to_beat, time_remaining_seconds,
+                signal_lag_detected, signal_lag_reason,
+                conflict_severity, conflicts_list,
+                odds_yes, odds_no, odds_qualified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now(timezone.utc).isoformat(),
+            market.id,
+            market.slug,
+            market.question,
+            decision.action,
+            decision.confidence,
+            decision.reasoning,
+            executed_price,
+            float(position_size),
+            simulated_shares,
+            float(btc_data.price),
+            float(price_to_beat) if price_to_beat else None,
+            time_remaining_seconds,
+            signal_lag_detected,
+            signal_lag_reason,
+            conflict_severity,
+            json.dumps(conflicts_list),
+            odds_yes,
+            odds_no,
+            odds_qualified
+        ))
+
+        self.db.conn.commit()
+        paper_trade_id = cursor.lastrowid
+
+        logger.info(
+            "Paper trade logged",
+            paper_trade_id=paper_trade_id,
+            market_slug=market.slug,
+            action=decision.action,
+            confidence=f"{decision.confidence:.2f}",
+            position_size=f"${position_size:.2f}"
+        )
+
+        return paper_trade_id
+
     def close(self):
         """Close database connection."""
         if self._owns_db:
