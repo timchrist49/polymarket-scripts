@@ -1,6 +1,6 @@
 """Integration tests for arbitrage system in auto_trade.py."""
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -80,7 +80,7 @@ async def test_arbitrage_data_flow():
     # Mock the services
     trader.btc_service = Mock()
     trader.btc_service.get_price_at = AsyncMock(side_effect=[66000.0, 65900.0])
-    trader.btc_service.calculate_15min_volatility = Mock(return_value=0.005)
+    trader.btc_service.calculate_15min_volatility = AsyncMock(return_value=0.005)
 
     trader.ai_service = Mock()
     trader.ai_service.make_decision = AsyncMock(return_value=Mock(

@@ -17,7 +17,7 @@ import signal
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -44,6 +44,9 @@ from polymarket.trading.probability_calculator import ProbabilityCalculator
 from polymarket.trading.arbitrage_detector import ArbitrageDetector
 from polymarket.trading.smart_order_executor import SmartOrderExecutor
 from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer, TimeframeAnalysis
+from polymarket.trading.signal_lag_detector import detect_signal_lag
+from polymarket.trading.conflict_detector import SignalConflictDetector, ConflictSeverity
+from polymarket.trading.odds_poller import MarketOddsPoller
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
@@ -106,9 +109,11 @@ async def price_history_cleaner(buffer, interval: int = 3600):
 class TestModeConfig:
     """Configuration for test mode trading."""
     enabled: bool = False
+    paper_trading: bool = True  # NEW: No real money in test mode
     min_bet_amount: Decimal = Decimal("5.0")
     max_bet_amount: Decimal = Decimal("10.0")
     min_confidence: float = 0.70
+    min_odds_threshold: float = 0.75  # NEW: Odds requirement
     min_arbitrage_edge: float = 0.02
     traded_markets: set[str] = field(default_factory=set)
 
@@ -130,6 +135,9 @@ class AutoTrader:
         self.risk_manager = RiskManager(settings)
         self.market_tracker = MarketTracker(settings)
         self.performance_tracker = PerformanceTracker()
+
+        # Odds polling service
+        self.odds_poller = MarketOddsPoller(self.client)
         self.telegram_bot = TelegramBot(settings)  # Initialize Telegram bot
         self.cleanup_scheduler = CleanupScheduler(
             db=self.performance_tracker.db,
@@ -187,9 +195,11 @@ class AutoTrader:
         # Initialize test mode
         self.test_mode = TestModeConfig(
             enabled=os.getenv("TEST_MODE", "").lower() == "true",
+            paper_trading=True,  # CRITICAL: Enable paper trading in test mode
             min_bet_amount=Decimal("5.0"),
             max_bet_amount=Decimal("10.0"),
             min_confidence=0.70,
+            min_odds_threshold=0.75,
             min_arbitrage_edge=0.02,
             traded_markets=set()
         )
@@ -230,6 +240,11 @@ class AutoTrader:
         asyncio.create_task(self.cleanup_scheduler.start())
         logger.info("Cleanup scheduler started (runs weekly)")
         logger.info("Self-reflection system enabled (triggers: 10 trades, 3 consecutive losses)")
+
+        # Start odds polling background task
+        odds_task = asyncio.create_task(self.odds_poller.start_polling())
+        self.background_tasks.append(odds_task)
+        logger.info("Odds poller started (background task)")
 
         # Start settlement loop
         settlement_task = asyncio.create_task(self._run_settlement_loop())
@@ -523,10 +538,10 @@ class AutoTrader:
             return
 
         try:
-            # Step 1: Market Discovery - Find BTC 15-min markets
-            markets = await self._discover_markets()
+            # Step 1: Market Discovery - Find BTC 15-min markets (with end-phase filter)
+            markets = await self.get_tradeable_markets()
             if not markets:
-                logger.info("No BTC markets found, skipping cycle")
+                logger.info("No tradeable markets found, skipping cycle")
                 return
 
             logger.info("Found markets", count=len(markets))
@@ -741,6 +756,62 @@ class AutoTrader:
                 logger.error("Fallback market discovery also failed", error=str(e2))
                 return []
 
+    async def get_tradeable_markets(self) -> list[Market]:
+        """
+        Fetch and filter BTC 15-min markets.
+
+        Filters:
+        - Must have >= 5 minutes remaining (300 seconds)
+        - Must be active and tradeable
+
+        Returns:
+            List of tradeable Market objects
+        """
+        try:
+            # Fetch all active markets from Polymarket
+            all_markets = await self._discover_markets()
+
+            tradeable = []
+            filtered_count = 0
+
+            for market in all_markets:
+                # Skip if market has no end_date
+                if not market.end_date:
+                    logger.warning(
+                        "Market has no end_date, skipping",
+                        market_id=market.id
+                    )
+                    continue
+
+                # Calculate time remaining
+                now = datetime.now(timezone.utc)
+                time_remaining = (market.end_date - now).total_seconds()
+
+                # Filter: Require >= 5 minutes remaining
+                if time_remaining < 300:
+                    filtered_count += 1
+                    logger.debug(
+                        "Filtered end-phase market",
+                        market_id=market.id,
+                        time_remaining_sec=int(time_remaining)
+                    )
+                    continue
+
+                tradeable.append(market)
+
+            logger.info(
+                "Markets filtered",
+                total=len(all_markets),
+                tradeable=len(tradeable),
+                filtered_end_phase=filtered_count
+            )
+
+            return tradeable
+
+        except Exception as e:
+            logger.error("Failed to fetch markets", error=str(e))
+            return []
+
     async def _mark_trade_skipped(
         self,
         trade_id: int,
@@ -792,6 +863,20 @@ class AutoTrader:
                         traded_count=len(self.test_mode.traded_markets)
                     )
                     return
+
+            # NEW: Early odds filtering (background poll check)
+            cached_odds = await self.odds_poller.get_odds(market.id)
+            if cached_odds:
+                if not (cached_odds.yes_qualifies or cached_odds.no_qualifies):
+                    logger.info(
+                        "Skipping market - neither side > 75% odds",
+                        market_id=market.id,
+                        yes_odds=f"{cached_odds.yes_odds:.2%}",
+                        no_odds=f"{cached_odds.no_odds:.2%}"
+                    )
+                    return  # Skip this market
+            else:
+                logger.debug("No cached odds available (polling may not have run yet)")
 
             # Get token IDs
             token_ids = market.get_token_ids()
@@ -859,6 +944,34 @@ class AutoTrader:
                     difference=f"${diff:+,.2f}",
                     percentage=f"{diff_pct:+.2f}%"
                 )
+
+                # NEW: Signal lag detection
+                signal_lag_detected = False
+                signal_lag_reason = None
+
+                btc_direction = "UP" if btc_data.price > price_to_beat else "DOWN"
+                sentiment_direction = "BULLISH" if aggregated_sentiment.final_score > 0 else "BEARISH"
+
+                signal_lag_detected, signal_lag_reason = detect_signal_lag(
+                    btc_direction,
+                    sentiment_direction,
+                    aggregated_sentiment.final_confidence
+                )
+
+                if signal_lag_detected:
+                    if not self.test_mode.enabled:
+                        logger.warning(
+                            "Skipping trade due to signal lag",
+                            market_id=market.id,
+                            reason=signal_lag_reason
+                        )
+                        return  # HOLD - don't trade contradictions
+                    else:
+                        logger.info(
+                            "[TEST] Signal lag detected - data sent to AI anyway",
+                            market_id=market.id,
+                            reason=signal_lag_reason
+                        )
 
                 # Check minimum movement threshold to avoid entering too early
                 MIN_MOVEMENT_THRESHOLD = 100  # $100 minimum BTC movement
@@ -1080,7 +1193,7 @@ class AutoTrader:
             price_5min_ago = float(price_5min_result) if price_5min_result else float(btc_data.price)
             price_10min_result = await self.btc_service.get_price_at_timestamp(current_time - 600)
             price_10min_ago = float(price_10min_result) if price_10min_result else float(btc_data.price)
-            volatility_15min = self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
+            volatility_15min = await self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
 
             actual_probability = probability_calculator.calculate_directional_probability(
                 current_price=float(btc_data.price),
@@ -1098,8 +1211,7 @@ class AutoTrader:
                 actual_probability=actual_probability,
                 market_yes_odds=market_dict['yes_price'],
                 market_no_odds=market_dict['no_price'],
-                market_id=market.id,
-                ai_base_confidence=aggregated_sentiment.final_confidence
+                market_id=market.id
             )
 
             if arbitrage_opportunity:
@@ -1127,6 +1239,43 @@ class AutoTrader:
                 market_signals=market_signals,  # NEW: CoinGecko Pro market signals
                 force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
+
+            # NEW: Conflict detection and confidence adjustment
+            conflict_detector = SignalConflictDetector()
+            conflict_analysis = conflict_detector.analyze_conflicts(
+                btc_direction="UP" if (price_to_beat and btc_data.price > price_to_beat) else "DOWN",
+                technical_trend=indicators.trend,
+                sentiment_direction="BULLISH" if aggregated_sentiment.final_score > 0 else "BEARISH",
+                regime_trend=regime.trend_direction if regime else None,
+                timeframe_alignment=timeframe_analysis.alignment_score if timeframe_analysis else None,
+                market_signals_direction=market_signals.direction if market_signals else None,
+                market_signals_confidence=market_signals.confidence if market_signals else None
+            )
+
+            # Apply conflict analysis
+            if conflict_analysis.should_hold:
+                logger.warning(
+                    "AUTO-HOLD due to SEVERE signal conflicts",
+                    market_id=market.id,
+                    severity=conflict_analysis.severity.value,
+                    conflicts=conflict_analysis.conflicts_detected
+                )
+                return  # Don't trade
+
+            # Apply confidence penalty
+            if conflict_analysis.confidence_penalty != 0.0:
+                original_confidence = decision.confidence
+                decision.confidence += conflict_analysis.confidence_penalty
+                decision.confidence = max(0.0, min(1.0, decision.confidence))  # Clamp to 0-1
+
+                logger.info(
+                    "Applied conflict penalty",
+                    market_id=market.id,
+                    original=f"{original_confidence:.2f}",
+                    penalty=f"{conflict_analysis.confidence_penalty:+.2f}",
+                    final=f"{decision.confidence:.2f}",
+                    conflicts=conflict_analysis.conflicts_detected
+                )
 
             # Test mode: Force YES/NO and check confidence threshold
             if self.test_mode.enabled:
@@ -1264,6 +1413,53 @@ class AutoTrader:
                 )
                 return
 
+            # NEW: JIT odds validation (fetch fresh odds before execution)
+            fresh_market = self.client.get_market_by_slug(market.slug)
+            if fresh_market:
+                yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
+                no_odds_fresh = 1.0 - yes_odds_fresh
+
+                # Check if AI's chosen side still qualifies
+                if decision.action == "YES" and yes_odds_fresh <= 0.75:
+                    logger.info(
+                        "Skipping trade - YES odds below threshold at execution time",
+                        market_id=market.id,
+                        odds=f"{yes_odds_fresh:.2%}",
+                        threshold="75%"
+                    )
+                    return
+                elif decision.action == "NO" and no_odds_fresh <= 0.75:
+                    logger.info(
+                        "Skipping trade - NO odds below threshold at execution time",
+                        market_id=market.id,
+                        odds=f"{no_odds_fresh:.2%}",
+                        threshold="75%"
+                    )
+                    return
+
+                # Store odds for paper trade logging
+                odds_yes = yes_odds_fresh
+                odds_no = no_odds_fresh
+                odds_qualified = (
+                    (decision.action == "YES" and yes_odds_fresh > 0.75) or
+                    (decision.action == "NO" and no_odds_fresh > 0.75)
+                )
+            else:
+                # If we can't fetch fresh odds, use cached
+                if cached_odds:
+                    odds_yes = cached_odds.yes_odds
+                    odds_no = cached_odds.no_odds
+                    odds_qualified = (
+                        (decision.action == "YES" and cached_odds.yes_qualifies) or
+                        (decision.action == "NO" and cached_odds.no_qualifies)
+                    )
+                else:
+                    # No odds available, log warning but continue
+                    logger.warning("No odds available for validation", market_id=market.id)
+                    odds_yes = 0.50
+                    odds_no = 0.50
+                    odds_qualified = False
+
             # Step 3: Execute Trade
             if self.settings.mode == "trading":
                 # Determine market price based on which token we're buying
@@ -1280,7 +1476,13 @@ class AutoTrader:
                     trade_id, cycle_start_time,
                     btc_current=float(btc_data.price),
                     btc_price_to_beat=float(price_to_beat) if price_to_beat else None,
-                    arbitrage_opportunity=arbitrage_opportunity
+                    arbitrage_opportunity=arbitrage_opportunity,
+                    conflict_analysis=conflict_analysis,
+                    signal_lag_detected=signal_lag_detected,
+                    signal_lag_reason=signal_lag_reason,
+                    odds_yes=odds_yes,
+                    odds_no=odds_no,
+                    odds_qualified=odds_qualified
                 )
 
                 # Track trades for reflection triggers
@@ -1445,10 +1647,35 @@ class AutoTrader:
         cycle_start_time: datetime,
         btc_current: Optional[float] = None,
         btc_price_to_beat: Optional[float] = None,
-        arbitrage_opportunity = None
+        arbitrage_opportunity = None,
+        conflict_analysis = None,  # NEW parameter
+        signal_lag_detected: bool = False,  # NEW parameter
+        signal_lag_reason: str | None = None,  # NEW parameter
+        odds_yes: float = 0.50,  # NEW parameter
+        odds_no: float = 0.50,  # NEW parameter
+        odds_qualified: bool = False  # NEW parameter
     ) -> None:
         """Execute a trade order with JIT price fetching and safety checks."""
         try:
+            # NEW: Paper trading fork
+            if self.test_mode.enabled and self.test_mode.paper_trading:
+                await self._execute_paper_trade(
+                    market=market,
+                    decision=decision,
+                    amount=amount,
+                    token_name=token_name,
+                    market_price=market_price,
+                    btc_current=btc_current,
+                    btc_price_to_beat=btc_price_to_beat,
+                    conflict_analysis=conflict_analysis,
+                    signal_lag_detected=signal_lag_detected,
+                    signal_lag_reason=signal_lag_reason,
+                    odds_yes=odds_yes,
+                    odds_no=odds_no,
+                    odds_qualified=odds_qualified
+                )
+                return  # Exit before real order placement
+
             from polymarket.models import OrderRequest
 
             # Store analysis price (from cycle start)
@@ -1565,18 +1792,22 @@ class AutoTrader:
                 price_change_pct=f"{((execution_price - analysis_price) / analysis_price * 100):+.2f}%"
             )
 
-            # Test mode: Validate minimum arbitrage edge
-            if self.test_mode.enabled and arbitrage_opportunity:
-                arb_edge = arbitrage_opportunity.edge_percentage
-                if arb_edge < self.test_mode.min_arbitrage_edge:
-                    logger.info(
-                        "[TEST] Skipping trade - arbitrage edge below minimum",
-                        market_id=market.id,
-                        edge=f"{arb_edge:.2%}",
-                        minimum=f"{self.test_mode.min_arbitrage_edge:.2%}",
-                        reason="Edge too small - likely noise trade"
-                    )
-                    return
+            # REMOVED: Arbitrage requirement gate
+            # We still calculate arbitrage for AI context, but NO LONGER BLOCK trades based on edge size.
+            # Rationale: Bot had 10.6% win rate when requiring arbitrage edge. Signal conflict detection
+            # and odds validation are more effective filters.
+            #
+            # if self.test_mode.enabled and arbitrage_opportunity:
+            #     arb_edge = arbitrage_opportunity.edge_percentage
+            #     if arb_edge < self.test_mode.min_arbitrage_edge:
+            #         logger.info(
+            #             "[TEST] Skipping trade - arbitrage edge below minimum",
+            #             market_id=market.id,
+            #             edge=f"{arb_edge:.2%}",
+            #             minimum=f"{self.test_mode.min_arbitrage_edge:.2%}",
+            #             reason="Edge too small - likely noise trade"
+            #         )
+            #         return
 
             # NEW: Execute using smart limit orders (saves 3-6% in fees)
             smart_executor = SmartOrderExecutor()
@@ -1741,6 +1972,111 @@ class AutoTrader:
                 "Trade execution failed",
                 market_id=market.id,
                 error=str(e)
+            )
+
+    async def _execute_paper_trade(
+        self,
+        market,
+        decision,
+        amount: Decimal,
+        token_name: str,
+        market_price: float,
+        btc_current: Optional[float],
+        btc_price_to_beat: Optional[float],
+        conflict_analysis,
+        signal_lag_detected: bool,
+        signal_lag_reason: str | None,
+        odds_yes: float,
+        odds_no: float,
+        odds_qualified: bool
+    ) -> None:
+        """
+        Execute a paper trade (simulated trade, no real money).
+
+        Logs trade to paper_trades table and sends detailed Telegram alert.
+        """
+        try:
+            from polymarket.models import BTCPriceData
+            import json
+
+            # Create BTCPriceData object for logging
+            btc_data = BTCPriceData(
+                price=Decimal(str(btc_current)) if btc_current else Decimal("0"),
+                timestamp=datetime.now(timezone.utc),
+                source="current",
+                volume_24h=Decimal("0")
+            )
+
+            # Calculate time remaining
+            time_remaining_seconds = 900  # Default 15 min
+            if market.end_date:
+                time_remaining_seconds = int((market.end_date - datetime.now(timezone.utc)).total_seconds())
+
+            # Log paper trade
+            paper_trade_id = self.performance_tracker.log_paper_trade(
+                market=market,
+                decision=decision,
+                btc_data=btc_data,
+                executed_price=market_price,
+                position_size=float(amount),
+                price_to_beat=Decimal(str(btc_price_to_beat)) if btc_price_to_beat else None,
+                time_remaining_seconds=time_remaining_seconds,
+                signal_lag_detected=signal_lag_detected,
+                signal_lag_reason=signal_lag_reason,
+                conflict_severity=conflict_analysis.severity.value if conflict_analysis else "NONE",
+                conflicts_list=conflict_analysis.conflicts_detected if conflict_analysis else [],
+                odds_yes=odds_yes,
+                odds_no=odds_no,
+                odds_qualified=odds_qualified
+            )
+
+            # Format summaries for Telegram alert
+            # Get technical indicators (need to recalculate or pass in)
+            # For now, create simple summaries from available data
+            technical_summary = "✅ Technical: (detailed summary TBD)"
+            sentiment_summary = "✅ Sentiment: (detailed summary TBD)"
+            timeframe_summary = "⚠️ Timeframes: (detailed summary TBD)"
+
+            # Send Telegram alert
+            await self.telegram_bot.send_paper_trade_alert(
+                market_slug=market.slug or f"Market {market.id}",
+                action=decision.action,
+                confidence=decision.confidence,
+                position_size=float(amount),
+                executed_price=market_price,
+                time_remaining_seconds=time_remaining_seconds,
+                technical_summary=technical_summary,
+                sentiment_summary=sentiment_summary,
+                odds_yes=odds_yes,
+                odds_no=odds_no,
+                odds_qualified=odds_qualified,
+                timeframe_summary=timeframe_summary,
+                signal_lag_detected=signal_lag_detected,
+                signal_lag_reason=signal_lag_reason,
+                conflict_severity=conflict_analysis.severity.value if conflict_analysis else "NONE",
+                conflicts_list=conflict_analysis.conflicts_detected if conflict_analysis else [],
+                ai_reasoning=decision.reasoning
+            )
+
+            logger.info(
+                "Paper trade executed",
+                paper_trade_id=paper_trade_id,
+                market_slug=market.slug,
+                action=decision.action,
+                amount=f"${amount:.2f}",
+                confidence=f"{decision.confidence:.2f}"
+            )
+
+            # Mark market as traded in test mode
+            if self.test_mode.enabled:
+                self.test_mode.traded_markets.add(market.id)
+
+        except Exception as e:
+            logger.error(
+                "Paper trade execution failed",
+                market_id=market.id,
+                error=str(e),
+                exc_info=True
             )
 
     async def _check_stop_loss(self) -> None:

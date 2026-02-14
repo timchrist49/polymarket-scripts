@@ -204,18 +204,6 @@ class VolumeData:
 
 
 @dataclass
-class TimeframeAnalysis:
-    """Multi-timeframe trend analysis."""
-    daily_trend: str       # "BULLISH", "BEARISH", "NEUTRAL"
-    four_hour_trend: str   # "BULLISH", "BEARISH", "NEUTRAL"
-    alignment: str         # "ALIGNED", "CONFLICTING", "NEUTRAL"
-    daily_support: float   # Key support level from daily
-    daily_resistance: float # Key resistance from daily
-    confidence: float      # 0.0-1.0 based on alignment
-    timestamp: datetime
-
-
-@dataclass
 class OrderbookData:
     """Polymarket orderbook depth analysis."""
     bid_ask_spread: float         # Spread in % (tight = liquid)
@@ -479,3 +467,28 @@ class LimitOrderStrategy:
             raise ValueError(f"Invalid target_price: {self.target_price}")
         if self.timeout_seconds < 0:
             raise ValueError(f"timeout_seconds must be >= 0, got {self.timeout_seconds}")
+
+
+# === Odds Polling Models ===
+
+@dataclass
+class OddsSnapshot:
+    """
+    Snapshot of market odds at a point in time.
+
+    Attributes:
+        market_id: Polymarket market ID
+        market_slug: Market slug (e.g., "btc-updown-15m-1771234500")
+        yes_odds: YES/UP token odds (0.0-1.0, from best_bid)
+        no_odds: NO/DOWN token odds (0.0-1.0, complement of yes_odds)
+        timestamp: When odds were captured
+        yes_qualifies: Whether YES odds > 0.75
+        no_qualifies: Whether NO odds > 0.75
+    """
+    market_id: str
+    market_slug: str
+    yes_odds: float
+    no_odds: float
+    timestamp: datetime
+    yes_qualifies: bool
+    no_qualifies: bool

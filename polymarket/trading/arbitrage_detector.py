@@ -29,67 +29,110 @@ class ArbitrageDetector:
         """Initialize arbitrage detector."""
         pass
 
+    def _get_minimum_edge(self, probability: float) -> float:
+        """
+        Calculate minimum edge threshold based on prediction confidence.
+
+        High confidence predictions can accept smaller edges.
+        Low confidence predictions require larger edges for safety.
+
+        Args:
+            probability: Actual probability from ProbabilityCalculator (0.0 to 1.0)
+
+        Returns:
+            Minimum edge threshold (0.05 to 0.12)
+
+        Examples:
+            >>> detector._get_minimum_edge(0.70)  # High confidence
+            0.05
+            >>> detector._get_minimum_edge(0.65)  # Medium confidence
+            0.08
+            >>> detector._get_minimum_edge(0.55)  # Low confidence
+            0.12
+        """
+        # Calculate confidence as distance from 50% (0.0 to 1.0)
+        confidence = abs(probability - 0.5) * 2
+
+        # Use slightly lower thresholds to handle floating point precision
+        if confidence >= 0.39:  # Probability >= 70% or <= 30%
+            return 0.05  # 5% edge sufficient for high confidence
+        elif confidence >= 0.19:  # Probability 60-70% or 30-40%
+            return 0.08  # 8% edge required for medium confidence
+        else:  # Probability 50-60% or 40-50%
+            return 0.12  # 12% edge required for low confidence (conservative)
+
     def detect_arbitrage(
         self,
         actual_probability: float,
         market_yes_odds: float,
         market_no_odds: float,
         market_id: str,
-        ai_base_confidence: float = 0.75
+        time_remaining_seconds: int = 3600
     ) -> ArbitrageOpportunity:
         """
-        Detect arbitrage opportunities by comparing actual vs market odds.
+        Detect opportunities by following probability direction.
+
+        CRITICAL LOGIC:
+        - If probability >= 50%: We predict YES, only check YES edge
+        - If probability < 50%: We predict NO, only check NO edge
+        - Never bet against our own probability prediction
 
         Args:
             actual_probability: Calculated probability from ProbabilityCalculator
             market_yes_odds: Current YES odds on Polymarket
             market_no_odds: Current NO odds on Polymarket
             market_id: Polymarket market ID
-            ai_base_confidence: Base confidence for AI decision (default 0.75)
+            time_remaining_seconds: Seconds until market settlement
 
         Returns:
-            ArbitrageOpportunity with action, confidence boost, urgency
-
-        Example:
-            >>> detector = ArbitrageDetector()
-            >>> opp = detector.detect_arbitrage(
-            ...     actual_probability=0.68,
-            ...     market_yes_odds=0.55,
-            ...     market_no_odds=0.45,
-            ...     market_id="btc-market-1"
-            ... )
-            >>> print(f"Action: {opp.recommended_action}")
-            Action: BUY_YES
-            >>> print(f"Edge: {opp.edge_percentage:.2%}")
-            Edge: 13.00%
-            >>> print(f"Urgency: {opp.urgency}")
-            Urgency: MEDIUM
+            ArbitrageOpportunity with action, confidence, urgency
         """
-
-        # Calculate edges for YES and NO
+        # Calculate edges for both sides
         yes_edge = actual_probability - market_yes_odds
         no_edge = (1.0 - actual_probability) - market_no_odds
 
-        # Determine which edge is larger (absolute value) and positive
-        # We only trade if the edge is positive (mispricing in our favor)
-        if yes_edge >= self.MIN_EDGE and yes_edge >= no_edge:
-            action = "BUY_YES"
-            edge = yes_edge
-            # Expected profit = ROI on Polymarket (deterministic)
-            # Buy YES at market_yes_odds, win pays $1.00
-            expected_profit = ((1.0 - market_yes_odds) / market_yes_odds) if market_yes_odds > 0 else 0.0
-        elif no_edge >= self.MIN_EDGE and no_edge > yes_edge:
-            action = "BUY_NO"
-            edge = no_edge
-            # Expected profit = ROI on Polymarket (deterministic)
-            # Buy NO at market_no_odds, win pays $1.00
-            expected_profit = ((1.0 - market_no_odds) / market_no_odds) if market_no_odds > 0 else 0.0
-        else:
-            action = "HOLD"
-            edge = max(yes_edge, no_edge)  # Store the larger edge for reporting
-            expected_profit = 0.0
+        # Get confidence-adjusted minimum edge threshold
+        min_edge = self._get_minimum_edge(actual_probability)
 
-        # Calculate confidence boost (edge * 2, capped at 0.20)
+        # CRITICAL: Only trade in probability direction
+        if actual_probability >= 0.50:
+            # We predict YES - only consider YES edge
+            if yes_edge >= min_edge:
+                action = "BUY_YES"
+                edge = yes_edge
+                expected_profit = ((1.0 - market_yes_odds) / market_yes_odds) if market_yes_odds > 0 else 0.0
+            else:
+                action = "HOLD"
+                edge = yes_edge
+                expected_profit = 0.0
+
+            logger.info(
+                "Probability direction: YES",
+                actual_prob=f"{actual_probability:.2%}",
+                yes_edge=f"{yes_edge:+.2%}",
+                min_edge_required=f"{min_edge:.2%}",
+                action=action
+            )
+        else:
+            # We predict NO - only consider NO edge
+            if no_edge >= min_edge:
+                action = "BUY_NO"
+                edge = no_edge
+                expected_profit = ((1.0 - market_no_odds) / market_no_odds) if market_no_odds > 0 else 0.0
+            else:
+                action = "HOLD"
+                edge = no_edge
+                expected_profit = 0.0
+
+            logger.info(
+                "Probability direction: NO",
+                actual_prob=f"{actual_probability:.2%}",
+                no_edge=f"{no_edge:+.2%}",
+                min_edge_required=f"{min_edge:.2%}",
+                action=action
+            )
+
+        # Calculate confidence boost (only if trading)
         if action != "HOLD":
             confidence_boost = min(edge * 2, self.MAX_CONFIDENCE_BOOST)
         else:

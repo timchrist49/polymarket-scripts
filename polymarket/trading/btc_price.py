@@ -1078,29 +1078,45 @@ class BTCPriceService:
             logger.error(f"Failed to get price at {hours}h offset", error=str(e))
             return None
 
-    def calculate_15min_volatility(self) -> float:
+    async def calculate_15min_volatility(self) -> float:
         """
-        Calculate 15-minute volatility as standard deviation of returns.
+        Calculate 15-minute rolling volatility from price buffer.
+
+        Uses standard deviation of returns over the last 15 minutes
+        to measure market uncertainty for probability calculations.
 
         Returns:
-            Volatility as decimal (e.g., 0.005 = 0.5%), defaults to 0.005 on error
+            Volatility as decimal (e.g., 0.008 = 0.8%)
+            Falls back to 0.005 if data unavailable
         """
         try:
-            # Get prices from last 15 minutes (900 seconds)
             if not self._stream or not self._stream.price_buffer:
-                logger.debug("Buffer not available, returning default volatility")
+                logger.warning(
+                    "Price buffer unavailable for volatility calculation",
+                    has_stream=bool(self._stream),
+                    has_buffer=bool(self._stream.price_buffer if self._stream else False)
+                )
                 return 0.005
 
-            # Note: get_price_range is async but this function is not
-            # For now, return default volatility - proper fix would make this async
-            logger.debug("Volatility calculation temporarily disabled (async conflict)")
-            return 0.005
+            # Get prices from last 15 minutes (900 seconds)
+            import time
+            current_time = int(time.time())
+            start_time = current_time - 900
+
+            prices = await self._stream.price_buffer.get_price_range(
+                start=start_time,
+                end=current_time
+            )
 
             if len(prices) < 2:
-                logger.debug("Insufficient price data for volatility", count=len(prices))
+                logger.warning(
+                    "Insufficient price data for volatility",
+                    count=len(prices),
+                    required=2
+                )
                 return 0.005
 
-            # Calculate returns (percentage change between consecutive prices)
+            # Calculate returns (percentage changes between consecutive prices)
             returns = []
             for i in range(1, len(prices)):
                 prev_price = float(prices[i-1].price)
@@ -1111,23 +1127,41 @@ class BTCPriceService:
                     returns.append(ret)
 
             if len(returns) < 2:
-                logger.debug("Insufficient returns for volatility", count=len(returns))
+                logger.warning(
+                    "Insufficient returns for volatility",
+                    count=len(returns),
+                    required=2
+                )
                 return 0.005
 
-            # Calculate standard deviation
+            # Calculate standard deviation (volatility)
             volatility = statistics.stdev(returns)
 
-            logger.debug(
+            # Sanity check (reasonable range for BTC)
+            if volatility < 0.0001 or volatility > 0.05:
+                logger.warning(
+                    "Volatility outside expected range",
+                    volatility=f"{volatility:.4f}",
+                    expected_range="0.0001 to 0.05"
+                )
+                return 0.005
+
+            logger.info(
                 "Calculated 15min volatility",
                 volatility=f"{volatility:.4f}",
-                price_count=len(prices),
-                return_count=len(returns)
+                volatility_pct=f"{volatility*100:.2f}%",
+                data_points=len(returns),
+                price_points=len(prices)
             )
 
             return volatility
 
         except Exception as e:
-            logger.error("Failed to calculate volatility", error=str(e))
+            logger.error(
+                "Volatility calculation failed",
+                error=str(e),
+                error_type=type(e).__name__
+            )
             return 0.005
 
     async def close(self):

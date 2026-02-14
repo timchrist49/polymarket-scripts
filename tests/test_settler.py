@@ -112,8 +112,10 @@ class TestProfitLossCalculation:
         # Bet YES at 0.39 for $11.92
         # Shares: 11.92 / 0.39 = 30.56
         # Payout: 30.56 * $1 = $30.56
-        # Profit: $30.56 - $11.92 = $18.64
-        profit_loss, is_win = settler._calculate_profit_loss(
+        # Gross profit: $30.56 - $11.92 = $18.64
+        # Fee (2%): $18.64 * 0.02 = $0.37
+        # Net profit: $18.64 - $0.37 = $18.27
+        profit_loss, is_win, fee_paid = settler._calculate_profit_loss(
             action="YES",
             actual_outcome="YES",
             position_size=11.92,
@@ -121,15 +123,16 @@ class TestProfitLossCalculation:
         )
 
         assert is_win is True
-        assert abs(profit_loss - 18.64) < 0.01  # Allow tiny float diff
+        assert abs(profit_loss - 18.27) < 0.01  # Net profit after 2% fee
+        assert abs(fee_paid - 0.37) < 0.01  # 2% of gross profit
 
     def test_yes_loses_loss_calculation(self):
         """Calculate loss when YES bet loses."""
         db = PerformanceDatabase(":memory:")
         settler = TradeSettler(db, btc_fetcher=None)
 
-        # Bet YES but NO wins - lose entire position
-        profit_loss, is_win = settler._calculate_profit_loss(
+        # Bet YES but NO wins - lose entire position, no fee on losses
+        profit_loss, is_win, fee_paid = settler._calculate_profit_loss(
             action="YES",
             actual_outcome="NO",
             position_size=11.92,
@@ -138,6 +141,7 @@ class TestProfitLossCalculation:
 
         assert is_win is False
         assert profit_loss == -11.92
+        assert fee_paid == 0.0  # No fee on losses
 
     def test_no_wins_profit_calculation(self):
         """Calculate profit when NO bet wins."""
@@ -147,8 +151,10 @@ class TestProfitLossCalculation:
         # Bet NO at 0.11 for $5.00
         # Shares: 5.00 / 0.11 = 45.45
         # Payout: 45.45 * $1 = $45.45
-        # Profit: $45.45 - $5.00 = $40.45
-        profit_loss, is_win = settler._calculate_profit_loss(
+        # Gross profit: $45.45 - $5.00 = $40.45
+        # Fee (2%): $40.45 * 0.02 = $0.81
+        # Net profit: $40.45 - $0.81 = $39.64
+        profit_loss, is_win, fee_paid = settler._calculate_profit_loss(
             action="NO",
             actual_outcome="NO",
             position_size=5.0,
@@ -156,15 +162,16 @@ class TestProfitLossCalculation:
         )
 
         assert is_win is True
-        assert abs(profit_loss - 40.45) < 0.01
+        assert abs(profit_loss - 39.64) < 0.01  # Net profit after 2% fee
+        assert abs(fee_paid - 0.81) < 0.01  # 2% of gross profit
 
     def test_no_loses_loss_calculation(self):
         """Calculate loss when NO bet loses."""
         db = PerformanceDatabase(":memory:")
         settler = TradeSettler(db, btc_fetcher=None)
 
-        # Bet NO but YES wins - lose entire position
-        profit_loss, is_win = settler._calculate_profit_loss(
+        # Bet NO but YES wins - lose entire position, no fee on losses
+        profit_loss, is_win, fee_paid = settler._calculate_profit_loss(
             action="NO",
             actual_outcome="YES",
             position_size=5.0,
@@ -173,6 +180,7 @@ class TestProfitLossCalculation:
 
         assert is_win is False
         assert profit_loss == -5.0
+        assert fee_paid == 0.0  # No fee on losses
 
     def test_high_confidence_yes_wins(self):
         """Test profit when buying expensive YES shares."""
@@ -182,8 +190,10 @@ class TestProfitLossCalculation:
         # Bet YES at 0.89 for $10.00
         # Shares: 10.00 / 0.89 = 11.24
         # Payout: 11.24 * $1 = $11.24
-        # Profit: $11.24 - $10.00 = $1.24
-        profit_loss, is_win = settler._calculate_profit_loss(
+        # Gross profit: $11.24 - $10.00 = $1.24
+        # Fee (2%): $1.24 * 0.02 = $0.02
+        # Net profit: $1.24 - $0.02 = $1.22
+        profit_loss, is_win, fee_paid = settler._calculate_profit_loss(
             action="YES",
             actual_outcome="YES",
             position_size=10.0,
@@ -191,7 +201,8 @@ class TestProfitLossCalculation:
         )
 
         assert is_win is True
-        assert abs(profit_loss - 1.24) < 0.01
+        assert abs(profit_loss - 1.22) < 0.01  # Net profit after 2% fee
+        assert abs(fee_paid - 0.02) < 0.01  # 2% of gross profit
 
 
 class TestDatabaseQuery:
@@ -209,8 +220,8 @@ class TestDatabaseQuery:
         cursor.execute("""
             INSERT INTO trades (
                 timestamp, market_slug, action, confidence, position_size,
-                btc_price, price_to_beat, executed_price, is_win
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                btc_price, price_to_beat, executed_price, is_win, execution_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now() - timedelta(minutes=20),
             "btc-updown-15m-1770828300",
@@ -220,15 +231,16 @@ class TestDatabaseQuery:
             70000.0,
             70000.0,
             0.65,
-            None  # Not settled
+            None,  # Not settled
+            'executed'  # Execution status
         ))
 
         # Trade 2: Recent trade, too new to settle
         cursor.execute("""
             INSERT INTO trades (
                 timestamp, market_slug, action, confidence, position_size,
-                btc_price, price_to_beat, executed_price, is_win
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                btc_price, price_to_beat, executed_price, is_win, execution_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now() - timedelta(minutes=5),
             "btc-updown-15m-1770829000",
@@ -238,7 +250,8 @@ class TestDatabaseQuery:
             71000.0,
             71000.0,
             0.35,
-            None
+            None,
+            'executed'  # Execution status
         ))
 
         # Trade 3: HOLD action, should be skipped
@@ -263,8 +276,9 @@ class TestDatabaseQuery:
         cursor.execute("""
             INSERT INTO trades (
                 timestamp, market_slug, action, confidence, position_size,
-                btc_price, price_to_beat, executed_price, is_win, profit_loss, actual_outcome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                btc_price, price_to_beat, executed_price, is_win, profit_loss, actual_outcome,
+                execution_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now() - timedelta(minutes=30),
             "btc-updown-15m-1770828000",
@@ -276,7 +290,8 @@ class TestDatabaseQuery:
             0.60,
             True,
             8.0,
-            "YES"
+            "YES",
+            'executed'  # Execution status
         ))
 
         db.conn.commit()
@@ -301,8 +316,8 @@ class TestDatabaseQuery:
             cursor.execute("""
                 INSERT INTO trades (
                     timestamp, market_slug, action, confidence, position_size,
-                    btc_price, price_to_beat, executed_price, is_win
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    btc_price, price_to_beat, executed_price, is_win, execution_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now() - timedelta(minutes=20 + i),
                 f"btc-updown-15m-177082{i}000",
@@ -312,7 +327,8 @@ class TestDatabaseQuery:
                 70000.0,
                 70000.0,
                 0.65,
-                None
+                None,
+                'executed'  # Execution status
             ))
 
         db.conn.commit()
@@ -343,8 +359,8 @@ class TestSettlementOrchestration:
         cursor.execute("""
             INSERT INTO trades (
                 timestamp, market_slug, action, confidence, position_size,
-                btc_price, price_to_beat, executed_price, is_win
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                btc_price, price_to_beat, executed_price, is_win, execution_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now() - timedelta(minutes=20),
             "btc-updown-15m-1770828300",
@@ -354,7 +370,8 @@ class TestSettlementOrchestration:
             70000.0,
             70000.0,
             0.65,
-            None
+            None,
+            'executed'  # Execution status
         ))
         db.conn.commit()
 
@@ -395,8 +412,8 @@ class TestSettlementOrchestration:
         cursor.execute("""
             INSERT INTO trades (
                 timestamp, market_slug, action, confidence, position_size,
-                btc_price, price_to_beat, executed_price, is_win
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                btc_price, price_to_beat, executed_price, is_win, execution_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now() - timedelta(minutes=20),
             "btc-updown-15m-1770828300",
@@ -406,7 +423,8 @@ class TestSettlementOrchestration:
             70000.0,
             70000.0,
             0.65,
-            None
+            None,
+            'executed'  # Execution status
         ))
         db.conn.commit()
 

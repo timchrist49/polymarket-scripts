@@ -322,3 +322,98 @@ Next report after 20 more trades."""
 
         await self._send_message(message)
         logger.info("Test mode report sent", trade_range=trade_range)
+
+    async def send_paper_trade_alert(
+        self,
+        market_slug: str,
+        action: str,
+        confidence: float,
+        position_size: float,
+        executed_price: float,
+        time_remaining_seconds: int,
+        technical_summary: str,
+        sentiment_summary: str,
+        odds_yes: float,
+        odds_no: float,
+        odds_qualified: bool,
+        timeframe_summary: str,
+        signal_lag_detected: bool,
+        signal_lag_reason: str | None,
+        conflict_severity: str,
+        conflicts_list: list[str],
+        ai_reasoning: str
+    ):
+        """
+        Send detailed paper trade alert to Telegram.
+
+        Args:
+            market_slug: Market identifier
+            action: 'YES' or 'NO'
+            confidence: AI confidence (0.0-1.0)
+            position_size: Position size in USDC
+            executed_price: Simulated execution price
+            time_remaining_seconds: Time remaining in market
+            technical_summary: Technical indicators summary
+            sentiment_summary: Sentiment analysis summary
+            odds_yes: YES token odds
+            odds_no: NO token odds
+            odds_qualified: Whether chosen side met > 75% threshold
+            timeframe_summary: Timeframe alignment summary
+            signal_lag_detected: Whether signal lag was detected
+            signal_lag_reason: Reason for signal lag
+            conflict_severity: 'NONE', 'MINOR', 'MODERATE', 'SEVERE'
+            conflicts_list: List of conflict descriptions
+            ai_reasoning: AI's reasoning text
+        """
+        # Format direction
+        direction_emoji = "📈" if action == "YES" else "📉"
+        token_name = "YES (UP)" if action == "YES" else "NO (DOWN)"
+
+        # Format time remaining
+        minutes = time_remaining_seconds // 60
+        seconds = time_remaining_seconds % 60
+        time_str = f"{minutes}m {seconds}s"
+
+        # Format odds check
+        chosen_odds = odds_yes if action == "YES" else odds_no
+        odds_status = "✅" if odds_qualified else "❌"
+        odds_check = f"{odds_status} Odds Check: {action} = {chosen_odds:.0%} ({'PASS' if odds_qualified else 'FAIL'} > 75%)"
+
+        # Format signal lag
+        lag_status = "⚠️" if signal_lag_detected else "✅"
+        lag_text = f"{lag_status} Signal Lag: {'DETECTED' if signal_lag_detected else 'NO LAG DETECTED'}"
+        if signal_lag_detected and signal_lag_reason:
+            lag_text += f"\n   {signal_lag_reason}"
+
+        # Format conflicts
+        if conflict_severity == "NONE":
+            conflicts_text = "✅ Conflicts: NONE"
+        else:
+            conflict_emoji = {"MINOR": "⚠️", "MODERATE": "⚠️⚠️", "SEVERE": "🚫"}[conflict_severity]
+            conflicts_text = f"{conflict_emoji} Conflicts: {conflict_severity} ({len(conflicts_list)} detected)"
+            for conflict in conflicts_list:
+                conflicts_text += f"\n   - {conflict}"
+
+        message = f"""🧪 PAPER TRADE SIGNAL
+━━━━━━━━━━━━━━━━━━━━
+📊 Market: {market_slug}
+{direction_emoji} Direction: {token_name}
+💵 Position: ${position_size:.2f} @ {executed_price:.2f} odds
+⏰ Time Remaining: {time_str}
+
+🎯 SIGNAL ANALYSIS:
+{technical_summary}
+{sentiment_summary}
+{odds_check}
+{timeframe_summary}
+{lag_text}
+
+🤖 AI REASONING:
+"{ai_reasoning}"
+
+📊 CONFIDENCE: {confidence:.2f}
+{conflicts_text}
+
+━━━━━━━━━━━━━━━━━━━━"""
+
+        await self._send_message(message)
