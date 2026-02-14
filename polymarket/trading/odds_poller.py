@@ -64,22 +64,19 @@ class MarketOddsPoller:
             # Discover current BTC 15-min market
             market = self.client.discover_btc_15min_market()
 
-            # Fetch fresh market data with odds
-            # Note: discover_btc_15min_market returns a Market object with best_bid/ask
-            # If we need fresher data, we could call get_market_by_slug
-            # For now, use the discovered market's odds
-            fresh_market = self.client.get_market_by_slug(market.slug)
+            # The discovered market already has fresh best_bid/ask odds
+            # No need for a separate API call
 
             # Extract odds
             # best_bid = market maker's bid = price to buy YES token
             # NO odds = complement (1 - YES odds)
-            yes_odds = fresh_market.best_bid if fresh_market.best_bid else 0.50
+            yes_odds = market.best_bid if market.best_bid else 0.50
             no_odds = 1.0 - yes_odds
 
             # Create snapshot
             snapshot = OddsSnapshot(
-                market_id=fresh_market.id,
-                market_slug=fresh_market.slug,
+                market_id=market.id,
+                market_slug=market.slug,
                 yes_odds=yes_odds,
                 no_odds=no_odds,
                 timestamp=datetime.now(),

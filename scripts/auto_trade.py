@@ -195,9 +195,11 @@ class AutoTrader:
         # Initialize test mode
         self.test_mode = TestModeConfig(
             enabled=os.getenv("TEST_MODE", "").lower() == "true",
+            paper_trading=True,  # CRITICAL: Enable paper trading in test mode
             min_bet_amount=Decimal("5.0"),
             max_bet_amount=Decimal("10.0"),
             min_confidence=0.70,
+            min_odds_threshold=0.75,
             min_arbitrage_edge=0.02,
             traded_markets=set()
         )
