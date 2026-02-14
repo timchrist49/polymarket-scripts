@@ -1137,14 +1137,25 @@ class AutoTrader:
                     )
                     return
 
-                # Override position size to test amount
+                # Calculate Kelly-suggested size first
+                kelly_size = decision.position_size
+
+                # Enforce minimum bet (Polymarket requires $5 minimum)
+                final_size = max(kelly_size, self.test_mode.min_bet_amount)
+
+                # Enforce maximum bet
+                final_size = min(final_size, self.test_mode.max_bet_amount)
+
                 logger.info(
-                    "[TEST] Overriding position size",
+                    "[TEST] Position sizing",
                     market_id=market.id,
-                    ai_suggested=f"${decision.position_size:.2f}",
-                    test_override=f"${self.test_mode.max_bet_amount:.2f}"
+                    kelly_suggested=f"${kelly_size:.2f}",
+                    final_amount=f"${final_size:.2f}",
+                    min_enforced=kelly_size < self.test_mode.min_bet_amount,
+                    max_enforced=kelly_size > self.test_mode.max_bet_amount
                 )
-                decision.position_size = self.test_mode.max_bet_amount
+
+                decision.position_size = final_size
 
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
             # CHECK FIRST before logging to avoid phantom trades
