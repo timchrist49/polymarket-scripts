@@ -29,6 +29,38 @@ class ArbitrageDetector:
         """Initialize arbitrage detector."""
         pass
 
+    def _get_minimum_edge(self, probability: float) -> float:
+        """
+        Calculate minimum edge threshold based on prediction confidence.
+
+        High confidence predictions can accept smaller edges.
+        Low confidence predictions require larger edges for safety.
+
+        Args:
+            probability: Actual probability from ProbabilityCalculator (0.0 to 1.0)
+
+        Returns:
+            Minimum edge threshold (0.05 to 0.12)
+
+        Examples:
+            >>> detector._get_minimum_edge(0.70)  # High confidence
+            0.05
+            >>> detector._get_minimum_edge(0.65)  # Medium confidence
+            0.08
+            >>> detector._get_minimum_edge(0.55)  # Low confidence
+            0.12
+        """
+        # Calculate confidence as distance from 50% (0.0 to 1.0)
+        confidence = abs(probability - 0.5) * 2
+
+        # Use slightly lower thresholds to handle floating point precision
+        if confidence >= 0.39:  # Probability >= 70% or <= 30%
+            return 0.05  # 5% edge sufficient for high confidence
+        elif confidence >= 0.19:  # Probability 60-70% or 30-40%
+            return 0.08  # 8% edge required for medium confidence
+        else:  # Probability 50-60% or 40-50%
+            return 0.12  # 12% edge required for low confidence (conservative)
+
     def detect_arbitrage(
         self,
         actual_probability: float,
