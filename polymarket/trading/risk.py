@@ -168,9 +168,15 @@ class RiskManager:
         # Use AI-suggested size if provided and reasonable
         if decision.position_size > 0:
             ai_size = min(decision.position_size, max_position)
-            return min(ai_size, calculated)
+            final_size = min(ai_size, calculated)
+        else:
+            final_size = min(calculated, max_position)
 
-        return min(calculated, max_position)
+        # Enforce Polymarket minimum bet size ($5.00) AFTER all multipliers
+        POLYMARKET_MIN_BET = Decimal("5.0")
+        final_size = max(final_size, POLYMARKET_MIN_BET)
+
+        return final_size
 
     def _calculate_odds_multiplier(self, odds: Decimal) -> Decimal:
         """
