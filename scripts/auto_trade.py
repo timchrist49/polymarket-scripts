@@ -1790,18 +1790,22 @@ class AutoTrader:
                 price_change_pct=f"{((execution_price - analysis_price) / analysis_price * 100):+.2f}%"
             )
 
-            # Test mode: Validate minimum arbitrage edge
-            if self.test_mode.enabled and arbitrage_opportunity:
-                arb_edge = arbitrage_opportunity.edge_percentage
-                if arb_edge < self.test_mode.min_arbitrage_edge:
-                    logger.info(
-                        "[TEST] Skipping trade - arbitrage edge below minimum",
-                        market_id=market.id,
-                        edge=f"{arb_edge:.2%}",
-                        minimum=f"{self.test_mode.min_arbitrage_edge:.2%}",
-                        reason="Edge too small - likely noise trade"
-                    )
-                    return
+            # REMOVED: Arbitrage requirement gate
+            # We still calculate arbitrage for AI context, but NO LONGER BLOCK trades based on edge size.
+            # Rationale: Bot had 10.6% win rate when requiring arbitrage edge. Signal conflict detection
+            # and odds validation are more effective filters.
+            #
+            # if self.test_mode.enabled and arbitrage_opportunity:
+            #     arb_edge = arbitrage_opportunity.edge_percentage
+            #     if arb_edge < self.test_mode.min_arbitrage_edge:
+            #         logger.info(
+            #             "[TEST] Skipping trade - arbitrage edge below minimum",
+            #             market_id=market.id,
+            #             edge=f"{arb_edge:.2%}",
+            #             minimum=f"{self.test_mode.min_arbitrage_edge:.2%}",
+            #             reason="Edge too small - likely noise trade"
+            #         )
+            #         return
 
             # NEW: Execute using smart limit orders (saves 3-6% in fees)
             smart_executor = SmartOrderExecutor()
