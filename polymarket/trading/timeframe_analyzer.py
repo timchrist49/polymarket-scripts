@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Optional
 from decimal import Decimal
+import time
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -51,7 +52,7 @@ class TimeframeAnalyzer:
         self.price_buffer = price_buffer
         self.direction_threshold_pct = 0.5  # 0.5% move to be directional
 
-    def _calculate_trend(
+    async def _calculate_trend(
         self,
         timeframe: str,
         lookback_seconds: int
@@ -66,17 +67,30 @@ class TimeframeAnalyzer:
             TimeframeTrend if data available, None otherwise
         """
         try:
-            # Get price from lookback_seconds ago
-            price_start = self.price_buffer.get_price_at(lookback_seconds)
+            # Calculate Unix timestamps
+            current_time = int(time.time())
+            start_time = current_time - lookback_seconds
 
-            # Get current price (0 seconds ago)
-            price_end = self.price_buffer.get_price_at(0)
+            # Get price from lookback_seconds ago
+            price_start = await self.price_buffer.get_price_at(start_time)
+
+            # Get current price
+            price_end = await self.price_buffer.get_price_at(current_time)
 
             if not price_start or not price_end:
                 logger.warning(
                     "Insufficient price data for timeframe",
                     timeframe=timeframe,
                     lookback_seconds=lookback_seconds
+                )
+                return None
+
+            # Validate price_start
+            if price_start <= 0:
+                logger.error(
+                    "Invalid start price",
+                    timeframe=timeframe,
+                    price_start=price_start
                 )
                 return None
 
@@ -155,9 +169,9 @@ class TimeframeAnalyzer:
             TimeframeAnalysis if sufficient data, None otherwise
         """
         # Calculate trends for each timeframe
-        tf_15m = self._calculate_trend("15m", 15 * 60)  # 15 minutes
-        tf_1h = self._calculate_trend("1h", 60 * 60)    # 1 hour
-        tf_4h = self._calculate_trend("4h", 4 * 60 * 60)  # 4 hours
+        tf_15m = await self._calculate_trend("15m", 15 * 60)  # 15 minutes
+        tf_1h = await self._calculate_trend("1h", 60 * 60)    # 1 hour
+        tf_4h = await self._calculate_trend("4h", 4 * 60 * 60)  # 4 hours
 
         # Require all timeframes to have data
         if not all([tf_15m, tf_1h, tf_4h]):
