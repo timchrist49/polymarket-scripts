@@ -186,11 +186,7 @@ class MarketSignalProcessor:
             reason = "balanced"
 
         logger.info(
-            "Exchange premium signal processed",
-            primary_exchange=primary_exchange,
-            premium_pct=f"{primary_premium * 100:.2f}%",
-            direction=direction,
-            confidence=f"{confidence:.2f}",
+            f"Exchange premium signal processed: {primary_exchange} premium={primary_premium * 100:.2f}% ({direction}) confidence={confidence:.2f}"
         )
 
         return Signal(
@@ -348,12 +344,7 @@ class MarketSignalProcessor:
             confidence = total_confidence
 
         logger.info(
-            "Signals aggregated",
-            direction=direction,
-            confidence=f"{confidence:.2f}",
-            bullish_score=f"{bullish_score:.2f}",
-            bearish_score=f"{bearish_score:.2f}",
-            num_signals=len(signals),
+            f"Signals aggregated: {direction} confidence={confidence:.2f} bullish={bullish_score:.2f} bearish={bearish_score:.2f} num_signals={len(signals)}"
         )
 
         return CompositeSignal(
