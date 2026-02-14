@@ -1154,8 +1154,7 @@ class AutoTrader:
                 actual_probability=actual_probability,
                 market_yes_odds=market_dict['yes_price'],
                 market_no_odds=market_dict['no_price'],
-                market_id=market.id,
-                ai_base_confidence=aggregated_sentiment.final_confidence
+                market_id=market.id
             )
 
             if arbitrage_opportunity:
