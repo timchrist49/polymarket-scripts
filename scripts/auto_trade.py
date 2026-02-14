@@ -862,6 +862,20 @@ class AutoTrader:
                     )
                     return
 
+            # NEW: Early odds filtering (background poll check)
+            cached_odds = await self.odds_poller.get_odds(market.id)
+            if cached_odds:
+                if not (cached_odds.yes_qualifies or cached_odds.no_qualifies):
+                    logger.info(
+                        "Skipping market - neither side > 75% odds",
+                        market_id=market.id,
+                        yes_odds=f"{cached_odds.yes_odds:.2%}",
+                        no_odds=f"{cached_odds.no_odds:.2%}"
+                    )
+                    return  # Skip this market
+            else:
+                logger.debug("No cached odds available (polling may not have run yet)")
+
             # Get token IDs
             token_ids = market.get_token_ids()
             if not token_ids:
@@ -928,6 +942,34 @@ class AutoTrader:
                     difference=f"${diff:+,.2f}",
                     percentage=f"{diff_pct:+.2f}%"
                 )
+
+                # NEW: Signal lag detection
+                signal_lag_detected = False
+                signal_lag_reason = None
+
+                btc_direction = "UP" if btc_data.price > price_to_beat else "DOWN"
+                sentiment_direction = "BULLISH" if aggregated_sentiment.final_score > 0 else "BEARISH"
+
+                signal_lag_detected, signal_lag_reason = detect_signal_lag(
+                    btc_direction,
+                    sentiment_direction,
+                    aggregated_sentiment.final_confidence
+                )
+
+                if signal_lag_detected:
+                    if not self.test_mode.enabled:
+                        logger.warning(
+                            "Skipping trade due to signal lag",
+                            market_id=market.id,
+                            reason=signal_lag_reason
+                        )
+                        return  # HOLD - don't trade contradictions
+                    else:
+                        logger.info(
+                            "[TEST] Signal lag detected - data sent to AI anyway",
+                            market_id=market.id,
+                            reason=signal_lag_reason
+                        )
 
                 # Check minimum movement threshold to avoid entering too early
                 MIN_MOVEMENT_THRESHOLD = 100  # $100 minimum BTC movement
