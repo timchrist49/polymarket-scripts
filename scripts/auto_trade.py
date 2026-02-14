@@ -116,7 +116,7 @@ class TestModeConfig:
 class AutoTrader:
     """Main autonomous trading bot orchestrator."""
 
-    def __init__(self, settings: Settings, interval: int = 180):
+    def __init__(self, settings: Settings, interval: int = 60):
         self.settings = settings
         self.interval = interval
         self.client = PolymarketClient()
@@ -1867,7 +1867,7 @@ class AutoTrader:
 
 @app.command()
 def main(
-    interval: int = typer.Option(180, help="Cycle interval in seconds"),
+    interval: int = typer.Option(60, help="Cycle interval in seconds"),
     once: bool = typer.Option(False, help="Run single cycle then exit")
 ) -> None:
     """Run the autonomous trading bot."""

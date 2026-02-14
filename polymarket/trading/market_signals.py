@@ -98,9 +98,7 @@ class MarketSignalProcessor:
             reason = "balanced"
 
         logger.info(
-            f"Funding rate signal processed: {funding_rate * 100:.4f}% ({direction})",
-            signal_direction=direction,
-            signal_confidence=f"{confidence:.2f}",
+            f"Funding rate signal processed: {funding_rate * 100:.4f}% ({direction}) confidence={confidence:.2f}"
         )
 
         return Signal(
@@ -268,11 +266,8 @@ class MarketSignalProcessor:
             reason = "normal"
 
         logger.info(
-            f"Volume confirmation signal processed: {current_volume:,.0f} ({direction})",
-            signal_direction=direction,
-            signal_confidence=f"{confidence:.2f}",
-            vol_percentile=f"{percentile:.1f}",
-            movement_usd=f"${movement_usd:.2f}",
+            f"Volume confirmation signal processed: {current_volume:,.0f} ({direction}) "
+            f"confidence={confidence:.2f} percentile={percentile:.1f}% movement=${movement_usd:.2f}"
         )
 
         return Signal(
