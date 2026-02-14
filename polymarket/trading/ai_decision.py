@@ -121,7 +121,22 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
             decision_data = json.loads(content)
 
             # Validate and create decision
-            return self._parse_decision(decision_data, market_data.get("token_id", ""))
+            decision = self._parse_decision(decision_data, market_data.get("token_id", ""))
+
+            # Apply timeframe confidence modifier if available
+            if timeframe_analysis:
+                base_confidence = decision.confidence
+                modifier = timeframe_analysis.confidence_modifier
+                decision.confidence = min(base_confidence + modifier, 1.0)
+
+                logger.info(
+                    "Applied timeframe confidence modifier",
+                    base_confidence=f"{base_confidence:.1%}",
+                    modifier=f"{modifier:+.1%}",
+                    final_confidence=f"{decision.confidence:.1%}"
+                )
+
+            return decision
 
         except asyncio.TimeoutError:
             logger.error("OpenAI timeout")
@@ -317,23 +332,26 @@ VOLUME CONFIRMATION:
         # NEW: Timeframe alignment context
         timeframe_context = ""
         if timeframe_analysis:
+            tf = timeframe_analysis
             timeframe_context = f"""
-MULTI-TIMEFRAME ANALYSIS:
-- Daily Trend: {timeframe_analysis.daily_trend}
-- 4-Hour Trend: {timeframe_analysis.four_hour_trend}
-- Alignment: {timeframe_analysis.alignment}
-- Daily Support: ${timeframe_analysis.daily_support:,.2f}
-- Daily Resistance: ${timeframe_analysis.daily_resistance:,.2f}
-- Timeframe Confidence: {timeframe_analysis.confidence:.2f}
+TIMEFRAME CONTEXT:
+- 15-min trend: {tf.tf_15m.direction} ({tf.tf_15m.price_change_pct:+.2f}%)
+- 1-hour trend: {tf.tf_1h.direction} ({tf.tf_1h.price_change_pct:+.2f}%)
+- 4-hour trend: {tf.tf_4h.direction} ({tf.tf_4h.price_change_pct:+.2f}%)
+- Alignment: {tf.alignment_score}
 
-⚠️ TIMEFRAME RULES:
-- ALIGNED (both BULLISH/BEARISH): High confidence trades allowed
-- CONFLICTING: HOLD - Don't trade against larger trend
-- Current price near daily support = potential YES entry
-- Current price near daily resistance = potential NO entry
+Consider multi-timeframe alignment when forming conviction:
+- If all timeframes aligned in same direction: Strong directional signal
+- If timeframes mixed: Exercise caution, look for strong arbitrage edge
+- If 15m contradicts longer timeframes: Short-term move against trend (mean reversion risk)
+
+Your confidence will be automatically adjusted based on alignment:
+- Aligned timeframes: +15% confidence boost
+- Mixed signals: No adjustment
+- Conflicting signals: -15% confidence reduction
 """
         else:
-            timeframe_context = "MULTI-TIMEFRAME ANALYSIS: Not available"
+            timeframe_context = "TIMEFRAME CONTEXT: Not available (insufficient price history)"
 
         # NEW: Arbitrage opportunity context
         arbitrage_context = ""
