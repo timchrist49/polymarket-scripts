@@ -43,8 +43,25 @@ def migrate_up():
         columns = {row[1] for row in cursor.fetchall()}
 
         if 'fee_paid' in columns:
-            print("⚠️  fee_paid column already exists. Skipping migration.")
-            return
+            print("⚠️  fee_paid column already exists.")
+
+            # Check if migration was fully completed (profit_loss already adjusted)
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM trades
+                WHERE is_win = 1
+                  AND profit_loss > 0
+                  AND fee_paid > 0
+            """)
+            trades_with_fees = cursor.fetchone()[0]
+
+            if trades_with_fees > 0:
+                print("⚠️  Migration already completed (fees found). Skipping to prevent double-adjustment.")
+                return
+            else:
+                print("⚠️  Column exists but no fees found. This shouldn't happen - migration may have failed previously.")
+                print("⚠️  Skipping to avoid potential data corruption. Please investigate manually.")
+                return
 
         # Add fee_paid column
         print("Adding fee_paid column...")
@@ -54,21 +71,34 @@ def migrate_up():
         """)
 
         # Calculate and backfill fees for historical winning trades
-        # Fee = 2% of winnings (profit_loss for wins)
+        # Fee = 2% of GROSS profit (current profit_loss is gross)
         print("Backfilling historical fees for winning trades...")
         cursor.execute("""
             UPDATE trades
-            SET fee_paid = profit_loss * 0.02
+            SET fee_paid = ROUND(profit_loss * 0.02, 2)
             WHERE is_win = 1
               AND profit_loss > 0
         """)
 
-        affected_rows = cursor.rowcount
+        fee_rows = cursor.rowcount
+
+        # CRITICAL: Adjust profit_loss to be net of fees
+        # Current profit_loss values are GROSS, we need to make them NET
+        print("Adjusting profit_loss to be net of fees...")
+        cursor.execute("""
+            UPDATE trades
+            SET profit_loss = ROUND(profit_loss - fee_paid, 2)
+            WHERE is_win = 1
+              AND fee_paid > 0
+        """)
+
+        adjusted_rows = cursor.rowcount
         conn.commit()
 
         print(f"✅ Migration complete!")
         print(f"   - Added fee_paid column")
-        print(f"   - Backfilled {affected_rows} winning trades with 2% fees")
+        print(f"   - Backfilled {fee_rows} winning trades with 2% fees")
+        print(f"   - Adjusted {adjusted_rows} profit_loss values to net of fees")
 
     except Exception as e:
         conn.rollback()
@@ -91,6 +121,17 @@ def migrate_down():
         if 'fee_paid' not in columns:
             print("⚠️  fee_paid column doesn't exist. Nothing to rollback.")
             return
+
+        # CRITICAL: Restore gross profit_loss before removing fee_paid
+        print("Restoring gross profit_loss values (adding fees back)...")
+        cursor.execute("""
+            UPDATE trades
+            SET profit_loss = ROUND(profit_loss + fee_paid, 2)
+            WHERE is_win = 1
+              AND fee_paid > 0
+        """)
+        restored_rows = cursor.rowcount
+        print(f"   - Restored {restored_rows} profit_loss values to gross")
 
         # SQLite doesn't support DROP COLUMN easily, so we recreate the table
         print("Rolling back fee_paid column (recreating table)...")
