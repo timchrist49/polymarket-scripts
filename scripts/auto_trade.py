@@ -1675,7 +1675,8 @@ class AutoTrader:
                         skipped_unfavorable_move=False,
                         actual_position_size=float(amount),  # Use risk-adjusted amount, not AI suggestion
                         filled_via=execution_result.get("filled_via"),
-                        limit_order_timeout=execution_result.get("timeout_used")
+                        limit_order_timeout=execution_result.get("timeout_used"),
+                        order_id=order_id
                     )
                 except Exception as e:
                     logger.warning("Failed to update execution metrics", error=str(e))

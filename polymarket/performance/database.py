@@ -165,6 +165,16 @@ class PerformanceDatabase:
             ("arbitrage_urgency", "TEXT"),  # 'LOW', 'MEDIUM', 'HIGH'
             ("filled_via", "TEXT"),  # 'market', 'limit', 'limit_partial'
             ("limit_order_timeout", "INTEGER"),  # Timeout used for limit orders (seconds)
+            # Enhanced backtesting data (funding, dominance, microstructure)
+            ("funding_rate", "REAL"),  # Raw funding rate from perpetual futures
+            ("funding_rate_normalized", "REAL"),  # Normalized funding rate [-1, 1]
+            ("btc_dominance", "REAL"),  # BTC dominance percentage at decision time
+            ("btc_dominance_change_24h", "REAL"),  # 24h change in dominance
+            ("whale_activity", "REAL"),  # Whale score from market microstructure
+            ("order_book_imbalance", "REAL"),  # Order book imbalance metric
+            ("spread_bps", "REAL"),  # Bid-ask spread in basis points
+            ("order_id", "TEXT"),  # Polymarket order ID for linking to actual orders
+            ("volatility", "REAL"),  # BTC volatility at decision time
         ]
 
         for column_name, column_type in new_columns:
@@ -235,8 +245,12 @@ class PerformanceDatabase:
                 filled_via, limit_order_timeout,
                 timeframe_15m_direction, timeframe_1h_direction, timeframe_4h_direction,
                 timeframe_alignment, confidence_modifier,
+                funding_rate, funding_rate_normalized,
+                btc_dominance, btc_dominance_change_24h,
+                whale_activity, order_book_imbalance, spread_bps,
+                volatility,
                 is_test_mode
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade_data["timestamp"],
             trade_data["market_slug"],
@@ -275,6 +289,14 @@ class PerformanceDatabase:
             trade_data.get("timeframe_4h_direction"),
             trade_data.get("timeframe_alignment"),
             trade_data.get("confidence_modifier"),
+            trade_data.get("funding_rate"),
+            trade_data.get("funding_rate_normalized"),
+            trade_data.get("btc_dominance"),
+            trade_data.get("btc_dominance_change_24h"),
+            trade_data.get("whale_activity"),
+            trade_data.get("order_book_imbalance"),
+            trade_data.get("spread_bps"),
+            trade_data.get("volatility"),
             trade_data.get("is_test_mode", 0)
         ))
 

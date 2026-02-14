@@ -93,6 +93,35 @@ class PerformanceTracker:
                 tf_alignment = timeframe_analysis.alignment_score
                 tf_modifier = timeframe_analysis.confidence_modifier
 
+            # Extract funding rate data if available
+            funding_rate = None
+            funding_rate_normalized = None
+            if aggregated.funding:
+                funding_rate = aggregated.funding.funding_rate
+                funding_rate_normalized = aggregated.funding.funding_rate_normalized
+
+            # Extract BTC dominance data if available
+            btc_dominance = None
+            btc_dominance_change_24h = None
+            if aggregated.dominance:
+                btc_dominance = aggregated.dominance.dominance_pct
+                btc_dominance_change_24h = aggregated.dominance.dominance_change_24h
+
+            # Extract market microstructure data
+            whale_activity = aggregated.market.whale_score
+            order_book_imbalance = aggregated.market.order_book_score
+
+            # Calculate spread in basis points if available
+            spread_bps = None
+            if market.best_ask and market.best_bid:
+                spread = market.best_ask - market.best_bid
+                mid_price = (market.best_ask + market.best_bid) / 2
+                if mid_price > 0:
+                    spread_bps = (spread / mid_price) * 10000
+
+            # Extract volatility if available in btc_data
+            volatility = getattr(btc_data, 'volatility', None)
+
             # Build trade data dict
             trade_data = {
                 "timestamp": datetime.now(),
@@ -142,6 +171,16 @@ class PerformanceTracker:
                 "timeframe_alignment": tf_alignment,
                 "confidence_modifier": tf_modifier,
 
+                # Enhanced backtesting data
+                "funding_rate": funding_rate,
+                "funding_rate_normalized": funding_rate_normalized,
+                "btc_dominance": btc_dominance,
+                "btc_dominance_change_24h": btc_dominance_change_24h,
+                "whale_activity": whale_activity,
+                "order_book_imbalance": order_book_imbalance,
+                "spread_bps": spread_bps,
+                "volatility": volatility,
+
                 # Test mode flag
                 "is_test_mode": 1 if is_test_mode else 0
             }
@@ -184,7 +223,8 @@ class PerformanceTracker:
         skipped_unfavorable_move: bool = False,
         actual_position_size: Optional[float] = None,
         filled_via: Optional[str] = None,
-        limit_order_timeout: Optional[int] = None
+        limit_order_timeout: Optional[int] = None,
+        order_id: Optional[str] = None
     ) -> None:
         """
         Update trade record with execution metrics from JIT price fetching.
@@ -220,7 +260,9 @@ class PerformanceTracker:
                         skipped_unfavorable_move = ?,
                         position_size = ?,
                         filled_via = ?,
-                        limit_order_timeout = ?
+                        limit_order_timeout = ?,
+                        order_id = ?,
+                        execution_status = 'executed'
                     WHERE id = ?
                 """, (
                     analysis_price,
@@ -231,6 +273,7 @@ class PerformanceTracker:
                     actual_position_size,
                     filled_via,
                     limit_order_timeout,
+                    order_id,
                     trade_id
                 ))
             else:
@@ -242,7 +285,9 @@ class PerformanceTracker:
                         price_movement_favorable = ?,
                         skipped_unfavorable_move = ?,
                         filled_via = ?,
-                        limit_order_timeout = ?
+                        limit_order_timeout = ?,
+                        order_id = ?,
+                        execution_status = 'executed'
                     WHERE id = ?
                 """, (
                     analysis_price,
@@ -252,6 +297,7 @@ class PerformanceTracker:
                     skipped_unfavorable_move,
                     filled_via,
                     limit_order_timeout,
+                    order_id,
                     trade_id
                 ))
 
