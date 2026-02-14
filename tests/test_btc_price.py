@@ -201,10 +201,11 @@ async def test_calculate_15min_volatility():
 
     # Mock the buffer's get_price_range method
     if service._stream and service._stream.price_buffer:
-        # Use MagicMock instead of patch.object to return the list directly (not a coroutine)
-        service._stream.price_buffer.get_price_range = MagicMock(return_value=mock_prices)
+        # Use AsyncMock to return the list as a coroutine
+        from unittest.mock import AsyncMock
+        service._stream.price_buffer.get_price_range = AsyncMock(return_value=mock_prices)
 
-        volatility = service.calculate_15min_volatility()
+        volatility = await service.calculate_15min_volatility()
 
         # Verify volatility is within reasonable range
         assert volatility > 0.0

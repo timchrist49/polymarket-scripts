@@ -1136,7 +1136,7 @@ class AutoTrader:
             price_5min_ago = float(price_5min_result) if price_5min_result else float(btc_data.price)
             price_10min_result = await self.btc_service.get_price_at_timestamp(current_time - 600)
             price_10min_ago = float(price_10min_result) if price_10min_result else float(btc_data.price)
-            volatility_15min = self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
+            volatility_15min = await self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
 
             actual_probability = probability_calculator.calculate_directional_probability(
                 current_price=float(btc_data.price),
