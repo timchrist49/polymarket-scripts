@@ -31,23 +31,25 @@ def test_detect_yes_arbitrage():
 
 
 def test_detect_no_arbitrage():
-    """Test detecting NO arbitrage opportunity (5% edge -> LOW urgency)."""
+    """Test detecting NO arbitrage opportunity with medium confidence (8% edge required)."""
     detector = ArbitrageDetector()
 
-    # Actual probability is 35%, implied NO probability is 65%
-    # Market prices NO at 60%, edge = 0.65 - 0.60 = 0.05 (5%)
+    # Actual probability is 35% (medium confidence: 60-70% range)
+    # Requires 8% edge threshold
+    # Implied NO probability is 65%, market prices NO at 57%
+    # Edge = 0.65 - 0.57 = 0.08 (8%, meets threshold)
     opp = detector.detect_arbitrage(
         actual_probability=0.35,
-        market_yes_odds=0.40,
-        market_no_odds=0.60,
+        market_yes_odds=0.43,
+        market_no_odds=0.57,
         market_id="test-market-2"
     )
 
     assert opp.recommended_action == "BUY_NO"
-    assert opp.edge_percentage == approx(0.05, abs=1e-9)
-    assert opp.confidence_boost == approx(0.10, abs=1e-9)  # 0.05 * 2 = 0.10
-    assert opp.urgency == "LOW"  # 5% < 10%
-    assert opp.expected_profit_pct == approx(0.6667, abs=0.01)  # (1.0 - 0.60) / 0.60
+    assert opp.edge_percentage == approx(0.08, abs=1e-9)
+    assert opp.confidence_boost == approx(0.16, abs=1e-9)  # 0.08 * 2 = 0.16
+    assert opp.urgency == "LOW"  # 8% < 10%
+    assert opp.expected_profit_pct == approx(0.7544, abs=0.01)  # (1.0 - 0.57) / 0.57
 
 
 def test_no_arbitrage_opportunity():
@@ -91,12 +93,12 @@ def test_confidence_boost_scales_with_edge():
     """Test larger edge = larger boost (up to cap)."""
     detector = ArbitrageDetector()
 
-    # Test 6% edge (avoiding floating point precision issues near MIN_EDGE)
-    opp_6pct = detector.detect_arbitrage(
+    # Test 9% edge (62% probability requires 8% edge threshold)
+    opp_9pct = detector.detect_arbitrage(
         actual_probability=0.62,
-        market_yes_odds=0.56,
-        market_no_odds=0.44,
-        market_id="test-6pct"
+        market_yes_odds=0.53,
+        market_no_odds=0.47,
+        market_id="test-9pct"
     )
 
     # Test 10% edge
@@ -107,9 +109,9 @@ def test_confidence_boost_scales_with_edge():
         market_id="test-10pct"
     )
 
-    assert opp_6pct.confidence_boost == approx(0.12, abs=1e-9)  # 0.06 * 2 = 0.12
+    assert opp_9pct.confidence_boost == approx(0.18, abs=1e-9)  # 0.09 * 2 = 0.18
     assert opp_10pct.confidence_boost == approx(0.20, abs=1e-9)  # Min(0.10 * 2, 0.20) = 0.20
-    assert opp_10pct.confidence_boost > opp_6pct.confidence_boost
+    assert opp_10pct.confidence_boost > opp_9pct.confidence_boost
 
 
 def test_confidence_boost_capped_at_20pct():
