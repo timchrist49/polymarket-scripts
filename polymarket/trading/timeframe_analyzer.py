@@ -23,19 +23,21 @@ class TimeframeTrend:
 
 @dataclass
 class TimeframeAnalysis:
-    """Complete multi-timeframe analysis result."""
+    """Complete multi-timeframe analysis result with 4 timeframes."""
 
+    tf_1m: TimeframeTrend
+    tf_5m: TimeframeTrend
     tf_15m: TimeframeTrend
-    tf_1h: TimeframeTrend
-    tf_4h: TimeframeTrend
-    alignment_score: str  # "ALIGNED_BULLISH", "ALIGNED_BEARISH", "MIXED", "CONFLICTING"
-    confidence_modifier: float  # +0.15, 0.0, or -0.15
+    tf_30m: TimeframeTrend
+    alignment_score: str  # "ALIGNED_BULLISH", "ALIGNED_BEARISH", "STRONG_BULLISH", "STRONG_BEARISH", "MIXED", "CONFLICTING"
+    confidence_modifier: float  # +0.20, +0.15, 0.0, or -0.15
 
     def __str__(self) -> str:
         return (
+            f"1m: {self.tf_1m.direction} ({self.tf_1m.price_change_pct:+.2f}%), "
+            f"5m: {self.tf_5m.direction} ({self.tf_5m.price_change_pct:+.2f}%), "
             f"15m: {self.tf_15m.direction} ({self.tf_15m.price_change_pct:+.2f}%), "
-            f"1H: {self.tf_1h.direction} ({self.tf_1h.price_change_pct:+.2f}%), "
-            f"4H: {self.tf_4h.direction} ({self.tf_4h.price_change_pct:+.2f}%) "
+            f"30m: {self.tf_30m.direction} ({self.tf_30m.price_change_pct:+.2f}%) "
             f"| Alignment: {self.alignment_score} | Modifier: {self.confidence_modifier:+.2%}"
         )
 
@@ -127,13 +129,52 @@ class TimeframeAnalyzer:
             )
             return None
 
+    def _calculate_alignment_4tf(
+        self,
+        tf_1m: TimeframeTrend,
+        tf_5m: TimeframeTrend,
+        tf_15m: TimeframeTrend,
+        tf_30m: TimeframeTrend
+    ) -> tuple[str, float]:
+        """
+        Calculate alignment score for 4 timeframes.
+
+        Returns:
+            (alignment_score, confidence_modifier)
+        """
+        directions = [tf_1m.direction, tf_5m.direction,
+                      tf_15m.direction, tf_30m.direction]
+
+        up_count = directions.count("UP")
+        down_count = directions.count("DOWN")
+
+        # All 4 aligned (strongest signal)
+        if up_count == 4:
+            return ("ALIGNED_BULLISH", 0.20)
+        elif down_count == 4:
+            return ("ALIGNED_BEARISH", 0.20)
+
+        # 3 of 4 aligned (strong signal)
+        elif up_count >= 3:
+            return ("STRONG_BULLISH", 0.15)
+        elif down_count >= 3:
+            return ("STRONG_BEARISH", 0.15)
+
+        # 2 of 4 (mixed signals)
+        elif up_count == 2 or down_count == 2:
+            return ("MIXED", 0.0)
+
+        # Conflicting (short-term contradicts longer-term)
+        else:
+            return ("CONFLICTING", -0.15)
+
     def _calculate_alignment(
         self,
         tf_15m: TimeframeTrend,
         tf_1h: TimeframeTrend,
         tf_4h: TimeframeTrend
     ) -> tuple[str, float]:
-        """Calculate alignment score and confidence modifier.
+        """Calculate alignment score and confidence modifier (legacy 3-timeframe version).
 
         Returns:
             (alignment_score, confidence_modifier)
@@ -163,35 +204,38 @@ class TimeframeAnalyzer:
         return ("MIXED", 0.0)
 
     async def analyze(self) -> Optional[TimeframeAnalysis]:
-        """Analyze trends across 15m, 1H, 4H timeframes.
+        """Analyze trends across 1m, 5m, 15m, 30m timeframes.
 
         Returns:
             TimeframeAnalysis if sufficient data, None otherwise
         """
         # Calculate trends for each timeframe
-        tf_15m = await self._calculate_trend("15m", 15 * 60)  # 15 minutes
-        tf_1h = await self._calculate_trend("1h", 60 * 60)    # 1 hour
-        tf_4h = await self._calculate_trend("4h", 4 * 60 * 60)  # 4 hours
+        tf_1m = await self._calculate_trend("1m", 60)       # 1 minute
+        tf_5m = await self._calculate_trend("5m", 300)      # 5 minutes
+        tf_15m = await self._calculate_trend("15m", 900)    # 15 minutes (matches market)
+        tf_30m = await self._calculate_trend("30m", 1800)   # 30 minutes (2x market)
 
         # Require all timeframes to have data
-        if not all([tf_15m, tf_1h, tf_4h]):
+        if not all([tf_1m, tf_5m, tf_15m, tf_30m]):
             logger.warning(
-                "Skipping timeframe analysis - insufficient historical data",
+                "Insufficient data for all timeframes",
+                tf_1m=bool(tf_1m),
+                tf_5m=bool(tf_5m),
                 tf_15m=bool(tf_15m),
-                tf_1h=bool(tf_1h),
-                tf_4h=bool(tf_4h)
+                tf_30m=bool(tf_30m)
             )
             return None
 
         # Calculate alignment and confidence modifier
-        alignment_score, confidence_modifier = self._calculate_alignment(
-            tf_15m, tf_1h, tf_4h
+        alignment_score, confidence_modifier = self._calculate_alignment_4tf(
+            tf_1m, tf_5m, tf_15m, tf_30m
         )
 
         analysis = TimeframeAnalysis(
+            tf_1m=tf_1m,
+            tf_5m=tf_5m,
             tf_15m=tf_15m,
-            tf_1h=tf_1h,
-            tf_4h=tf_4h,
+            tf_30m=tf_30m,
             alignment_score=alignment_score,
             confidence_modifier=confidence_modifier
         )

@@ -334,24 +334,28 @@ VOLUME CONFIRMATION:
         if timeframe_analysis:
             tf = timeframe_analysis
             timeframe_context = f"""
-TIMEFRAME CONTEXT:
-- 15-min trend: {tf.tf_15m.direction} ({tf.tf_15m.price_change_pct:+.2f}%)
-- 1-hour trend: {tf.tf_1h.direction} ({tf.tf_1h.price_change_pct:+.2f}%)
-- 4-hour trend: {tf.tf_4h.direction} ({tf.tf_4h.price_change_pct:+.2f}%)
+TIMEFRAME ANALYSIS:
+- 1-minute trend: {tf.tf_1m.direction} ({tf.tf_1m.price_change_pct:+.2f}%)
+- 5-minute trend: {tf.tf_5m.direction} ({tf.tf_5m.price_change_pct:+.2f}%)
+- 15-minute trend: {tf.tf_15m.direction} ({tf.tf_15m.price_change_pct:+.2f}%)
+- 30-minute trend: {tf.tf_30m.direction} ({tf.tf_30m.price_change_pct:+.2f}%)
 - Alignment: {tf.alignment_score}
+- Confidence Modifier: {tf.confidence_modifier:+.2%}
 
-Consider multi-timeframe alignment when forming conviction:
-- If all timeframes aligned in same direction: Strong directional signal
-- If timeframes mixed: Exercise caution, look for strong arbitrage edge
-- If 15m contradicts longer timeframes: Short-term move against trend (mean reversion risk)
+INTERPRETATION:
+- All 4 aligned = Strongest signal (use for directional trades)
+- 3 of 4 aligned = Strong trend emerging
+- Mixed = Consolidation or reversal in progress
+- Conflicting = Avoid trading or wait for clarity
 
 Your confidence will be automatically adjusted based on alignment:
-- Aligned timeframes: +15% confidence boost
+- All 4 aligned: +20% confidence boost
+- 3 of 4 aligned: +15% confidence boost
 - Mixed signals: No adjustment
 - Conflicting signals: -15% confidence reduction
 """
         else:
-            timeframe_context = "TIMEFRAME CONTEXT: Not available (insufficient price history)"
+            timeframe_context = "TIMEFRAME ANALYSIS: Not available (insufficient price history)"
 
         # NEW: Arbitrage opportunity context
         arbitrage_context = ""
