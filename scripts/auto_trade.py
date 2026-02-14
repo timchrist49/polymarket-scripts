@@ -17,7 +17,7 @@ import signal
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -523,10 +523,10 @@ class AutoTrader:
             return
 
         try:
-            # Step 1: Market Discovery - Find BTC 15-min markets
-            markets = await self._discover_markets()
+            # Step 1: Market Discovery - Find BTC 15-min markets (with end-phase filter)
+            markets = await self.get_tradeable_markets()
             if not markets:
-                logger.info("No BTC markets found, skipping cycle")
+                logger.info("No tradeable markets found, skipping cycle")
                 return
 
             logger.info("Found markets", count=len(markets))
@@ -740,6 +740,62 @@ class AutoTrader:
             except Exception as e2:
                 logger.error("Fallback market discovery also failed", error=str(e2))
                 return []
+
+    async def get_tradeable_markets(self) -> list[Market]:
+        """
+        Fetch and filter BTC 15-min markets.
+
+        Filters:
+        - Must have >= 5 minutes remaining (300 seconds)
+        - Must be active and tradeable
+
+        Returns:
+            List of tradeable Market objects
+        """
+        try:
+            # Fetch all active markets from Polymarket
+            all_markets = await self._discover_markets()
+
+            tradeable = []
+            filtered_count = 0
+
+            for market in all_markets:
+                # Skip if market has no end_date
+                if not market.end_date:
+                    logger.warning(
+                        "Market has no end_date, skipping",
+                        market_id=market.id
+                    )
+                    continue
+
+                # Calculate time remaining
+                now = datetime.now(timezone.utc)
+                time_remaining = (market.end_date - now).total_seconds()
+
+                # Filter: Require >= 5 minutes remaining
+                if time_remaining < 300:
+                    filtered_count += 1
+                    logger.debug(
+                        "Filtered end-phase market",
+                        market_id=market.id,
+                        time_remaining_sec=int(time_remaining)
+                    )
+                    continue
+
+                tradeable.append(market)
+
+            logger.info(
+                "Markets filtered",
+                total=len(all_markets),
+                tradeable=len(tradeable),
+                filtered_end_phase=filtered_count
+            )
+
+            return tradeable
+
+        except Exception as e:
+            logger.error("Failed to fetch markets", error=str(e))
+            return []
 
     async def _mark_trade_skipped(
         self,
