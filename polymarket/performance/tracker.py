@@ -1,6 +1,7 @@
 # polymarket/performance/tracker.py
 """Performance tracking service."""
 
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -10,6 +11,21 @@ from polymarket.performance.database import PerformanceDatabase
 from polymarket.models import TradingDecision, BTCPriceData, TechnicalIndicators, AggregatedSentiment, Market
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class TestModeMetrics:
+    """Aggregated metrics for test mode performance."""
+    total_trades: int
+    executed_trades: int
+    execution_rate: float
+    wins: int
+    losses: int
+    win_rate: float
+    total_pnl: Decimal
+    avg_arbitrage_edge: float
+    avg_confidence: float
+    timeframe_alignment_stats: dict  # {alignment_type: count}
 
 
 class PerformanceTracker:
@@ -326,6 +342,73 @@ class PerformanceTracker:
 
         except Exception as e:
             logger.error("Failed to update trade status", trade_id=trade_id, error=str(e))
+
+    def calculate_test_mode_metrics(self, last_n_trades: int = 20) -> Optional[TestModeMetrics]:
+        """Calculate aggregated metrics for last N trades.
+
+        Args:
+            last_n_trades: Number of recent trades to analyze
+
+        Returns:
+            TestModeMetrics with aggregated statistics
+        """
+        cursor = self.db.conn.cursor()
+
+        # Get last N trades
+        cursor.execute("""
+            SELECT
+                execution_status,
+                is_win,
+                profit_loss,
+                arbitrage_edge,
+                confidence,
+                timeframe_alignment
+            FROM trades
+            WHERE is_test_mode = 1
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (last_n_trades,))
+
+        trades = cursor.fetchall()
+
+        if not trades:
+            return None
+
+        total_trades = len(trades)
+        executed = sum(1 for t in trades if t[0] in ['filled', 'FILLED'])
+        execution_rate = executed / total_trades if total_trades > 0 else 0.0
+
+        # Only count settled trades for win rate
+        settled = [t for t in trades if t[1] is not None]
+        wins = sum(1 for t in settled if t[1] == 1)
+        losses = len(settled) - wins
+        win_rate = wins / len(settled) if settled else 0.0
+
+        # Total P&L from settled trades
+        total_pnl = sum(Decimal(str(t[2])) for t in settled if t[2] is not None)
+
+        # Average metrics
+        avg_edge = sum(t[3] or 0 for t in trades) / total_trades
+        avg_confidence = sum(t[4] or 0 for t in trades) / total_trades
+
+        # Timeframe alignment breakdown
+        alignment_stats = {}
+        for t in trades:
+            alignment = t[5] or "UNKNOWN"
+            alignment_stats[alignment] = alignment_stats.get(alignment, 0) + 1
+
+        return TestModeMetrics(
+            total_trades=total_trades,
+            executed_trades=executed,
+            execution_rate=execution_rate,
+            wins=wins,
+            losses=losses,
+            win_rate=win_rate,
+            total_pnl=total_pnl,
+            avg_arbitrage_edge=avg_edge,
+            avg_confidence=avg_confidence,
+            timeframe_alignment_stats=alignment_stats
+        )
 
     def close(self):
         """Close database connection."""
