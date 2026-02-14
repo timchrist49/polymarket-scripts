@@ -35,6 +35,7 @@ class PerformanceDatabase:
 
         # Run migrations
         self._migrate_add_timeframe_columns()
+        self._migrate_add_verification_columns()
 
         logger.info("Performance database initialized", db_path=db_path)
 
@@ -218,6 +219,57 @@ class PerformanceDatabase:
         except Exception as e:
             logger.error("Failed to migrate database", error=str(e))
             raise
+
+    def _migrate_add_verification_columns(self):
+        """Add order verification columns to trades table."""
+        cursor = self.conn.cursor()
+
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(trades)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Add verification columns if they don't exist
+        verification_columns = [
+            ("verified_fill_price", "REAL"),
+            ("verified_fill_amount", "REAL"),
+            ("transaction_hash", "TEXT"),
+            ("fill_timestamp", "INTEGER"),
+            ("partial_fill", "BOOLEAN DEFAULT 0"),
+            ("verification_status", "TEXT DEFAULT 'unverified'"),
+            ("verification_timestamp", "INTEGER"),
+            ("price_discrepancy_pct", "REAL"),
+            ("amount_discrepancy_pct", "REAL"),
+            ("skip_reason", "TEXT"),
+            ("skip_type", "TEXT"),
+        ]
+
+        for column_name, column_type in verification_columns:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE trades ADD COLUMN {column_name} {column_type}")
+                    logger.info(f"Added verification column: {column_name}")
+                except sqlite3.OperationalError as e:
+                    logger.warning(f"Could not add column {column_name}: {e}")
+
+        # Create indexes
+        try:
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trades_order_id
+                ON trades(order_id) WHERE order_id IS NOT NULL
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trades_verification_status
+                ON trades(verification_status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trades_execution_status
+                ON trades(execution_status)
+            """)
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Index creation failed: {e}")
+
+        self.conn.commit()
+        logger.info("Order verification migration complete")
 
     def log_trade(self, trade_data: dict) -> int:
         """

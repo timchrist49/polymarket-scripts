@@ -149,10 +149,18 @@ class AutoTrader:
             telegram=self.telegram_bot
         )
 
+        # Order verification
+        from polymarket.performance.order_verifier import OrderVerifier
+        self.order_verifier = OrderVerifier(
+            client=self.client,
+            db=self.performance_tracker.db
+        )
+
         # Trade settlement
         self.trade_settler = TradeSettler(
             db=self.performance_tracker.db,
-            btc_fetcher=self.btc_service
+            btc_fetcher=self.btc_service,
+            order_verifier=self.order_verifier
         )
         # Give settler access to tracker for updates
         self.trade_settler._tracker = self.performance_tracker
@@ -1618,15 +1626,67 @@ class AutoTrader:
             order_id = execution_result["order_id"]
             filled_via = execution_result.get("filled_via", "limit")
 
+            # NEW: Phase 1 Quick Status Check (2 seconds)
+            logger.info(
+                "Running quick order verification",
+                order_id=order_id,
+                trade_id=trade_id
+            )
+
+            await asyncio.sleep(2)  # Wait for order to process
+
+            quick_status = await self.order_verifier.check_order_quick(
+                order_id=order_id,
+                trade_id=trade_id,
+                timeout=2.0
+            )
+
+            # Handle quick check results
+            if quick_status['status'] == 'failed':
+                logger.error(
+                    "Order failed immediately",
+                    order_id=order_id,
+                    trade_id=trade_id,
+                    raw_status=quick_status['raw_status']
+                )
+                # Update trade status
+                if trade_id > 0:
+                    await self.performance_tracker.update_trade_status(
+                        trade_id=trade_id,
+                        execution_status='failed',
+                        skip_reason=f"Order failed: {quick_status['raw_status']}"
+                    )
+                return  # Don't count this as a successful trade
+
+            elif quick_status['needs_alert']:
+                logger.warning(
+                    "Order requires attention",
+                    order_id=order_id,
+                    trade_id=trade_id,
+                    status=quick_status['status'],
+                    raw_status=quick_status['raw_status']
+                )
+                # Send Telegram alert for partial fills or issues
+                try:
+                    await self.telegram_bot.send_message(
+                        f"⚠️ Order Alert\n"
+                        f"Order ID: {order_id[:8]}...\n"
+                        f"Status: {quick_status['raw_status']}\n"
+                        f"Trade ID: {trade_id}"
+                    )
+                except Exception as e:
+                    logger.warning("Failed to send alert", error=str(e))
+
             # Log success with arbitrage edge
             logger.info(
-                "Trade executed",
+                "Trade executed and verified",
                 market_id=market.id,
                 action=decision.action,
                 token=token_name,
                 amount=str(amount),
                 order_id=order_id,
                 filled_via=filled_via,
+                quick_status=quick_status['status'],
                 arbitrage_edge=f"{arbitrage_opportunity.edge_percentage:.1%}" if arbitrage_opportunity else "N/A"
             )
 

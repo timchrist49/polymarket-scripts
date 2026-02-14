@@ -15,16 +15,18 @@ logger = structlog.get_logger()
 class TradeSettler:
     """Settles trades by comparing BTC prices at market close."""
 
-    def __init__(self, db: PerformanceDatabase, btc_fetcher):
+    def __init__(self, db: PerformanceDatabase, btc_fetcher, order_verifier=None):
         """
         Initialize trade settler.
 
         Args:
             db: Performance database
             btc_fetcher: BTC price service (from auto_trade.py)
+            order_verifier: OrderVerifier instance for order verification (optional)
         """
         self.db = db
         self.btc_fetcher = btc_fetcher
+        self.order_verifier = order_verifier
 
     def _parse_market_close_timestamp(self, market_slug: str) -> Optional[int]:
         """
@@ -157,7 +159,8 @@ class TradeSettler:
         cursor.execute("""
             SELECT
                 id, timestamp, market_slug, action,
-                position_size, executed_price, price_to_beat
+                position_size, executed_price, price_to_beat,
+                order_id, verification_status
             FROM trades
             WHERE action IN ('YES', 'NO')
               AND is_win IS NULL
@@ -177,7 +180,9 @@ class TradeSettler:
                 'action': row[3],
                 'position_size': row[4],
                 'executed_price': row[5],
-                'price_to_beat': row[6]
+                'price_to_beat': row[6],
+                'order_id': row[7],
+                'verification_status': row[8]
             })
 
         return trades
@@ -199,6 +204,9 @@ class TradeSettler:
             "losses": 0,
             "total_profit": 0.0,
             "pending_count": 0,
+            "verification_failures": 0,
+            "price_discrepancies": 0,
+            "partial_fills": 0,
             "errors": []
         }
 
@@ -207,12 +215,76 @@ class TradeSettler:
             trades = self._get_unsettled_trades(batch_size)
 
             logger.info(
-                "Starting settlement cycle",
-                pending_trades=len(trades)
+                "Starting settlement cycle with verification",
+                pending_trades=len(trades),
+                verifier_enabled=self.order_verifier is not None
             )
 
             for trade in trades:
                 try:
+                    # NEW: Verify order execution BEFORE calculating P&L
+                    actual_price = trade['executed_price']
+                    actual_size = trade['position_size']
+                    tx_hash = None
+
+                    if self.order_verifier and trade.get('order_id'):
+                        verification = await self.order_verifier.verify_order_full(
+                            trade['order_id']
+                        )
+
+                        if not verification['verified']:
+                            # Order never filled - mark as failed
+                            logger.warning(
+                                "Order verification failed - trade not filled",
+                                trade_id=trade['id'],
+                                order_id=trade['order_id'],
+                                status=verification['status']
+                            )
+
+                            self._mark_trade_failed(trade['id'], verification)
+                            stats['verification_failures'] += 1
+                            continue  # Skip P&L calculation
+
+                        # Use verified data
+                        actual_price = verification['fill_price']
+                        actual_size = verification['fill_amount']
+                        tx_hash = verification['transaction_hash']
+
+                        # Calculate discrepancy
+                        estimated_price = trade['executed_price']
+                        price_discrepancy_pct = self.order_verifier.calculate_price_discrepancy(
+                            estimated_price, actual_price
+                        )
+
+                        # Alert on large discrepancies
+                        if abs(price_discrepancy_pct) > 5.0:
+                            logger.warning(
+                                "Large price discrepancy detected",
+                                trade_id=trade['id'],
+                                estimated=f"${estimated_price:.3f}",
+                                actual=f"${actual_price:.3f}",
+                                discrepancy=f"{price_discrepancy_pct:+.2f}%"
+                            )
+                            stats['price_discrepancies'] += 1
+
+                        # Track partial fills
+                        if verification['partial_fill']:
+                            logger.info(
+                                "Partial fill detected",
+                                trade_id=trade['id'],
+                                filled=verification['fill_amount'],
+                                expected=verification['original_size'],
+                                fill_pct=f"{(verification['fill_amount'] / verification['original_size'] * 100):.1f}%"
+                            )
+                            stats['partial_fills'] += 1
+
+                        # Store verification data
+                        self._update_verification_data(
+                            trade_id=trade['id'],
+                            verification=verification,
+                            price_discrepancy_pct=price_discrepancy_pct
+                        )
+
                     # Parse close timestamp
                     close_timestamp = self._parse_market_close_timestamp(trade['market_slug'])
 
@@ -252,12 +324,12 @@ class TradeSettler:
                         price_to_beat=trade['price_to_beat']
                     )
 
-                    # Calculate profit/loss
+                    # Calculate profit/loss using VERIFIED data
                     profit_loss, is_win = self._calculate_profit_loss(
                         action=trade['action'],
                         actual_outcome=actual_outcome,
-                        position_size=trade['position_size'],
-                        executed_price=trade['executed_price']
+                        position_size=actual_size,  # Use verified size
+                        executed_price=actual_price  # Use verified price
                     )
 
                     # Update database (via tracker if available, otherwise direct)
@@ -289,12 +361,13 @@ class TradeSettler:
                     stats['total_profit'] += profit_loss
 
                     logger.info(
-                        "Trade settled",
+                        "Trade settled with verification",
                         trade_id=trade['id'],
                         action=trade['action'],
                         outcome=actual_outcome,
                         is_win=is_win,
-                        profit_loss=f"${profit_loss:.2f}"
+                        profit_loss=f"${profit_loss:.2f}",
+                        verified=self.order_verifier is not None and trade.get('order_id') is not None
                     )
 
                 except Exception as e:
@@ -313,3 +386,50 @@ class TradeSettler:
             stats['errors'].append(str(e))
 
         return stats
+
+    def _mark_trade_failed(self, trade_id: int, verification: dict) -> None:
+        """Mark a trade as failed due to verification failure."""
+        cursor = self.db.conn.cursor()
+        cursor.execute("""
+            UPDATE trades
+            SET verification_status = 'failed',
+                verification_timestamp = ?,
+                skip_reason = ?
+            WHERE id = ?
+        """, (
+            int(datetime.now().timestamp()),
+            f"Order not filled: {verification['status']}",
+            trade_id
+        ))
+        self.db.conn.commit()
+
+    def _update_verification_data(
+        self,
+        trade_id: int,
+        verification: dict,
+        price_discrepancy_pct: float
+    ) -> None:
+        """Update trade with verification data."""
+        cursor = self.db.conn.cursor()
+        cursor.execute("""
+            UPDATE trades
+            SET verified_fill_price = ?,
+                verified_fill_amount = ?,
+                transaction_hash = ?,
+                fill_timestamp = ?,
+                partial_fill = ?,
+                verification_status = 'verified',
+                verification_timestamp = ?,
+                price_discrepancy_pct = ?
+            WHERE id = ?
+        """, (
+            verification['fill_price'],
+            verification['fill_amount'],
+            verification['transaction_hash'],
+            verification['fill_timestamp'],
+            verification['partial_fill'],
+            int(datetime.now().timestamp()),
+            price_discrepancy_pct,
+            trade_id
+        ))
+        self.db.conn.commit()
