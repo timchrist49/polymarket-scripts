@@ -20,10 +20,10 @@ from polymarket.models import (
     AggregatedSentiment,
     TradingDecision,
     VolumeData,
-    TimeframeAnalysis,
     MarketRegime,
     ArbitrageOpportunity
 )
+from polymarket.trading.timeframe_analyzer import TimeframeAnalysis
 from polymarket.config import Settings
 
 logger = structlog.get_logger()

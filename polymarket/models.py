@@ -204,18 +204,6 @@ class VolumeData:
 
 
 @dataclass
-class TimeframeAnalysis:
-    """Multi-timeframe trend analysis."""
-    daily_trend: str       # "BULLISH", "BEARISH", "NEUTRAL"
-    four_hour_trend: str   # "BULLISH", "BEARISH", "NEUTRAL"
-    alignment: str         # "ALIGNED", "CONFLICTING", "NEUTRAL"
-    daily_support: float   # Key support level from daily
-    daily_resistance: float # Key resistance from daily
-    confidence: float      # 0.0-1.0 based on alignment
-    timestamp: datetime
-
-
-@dataclass
 class OrderbookData:
     """Polymarket orderbook depth analysis."""
     bid_ask_spread: float         # Spread in % (tight = liquid)
