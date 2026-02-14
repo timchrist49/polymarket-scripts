@@ -1,13 +1,16 @@
 # polymarket/telegram/bot.py
 """Telegram bot implementation."""
 
-from typing import Optional, Dict
+from typing import Optional, Dict, TYPE_CHECKING
 import asyncio
 import structlog
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
 from polymarket.config import Settings
+
+if TYPE_CHECKING:
+    from polymarket.performance.tracker import TestModeMetrics
 
 logger = structlog.get_logger()
 
@@ -282,3 +285,40 @@ The bot will now process recommendations and adjust parameters according to the 
 """
 
         await self._send_message(message)
+
+    async def send_test_mode_report(self, metrics: 'TestModeMetrics', trade_range: str) -> None:
+        """Send test mode performance report.
+
+        Args:
+            metrics: Aggregated test mode metrics
+            trade_range: Description like "Trades 21-40"
+        """
+        if not self._bot:
+            return
+
+        # Format alignment stats
+        alignment_lines = []
+        for alignment, count in metrics.timeframe_alignment_stats.items():
+            pct = (count / metrics.total_trades) * 100
+            alignment_lines.append(f"• {alignment}: {count} trades ({pct:.0f}%)")
+
+        alignment_text = "\n".join(alignment_lines)
+
+        message = f"""🎯 TEST MODE REPORT ({trade_range})
+
+📊 Performance:
+• Win Rate: {metrics.wins}/{metrics.wins + metrics.losses} ({metrics.win_rate:.1%})
+• Total P&L: ${metrics.total_pnl:+.2f}
+• Execution Rate: {metrics.executed_trades}/{metrics.total_trades} ({metrics.execution_rate:.1%})
+
+📈 Trade Quality:
+• Avg Arbitrage Edge: {metrics.avg_arbitrage_edge:.2%}
+• Avg Confidence: {metrics.avg_confidence:.1%}
+
+🕐 Timeframe Analysis:
+{alignment_text}
+
+Next report after 20 more trades."""
+
+        await self._send_message(message)
+        logger.info("Test mode report sent", trade_range=trade_range)
