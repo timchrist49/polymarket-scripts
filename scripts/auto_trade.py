@@ -1474,7 +1474,13 @@ class AutoTrader:
                     trade_id, cycle_start_time,
                     btc_current=float(btc_data.price),
                     btc_price_to_beat=float(price_to_beat) if price_to_beat else None,
-                    arbitrage_opportunity=arbitrage_opportunity
+                    arbitrage_opportunity=arbitrage_opportunity,
+                    conflict_analysis=conflict_analysis,
+                    signal_lag_detected=signal_lag_detected,
+                    signal_lag_reason=signal_lag_reason,
+                    odds_yes=odds_yes,
+                    odds_no=odds_no,
+                    odds_qualified=odds_qualified
                 )
 
                 # Track trades for reflection triggers
@@ -1639,10 +1645,35 @@ class AutoTrader:
         cycle_start_time: datetime,
         btc_current: Optional[float] = None,
         btc_price_to_beat: Optional[float] = None,
-        arbitrage_opportunity = None
+        arbitrage_opportunity = None,
+        conflict_analysis = None,  # NEW parameter
+        signal_lag_detected: bool = False,  # NEW parameter
+        signal_lag_reason: str | None = None,  # NEW parameter
+        odds_yes: float = 0.50,  # NEW parameter
+        odds_no: float = 0.50,  # NEW parameter
+        odds_qualified: bool = False  # NEW parameter
     ) -> None:
         """Execute a trade order with JIT price fetching and safety checks."""
         try:
+            # NEW: Paper trading fork
+            if self.test_mode.enabled and self.test_mode.paper_trading:
+                await self._execute_paper_trade(
+                    market=market,
+                    decision=decision,
+                    amount=amount,
+                    token_name=token_name,
+                    market_price=market_price,
+                    btc_current=btc_current,
+                    btc_price_to_beat=btc_price_to_beat,
+                    conflict_analysis=conflict_analysis,
+                    signal_lag_detected=signal_lag_detected,
+                    signal_lag_reason=signal_lag_reason,
+                    odds_yes=odds_yes,
+                    odds_no=odds_no,
+                    odds_qualified=odds_qualified
+                )
+                return  # Exit before real order placement
+
             from polymarket.models import OrderRequest
 
             # Store analysis price (from cycle start)
@@ -1935,6 +1966,111 @@ class AutoTrader:
                 "Trade execution failed",
                 market_id=market.id,
                 error=str(e)
+            )
+
+    async def _execute_paper_trade(
+        self,
+        market,
+        decision,
+        amount: Decimal,
+        token_name: str,
+        market_price: float,
+        btc_current: Optional[float],
+        btc_price_to_beat: Optional[float],
+        conflict_analysis,
+        signal_lag_detected: bool,
+        signal_lag_reason: str | None,
+        odds_yes: float,
+        odds_no: float,
+        odds_qualified: bool
+    ) -> None:
+        """
+        Execute a paper trade (simulated trade, no real money).
+
+        Logs trade to paper_trades table and sends detailed Telegram alert.
+        """
+        try:
+            from polymarket.models import BTCPriceData
+            import json
+
+            # Create BTCPriceData object for logging
+            btc_data = BTCPriceData(
+                price=Decimal(str(btc_current)) if btc_current else Decimal("0"),
+                timestamp=datetime.now(timezone.utc),
+                source="current",
+                volume_24h=Decimal("0")
+            )
+
+            # Calculate time remaining
+            time_remaining_seconds = 900  # Default 15 min
+            if market.end_date:
+                time_remaining_seconds = int((market.end_date - datetime.now(timezone.utc)).total_seconds())
+
+            # Log paper trade
+            paper_trade_id = self.performance_tracker.log_paper_trade(
+                market=market,
+                decision=decision,
+                btc_data=btc_data,
+                executed_price=market_price,
+                position_size=float(amount),
+                price_to_beat=Decimal(str(btc_price_to_beat)) if btc_price_to_beat else None,
+                time_remaining_seconds=time_remaining_seconds,
+                signal_lag_detected=signal_lag_detected,
+                signal_lag_reason=signal_lag_reason,
+                conflict_severity=conflict_analysis.severity.value if conflict_analysis else "NONE",
+                conflicts_list=conflict_analysis.conflicts_detected if conflict_analysis else [],
+                odds_yes=odds_yes,
+                odds_no=odds_no,
+                odds_qualified=odds_qualified
+            )
+
+            # Format summaries for Telegram alert
+            # Get technical indicators (need to recalculate or pass in)
+            # For now, create simple summaries from available data
+            technical_summary = "✅ Technical: (detailed summary TBD)"
+            sentiment_summary = "✅ Sentiment: (detailed summary TBD)"
+            timeframe_summary = "⚠️ Timeframes: (detailed summary TBD)"
+
+            # Send Telegram alert
+            await self.telegram_bot.send_paper_trade_alert(
+                market_slug=market.slug or f"Market {market.id}",
+                action=decision.action,
+                confidence=decision.confidence,
+                position_size=float(amount),
+                executed_price=market_price,
+                time_remaining_seconds=time_remaining_seconds,
+                technical_summary=technical_summary,
+                sentiment_summary=sentiment_summary,
+                odds_yes=odds_yes,
+                odds_no=odds_no,
+                odds_qualified=odds_qualified,
+                timeframe_summary=timeframe_summary,
+                signal_lag_detected=signal_lag_detected,
+                signal_lag_reason=signal_lag_reason,
+                conflict_severity=conflict_analysis.severity.value if conflict_analysis else "NONE",
+                conflicts_list=conflict_analysis.conflicts_detected if conflict_analysis else [],
+                ai_reasoning=decision.reasoning
+            )
+
+            logger.info(
+                "Paper trade executed",
+                paper_trade_id=paper_trade_id,
+                market_slug=market.slug,
+                action=decision.action,
+                amount=f"${amount:.2f}",
+                confidence=f"{decision.confidence:.2f}"
+            )
+
+            # Mark market as traded in test mode
+            if self.test_mode.enabled:
+                self.test_mode.traded_markets.add(market.id)
+
+        except Exception as e:
+            logger.error(
+                "Paper trade execution failed",
+                market_id=market.id,
+                error=str(e),
+                exc_info=True
             )
 
     async def _check_stop_loss(self) -> None:
