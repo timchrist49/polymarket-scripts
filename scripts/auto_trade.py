@@ -44,6 +44,9 @@ from polymarket.trading.probability_calculator import ProbabilityCalculator
 from polymarket.trading.arbitrage_detector import ArbitrageDetector
 from polymarket.trading.smart_order_executor import SmartOrderExecutor
 from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer, TimeframeAnalysis
+from polymarket.trading.signal_lag_detector import detect_signal_lag
+from polymarket.trading.conflict_detector import SignalConflictDetector, ConflictSeverity
+from polymarket.trading.odds_poller import MarketOddsPoller
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
@@ -132,6 +135,9 @@ class AutoTrader:
         self.risk_manager = RiskManager(settings)
         self.market_tracker = MarketTracker(settings)
         self.performance_tracker = PerformanceTracker()
+
+        # Odds polling service
+        self.odds_poller = MarketOddsPoller(self.client)
         self.telegram_bot = TelegramBot(settings)  # Initialize Telegram bot
         self.cleanup_scheduler = CleanupScheduler(
             db=self.performance_tracker.db,
@@ -232,6 +238,11 @@ class AutoTrader:
         asyncio.create_task(self.cleanup_scheduler.start())
         logger.info("Cleanup scheduler started (runs weekly)")
         logger.info("Self-reflection system enabled (triggers: 10 trades, 3 consecutive losses)")
+
+        # Start odds polling background task
+        odds_task = asyncio.create_task(self.odds_poller.start_polling())
+        self.background_tasks.append(odds_task)
+        logger.info("Odds poller started (background task)")
 
         # Start settlement loop
         settlement_task = asyncio.create_task(self._run_settlement_loop())
