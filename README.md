@@ -24,6 +24,16 @@ The bot:
 - Executes trades automatically with risk management
 - Runs as a background daemon independent of terminal sessions
 
+### Price Data Source
+
+The bot uses **Chainlink oracle prices** from Polymarket's RTDS API, ensuring alignment with how Polymarket settles markets. This provides:
+
+- **Accurate price references:** Same price source used for settlement
+- **Real-time updates:** WebSocket connection to Chainlink price feed
+- **Source attribution:** Every trade logs which price source was used
+
+Previous versions used Binance prices, which could differ by thousands of dollars from settlement prices. See `docs/CHAINLINK_MIGRATION.md` for migration details.
+
 ## Manual Trading Scripts
 
 For manual/scripted trading, use these individual scripts:
