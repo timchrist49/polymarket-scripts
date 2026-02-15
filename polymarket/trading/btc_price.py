@@ -51,8 +51,7 @@ class BTCPriceService:
 
         # Settlement validator
         self._settlement_validator = SettlementPriceValidator(
-            btc_service=self,
-            tolerance_percent=settings.btc_settlement_tolerance_pct
+            btc_service=self
         )
 
         # Retry config

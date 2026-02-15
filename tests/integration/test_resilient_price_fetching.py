@@ -134,7 +134,8 @@ async def test_configuration_integration():
     # Verify stale policy uses settings
     assert service._stale_policy.max_stale_age_seconds == settings.btc_cache_stale_max_age
 
-    # Verify settlement validator uses settings
-    assert service._settlement_validator.tolerance_percent == settings.btc_settlement_tolerance_pct
+    # Verify settlement validator is initialized
+    assert service._settlement_validator is not None
+    assert service._settlement_validator._btc_service == service
 
     await service.close()
