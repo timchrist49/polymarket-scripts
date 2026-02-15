@@ -1474,6 +1474,7 @@ class AutoTrader:
                     market, decision, validation.adjusted_position,
                     token_id, token_name, market_price,
                     trade_id, cycle_start_time,
+                    btc_data=btc_data,
                     btc_current=float(btc_data.price),
                     btc_price_to_beat=float(price_to_beat) if price_to_beat else None,
                     arbitrage_opportunity=arbitrage_opportunity,
@@ -1645,6 +1646,7 @@ class AutoTrader:
         market_price: float,
         trade_id: int,
         cycle_start_time: datetime,
+        btc_data = None,  # NEW: Full BTCPriceData object
         btc_current: Optional[float] = None,
         btc_price_to_beat: Optional[float] = None,
         arbitrage_opportunity = None,
@@ -1665,7 +1667,7 @@ class AutoTrader:
                     amount=amount,
                     token_name=token_name,
                     market_price=market_price,
-                    btc_current=btc_current,
+                    btc_data=btc_data,
                     btc_price_to_beat=btc_price_to_beat,
                     conflict_analysis=conflict_analysis,
                     signal_lag_detected=signal_lag_detected,
@@ -1981,7 +1983,7 @@ class AutoTrader:
         amount: Decimal,
         token_name: str,
         market_price: float,
-        btc_current: Optional[float],
+        btc_data,  # CHANGED: Full BTCPriceData object (not float)
         btc_price_to_beat: Optional[float],
         conflict_analysis,
         signal_lag_detected: bool,
@@ -1996,16 +1998,9 @@ class AutoTrader:
         Logs trade to paper_trades table and sends detailed Telegram alert.
         """
         try:
-            from polymarket.models import BTCPriceData
             import json
 
-            # Create BTCPriceData object for logging
-            btc_data = BTCPriceData(
-                price=Decimal(str(btc_current)) if btc_current else Decimal("0"),
-                timestamp=datetime.now(timezone.utc),
-                source="current",
-                volume_24h=Decimal("0")
-            )
+            # btc_data is now passed as parameter (includes source from Chainlink)
 
             # Calculate time remaining
             time_remaining_seconds = 900  # Default 15 min

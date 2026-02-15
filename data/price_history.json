@@ -1,13 +1,1237 @@
 {
   "version": "1.0",
-  "last_updated": "2026-02-14T13:40:40.966965",
+  "last_updated": "2026-02-15T10:11:07.514529",
   "retention_hours": 24,
   "prices": [
     {
-      "timestamp": 1770986440,
+      "timestamp": 1771059543,
       "price": "60000.00",
       "source": "polymarket",
-      "received_at": "2026-02-14T13:40:40.966873"
+      "received_at": "2026-02-15T09:59:03.488530"
+    },
+    {
+      "timestamp": 1771149986,
+      "price": "70261.8334339104",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:06:27.412085"
+    },
+    {
+      "timestamp": 1771149987,
+      "price": "70251.77489494035",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:06:28.234303"
+    },
+    {
+      "timestamp": 1771149988,
+      "price": "70250.67696162974",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:06:29.189975"
+    },
+    {
+      "timestamp": 1771150065,
+      "price": "70215.0155486671",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:46.043573"
+    },
+    {
+      "timestamp": 1771150066,
+      "price": "70215.10349380784",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:46.977032"
+    },
+    {
+      "timestamp": 1771150067,
+      "price": "70215.27433042879",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:48.184295"
+    },
+    {
+      "timestamp": 1771150068,
+      "price": "70215.14543859106",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:49.024507"
+    },
+    {
+      "timestamp": 1771150069,
+      "price": "70214.57627707087",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:49.906010"
+    },
+    {
+      "timestamp": 1771150070,
+      "price": "70208.67245495174",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:51.145998"
+    },
+    {
+      "timestamp": 1771150071,
+      "price": "70211.05895154686",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:52.046714"
+    },
+    {
+      "timestamp": 1771150072,
+      "price": "70223.0904523643",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:52.872307"
+    },
+    {
+      "timestamp": 1771150073,
+      "price": "70227.92582377508",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:54.213268"
+    },
+    {
+      "timestamp": 1771150074,
+      "price": "70228.1964031784",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:55.410921"
+    },
+    {
+      "timestamp": 1771150075,
+      "price": "70219.69796519104",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:55.903683"
+    },
+    {
+      "timestamp": 1771150076,
+      "price": "70209.2899565",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:57.132409"
+    },
+    {
+      "timestamp": 1771150077,
+      "price": "70208.3841356754",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:57.991019"
+    },
+    {
+      "timestamp": 1771150078,
+      "price": "70207.589655",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:07:58.914132"
+    },
+    {
+      "timestamp": 1771150079,
+      "price": "70207.971",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:00.125113"
+    },
+    {
+      "timestamp": 1771150080,
+      "price": "70206.50528398437",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:01.006973"
+    },
+    {
+      "timestamp": 1771150081,
+      "price": "70205.7471185",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:01.889843"
+    },
+    {
+      "timestamp": 1771150082,
+      "price": "70197.33420171181",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:03.085676"
+    },
+    {
+      "timestamp": 1771150083,
+      "price": "70192.32729853997",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:03.953791"
+    },
+    {
+      "timestamp": 1771150084,
+      "price": "70190.76811441849",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:04.810815"
+    },
+    {
+      "timestamp": 1771150085,
+      "price": "70187.20486464178",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:06.646623"
+    },
+    {
+      "timestamp": 1771150086,
+      "price": "70185.79197017016",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:07.174803"
+    },
+    {
+      "timestamp": 1771150087,
+      "price": "70184.86471",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:08.229767"
+    },
+    {
+      "timestamp": 1771150088,
+      "price": "70191.94743293",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:09.285773"
+    },
+    {
+      "timestamp": 1771150089,
+      "price": "70200.02454829135",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:10.377691"
+    },
+    {
+      "timestamp": 1771150090,
+      "price": "70196.8921195",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:11.405893"
+    },
+    {
+      "timestamp": 1771150091,
+      "price": "70196.1506463966",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:11.994876"
+    },
+    {
+      "timestamp": 1771150092,
+      "price": "70194.88051392995",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:13.035822"
+    },
+    {
+      "timestamp": 1771150093,
+      "price": "70193.6836802545",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:14.023038"
+    },
+    {
+      "timestamp": 1771150094,
+      "price": "70194.39766265589",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:15.043347"
+    },
+    {
+      "timestamp": 1771150095,
+      "price": "70193.84842678916",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:16.050007"
+    },
+    {
+      "timestamp": 1771150096,
+      "price": "70207.52474",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:17.019628"
+    },
+    {
+      "timestamp": 1771150097,
+      "price": "70216.90783729998",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:18.002715"
+    },
+    {
+      "timestamp": 1771150098,
+      "price": "70218.1855685",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:19.013206"
+    },
+    {
+      "timestamp": 1771150099,
+      "price": "70213.24201793097",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:20.384593"
+    },
+    {
+      "timestamp": 1771150100,
+      "price": "70211.68493981687",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:20.874551"
+    },
+    {
+      "timestamp": 1771150101,
+      "price": "70209.2585375",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:22.170801"
+    },
+    {
+      "timestamp": 1771150102,
+      "price": "70209.9198195369",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:23.115419"
+    },
+    {
+      "timestamp": 1771150103,
+      "price": "70209.560553",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:24.093129"
+    },
+    {
+      "timestamp": 1771150104,
+      "price": "70208.04990908972",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:24.974914"
+    },
+    {
+      "timestamp": 1771150105,
+      "price": "70206.6218392732",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:25.882694"
+    },
+    {
+      "timestamp": 1771150106,
+      "price": "70204.672425",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:26.920120"
+    },
+    {
+      "timestamp": 1771150107,
+      "price": "70204.4566985817",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:27.832725"
+    },
+    {
+      "timestamp": 1771150108,
+      "price": "70214.48161814836",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:29.231666"
+    },
+    {
+      "timestamp": 1771150109,
+      "price": "70219.14232656524",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:30.113239"
+    },
+    {
+      "timestamp": 1771150110,
+      "price": "70221.74978952414",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:31.019562"
+    },
+    {
+      "timestamp": 1771150111,
+      "price": "70224.84860563751",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:32.297394"
+    },
+    {
+      "timestamp": 1771150112,
+      "price": "70227.66761204385",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:33.223104"
+    },
+    {
+      "timestamp": 1771150113,
+      "price": "70227.70414972007",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:34.197603"
+    },
+    {
+      "timestamp": 1771150114,
+      "price": "70228.2898045743",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:35.108128"
+    },
+    {
+      "timestamp": 1771150115,
+      "price": "70228.1333143036",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:36.104599"
+    },
+    {
+      "timestamp": 1771150116,
+      "price": "70225.98136607853",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:37.002525"
+    },
+    {
+      "timestamp": 1771150117,
+      "price": "70225.12758571637",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:37.918040"
+    },
+    {
+      "timestamp": 1771150118,
+      "price": "70220.83966369125",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:38.889391"
+    },
+    {
+      "timestamp": 1771150119,
+      "price": "70220.49768834242",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:40.238559"
+    },
+    {
+      "timestamp": 1771150120,
+      "price": "70222.79130732181",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:41.156608"
+    },
+    {
+      "timestamp": 1771150121,
+      "price": "70223.97586999336",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:42.061053"
+    },
+    {
+      "timestamp": 1771150122,
+      "price": "70226.0959055",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:42.939021"
+    },
+    {
+      "timestamp": 1771150123,
+      "price": "70226.2079515",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:44.130730"
+    },
+    {
+      "timestamp": 1771150124,
+      "price": "70226.65746407303",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:44.958989"
+    },
+    {
+      "timestamp": 1771150125,
+      "price": "70227.24373132529",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:45.863763"
+    },
+    {
+      "timestamp": 1771150126,
+      "price": "70227.86550880932",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:47.132734"
+    },
+    {
+      "timestamp": 1771150127,
+      "price": "70228.0058417282",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:47.922437"
+    },
+    {
+      "timestamp": 1771150128,
+      "price": "70227.7130221755",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:49.178611"
+    },
+    {
+      "timestamp": 1771150129,
+      "price": "70231.3232715",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:50.011615"
+    },
+    {
+      "timestamp": 1771150130,
+      "price": "70234.87046394881",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:50.903483"
+    },
+    {
+      "timestamp": 1771150131,
+      "price": "70235.53180794882",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:52.168190"
+    },
+    {
+      "timestamp": 1771150132,
+      "price": "70237.18359997327",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:53.036124"
+    },
+    {
+      "timestamp": 1771150133,
+      "price": "70242.9733144453",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:53.794567"
+    },
+    {
+      "timestamp": 1771150134,
+      "price": "70242.30159700524",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:55.058776"
+    },
+    {
+      "timestamp": 1771150135,
+      "price": "70241.85572616986",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:55.926540"
+    },
+    {
+      "timestamp": 1771150136,
+      "price": "70242.47844020762",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:57.170670"
+    },
+    {
+      "timestamp": 1771150137,
+      "price": "70240.17304787468",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:58.010259"
+    },
+    {
+      "timestamp": 1771150138,
+      "price": "70237.5328037387",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:08:58.868878"
+    },
+    {
+      "timestamp": 1771150139,
+      "price": "70238.00587332148",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:00.199981"
+    },
+    {
+      "timestamp": 1771150140,
+      "price": "70238.00562",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:01.022763"
+    },
+    {
+      "timestamp": 1771150141,
+      "price": "70234.656361",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:01.957249"
+    },
+    {
+      "timestamp": 1771150142,
+      "price": "70239.0296915952",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:03.217624"
+    },
+    {
+      "timestamp": 1771150143,
+      "price": "70241.71726234008",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:03.988518"
+    },
+    {
+      "timestamp": 1771150144,
+      "price": "70243.63685991925",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:04.909607"
+    },
+    {
+      "timestamp": 1771150145,
+      "price": "70243.900775525",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:06.715539"
+    },
+    {
+      "timestamp": 1771150146,
+      "price": "70244.00053768407",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:07.539997"
+    },
+    {
+      "timestamp": 1771150147,
+      "price": "70243.9427388472",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:08.334809"
+    },
+    {
+      "timestamp": 1771150148,
+      "price": "70244.24291786346",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:09.456065"
+    },
+    {
+      "timestamp": 1771150149,
+      "price": "70249.68950214569",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:10.268745"
+    },
+    {
+      "timestamp": 1771150150,
+      "price": "70266.8244208236",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:11.333926"
+    },
+    {
+      "timestamp": 1771150151,
+      "price": "70269.06582879522",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:12.414184"
+    },
+    {
+      "timestamp": 1771150152,
+      "price": "70271.763753623",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:13.186533"
+    },
+    {
+      "timestamp": 1771150153,
+      "price": "70277.88573821582",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:14.341778"
+    },
+    {
+      "timestamp": 1771150154,
+      "price": "70280.13749679914",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:15.612766"
+    },
+    {
+      "timestamp": 1771150155,
+      "price": "70285.22170839747",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:16.252652"
+    },
+    {
+      "timestamp": 1771150156,
+      "price": "70286.60714796607",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:17.358939"
+    },
+    {
+      "timestamp": 1771150157,
+      "price": "70285.52634",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:18.032564"
+    },
+    {
+      "timestamp": 1771150158,
+      "price": "70281.93730735307",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:19.230811"
+    },
+    {
+      "timestamp": 1771150159,
+      "price": "70281.78683590736",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:20.472400"
+    },
+    {
+      "timestamp": 1771150160,
+      "price": "70281.8844217254",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:21.183729"
+    },
+    {
+      "timestamp": 1771150161,
+      "price": "70283.76886188694",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:22.055315"
+    },
+    {
+      "timestamp": 1771150162,
+      "price": "70288.52802605242",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:23.244873"
+    },
+    {
+      "timestamp": 1771150163,
+      "price": "70292.71970336311",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:24.109606"
+    },
+    {
+      "timestamp": 1771150164,
+      "price": "70296.11326310165",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:25.227220"
+    },
+    {
+      "timestamp": 1771150165,
+      "price": "70298.22853518411",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:26.342202"
+    },
+    {
+      "timestamp": 1771150166,
+      "price": "70298.86947167217",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:27.342927"
+    },
+    {
+      "timestamp": 1771150167,
+      "price": "70299.10198007581",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:28.347108"
+    },
+    {
+      "timestamp": 1771150168,
+      "price": "70301.35162201898",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:29.338294"
+    },
+    {
+      "timestamp": 1771150169,
+      "price": "70301.50779437303",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:30.331705"
+    },
+    {
+      "timestamp": 1771150170,
+      "price": "70298.8937334186",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:31.354012"
+    },
+    {
+      "timestamp": 1771150171,
+      "price": "70297.07317850066",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:32.375906"
+    },
+    {
+      "timestamp": 1771150172,
+      "price": "70297.06526331097",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:33.450110"
+    },
+    {
+      "timestamp": 1771150173,
+      "price": "70297.06526331097",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:33.874732"
+    },
+    {
+      "timestamp": 1771150174,
+      "price": "70297.15261336174",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:35.333492"
+    },
+    {
+      "timestamp": 1771150175,
+      "price": "70297.17789586175",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:36.212310"
+    },
+    {
+      "timestamp": 1771150176,
+      "price": "70297.17229386175",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:37.098756"
+    },
+    {
+      "timestamp": 1771150177,
+      "price": "70297.24053191251",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:38.034531"
+    },
+    {
+      "timestamp": 1771150178,
+      "price": "70297.23982159459",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:38.988293"
+    },
+    {
+      "timestamp": 1771150179,
+      "price": "70290.7714393825",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:39.890978"
+    },
+    {
+      "timestamp": 1771150180,
+      "price": "70285.68793244097",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:40.871637"
+    },
+    {
+      "timestamp": 1771150181,
+      "price": "70291.17271278406",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:42.239490"
+    },
+    {
+      "timestamp": 1771150182,
+      "price": "70292.025559",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:43.127327"
+    },
+    {
+      "timestamp": 1771150183,
+      "price": "70292.26476979547",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:44.000542"
+    },
+    {
+      "timestamp": 1771150184,
+      "price": "70292.5698070734",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:44.986852"
+    },
+    {
+      "timestamp": 1771150185,
+      "price": "70293.18675523116",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:45.900495"
+    },
+    {
+      "timestamp": 1771150186,
+      "price": "70293.46980969678",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:47.143629"
+    },
+    {
+      "timestamp": 1771150187,
+      "price": "70293.5064333286",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:48.003649"
+    },
+    {
+      "timestamp": 1771150188,
+      "price": "70294.72784863277",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:49.247219"
+    },
+    {
+      "timestamp": 1771150189,
+      "price": "70294.74184091293",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:49.966430"
+    },
+    {
+      "timestamp": 1771150190,
+      "price": "70296.37281870598",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:50.845496"
+    },
+    {
+      "timestamp": 1771150191,
+      "price": "70310.49514552504",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:52.074493"
+    },
+    {
+      "timestamp": 1771150192,
+      "price": "70312.34438041787",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:52.848796"
+    },
+    {
+      "timestamp": 1771150193,
+      "price": "70311.81138870615",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:54.047970"
+    },
+    {
+      "timestamp": 1771150194,
+      "price": "70311.95812646243",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:54.887975"
+    },
+    {
+      "timestamp": 1771150195,
+      "price": "70311.90063206592",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:56.037104"
+    },
+    {
+      "timestamp": 1771150196,
+      "price": "70311.65448423714",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:09:56.933535"
+    },
+    {
+      "timestamp": 1771150197,
+      "price": "70310.65125893602",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813155"
+    },
+    {
+      "timestamp": 1771150198,
+      "price": "70310.61292839838",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813245"
+    },
+    {
+      "timestamp": 1771150199,
+      "price": "70310.75482755413",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813298"
+    },
+    {
+      "timestamp": 1771150200,
+      "price": "70311.066530262",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813347"
+    },
+    {
+      "timestamp": 1771150201,
+      "price": "70310.98636513544",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813394"
+    },
+    {
+      "timestamp": 1771150202,
+      "price": "70312.09535991371",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813443"
+    },
+    {
+      "timestamp": 1771150203,
+      "price": "70312.91940079532",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813485"
+    },
+    {
+      "timestamp": 1771150204,
+      "price": "70314.79887460981",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813526"
+    },
+    {
+      "timestamp": 1771150205,
+      "price": "70313.5371151461",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813566"
+    },
+    {
+      "timestamp": 1771150206,
+      "price": "70312.84977720666",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813659"
+    },
+    {
+      "timestamp": 1771150207,
+      "price": "70311.65882272556",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813752"
+    },
+    {
+      "timestamp": 1771150208,
+      "price": "70306.61499082949",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813807"
+    },
+    {
+      "timestamp": 1771150209,
+      "price": "70307.12462304853",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813852"
+    },
+    {
+      "timestamp": 1771150210,
+      "price": "70307.44462980967",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813912"
+    },
+    {
+      "timestamp": 1771150211,
+      "price": "70311.09224973913",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813953"
+    },
+    {
+      "timestamp": 1771150212,
+      "price": "70311.91062199796",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.813995"
+    },
+    {
+      "timestamp": 1771150213,
+      "price": "70312.68353888259",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814035"
+    },
+    {
+      "timestamp": 1771150214,
+      "price": "70313.908354494",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814077"
+    },
+    {
+      "timestamp": 1771150215,
+      "price": "70313.16477176404",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814115"
+    },
+    {
+      "timestamp": 1771150216,
+      "price": "70307.82917701137",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814175"
+    },
+    {
+      "timestamp": 1771150217,
+      "price": "70307.82917701137",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814218"
+    },
+    {
+      "timestamp": 1771150218,
+      "price": "70310.63457605828",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814257"
+    },
+    {
+      "timestamp": 1771150219,
+      "price": "70312.13570960925",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814302"
+    },
+    {
+      "timestamp": 1771150220,
+      "price": "70314.49644634525",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814344"
+    },
+    {
+      "timestamp": 1771150221,
+      "price": "70314.24125978413",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814384"
+    },
+    {
+      "timestamp": 1771150222,
+      "price": "70316.41351019086",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814423"
+    },
+    {
+      "timestamp": 1771150223,
+      "price": "70316.41351019086",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:24.814461"
+    },
+    {
+      "timestamp": 1771150224,
+      "price": "70315.59698352183",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:25.346112"
+    },
+    {
+      "timestamp": 1771150225,
+      "price": "70315.67411188282",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:25.984122"
+    },
+    {
+      "timestamp": 1771150226,
+      "price": "70313.4506731196",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:27.216192"
+    },
+    {
+      "timestamp": 1771150227,
+      "price": "70313.3276635212",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:28.485030"
+    },
+    {
+      "timestamp": 1771150228,
+      "price": "70312.30296915222",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:29.649054"
+    },
+    {
+      "timestamp": 1771150229,
+      "price": "70312.3096595795",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:30.020941"
+    },
+    {
+      "timestamp": 1771150230,
+      "price": "70311.73681327098",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:31.026655"
+    },
+    {
+      "timestamp": 1771150231,
+      "price": "70312.02882922898",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:31.916973"
+    },
+    {
+      "timestamp": 1771150232,
+      "price": "70309.76758881054",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:32.853858"
+    },
+    {
+      "timestamp": 1771150233,
+      "price": "70307.9399389265",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:34.319421"
+    },
+    {
+      "timestamp": 1771150234,
+      "price": "70308.36052579575",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:35.252687"
+    },
+    {
+      "timestamp": 1771150235,
+      "price": "70308.38047659898",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:36.483604"
+    },
+    {
+      "timestamp": 1771150236,
+      "price": "70308.36935325737",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:37.236348"
+    },
+    {
+      "timestamp": 1771150237,
+      "price": "70308.36010519484",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:38.155034"
+    },
+    {
+      "timestamp": 1771150238,
+      "price": "70308.31211519768",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:39.073178"
+    },
+    {
+      "timestamp": 1771150239,
+      "price": "70307.15301183867",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:39.981383"
+    },
+    {
+      "timestamp": 1771150240,
+      "price": "70307.05166160468",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:40.953235"
+    },
+    {
+      "timestamp": 1771150241,
+      "price": "70297.99493178674",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:42.240415"
+    },
+    {
+      "timestamp": 1771150242,
+      "price": "70296.21892509208",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:43.282902"
+    },
+    {
+      "timestamp": 1771150243,
+      "price": "70295.94799268138",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:44.279478"
+    },
+    {
+      "timestamp": 1771150244,
+      "price": "70294.85980252927",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:45.624690"
+    },
+    {
+      "timestamp": 1771150245,
+      "price": "70293.9253825",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:46.137645"
+    },
+    {
+      "timestamp": 1771150246,
+      "price": "70291.0736495",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:47.221640"
+    },
+    {
+      "timestamp": 1771150247,
+      "price": "70290.90360428682",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:48.255854"
+    },
+    {
+      "timestamp": 1771150248,
+      "price": "70290.46315290764",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:49.534336"
+    },
+    {
+      "timestamp": 1771150249,
+      "price": "70289.36479332946",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:50.104709"
+    },
+    {
+      "timestamp": 1771150250,
+      "price": "70288.45484882945",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:51.160636"
+    },
+    {
+      "timestamp": 1771150251,
+      "price": "70287.31693272863",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:52.192029"
+    },
+    {
+      "timestamp": 1771150252,
+      "price": "70287.36313903613",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:53.301460"
+    },
+    {
+      "timestamp": 1771150253,
+      "price": "70288.50388409842",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:54.396944"
+    },
+    {
+      "timestamp": 1771150254,
+      "price": "70288.48260504921",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:54.881586"
+    },
+    {
+      "timestamp": 1771150255,
+      "price": "70288.28578745101",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:56.268133"
+    },
+    {
+      "timestamp": 1771150256,
+      "price": "70288.27944379371",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:57.112428"
+    },
+    {
+      "timestamp": 1771150257,
+      "price": "70288.28028621335",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:57.987815"
+    },
+    {
+      "timestamp": 1771150258,
+      "price": "70288.3017552576",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:10:58.843722"
+    },
+    {
+      "timestamp": 1771150259,
+      "price": "70288.2834237897",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:00.156436"
+    },
+    {
+      "timestamp": 1771150260,
+      "price": "70287.97148641429",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:00.948102"
+    },
+    {
+      "timestamp": 1771150261,
+      "price": "70288.7257262928",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:01.769698"
+    },
+    {
+      "timestamp": 1771150262,
+      "price": "70293.59159820544",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:03.173779"
+    },
+    {
+      "timestamp": 1771150263,
+      "price": "70293.57299068726",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:04.100644"
+    },
+    {
+      "timestamp": 1771150264,
+      "price": "70294.85729193433",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:04.912688"
+    },
+    {
+      "timestamp": 1771150265,
+      "price": "70295.27979635457",
+      "source": "chainlink",
+      "received_at": "2026-02-15T10:11:06.167738"
     }
   ]
 }

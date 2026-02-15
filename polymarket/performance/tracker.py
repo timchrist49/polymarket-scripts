@@ -514,8 +514,9 @@ class PerformanceTracker:
                 btc_price_current, btc_price_to_beat, time_remaining_seconds,
                 signal_lag_detected, signal_lag_reason,
                 conflict_severity, conflicts_list,
-                odds_yes, odds_no, odds_qualified
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                odds_yes, odds_no, odds_qualified,
+                price_source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now(timezone.utc).isoformat(),
             market.id,
@@ -536,7 +537,8 @@ class PerformanceTracker:
             json.dumps(conflicts_list),
             odds_yes,
             odds_no,
-            odds_qualified
+            odds_qualified,
+            btc_data.source  # NEW: Log price source (chainlink, binance, etc.)
         ))
 
         self.db.conn.commit()
