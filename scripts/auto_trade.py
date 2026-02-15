@@ -596,9 +596,10 @@ class AutoTrader:
                 if timeframe_analysis:
                     logger.info(
                         "Multi-timeframe analysis",
+                        tf_1m=timeframe_analysis.tf_1m.direction,
+                        tf_5m=timeframe_analysis.tf_5m.direction,
                         tf_15m=timeframe_analysis.tf_15m.direction,
-                        tf_1h=timeframe_analysis.tf_1h.direction,
-                        tf_4h=timeframe_analysis.tf_4h.direction,
+                        tf_30m=timeframe_analysis.tf_30m.direction,
                         alignment=timeframe_analysis.alignment_score,
                         modifier=f"{timeframe_analysis.confidence_modifier:+.1%}"
                     )
@@ -1071,8 +1072,8 @@ class AutoTrader:
                     logger.info(
                         "Skipping trade - conflicting timeframes",
                         market_id=market.id,
-                        tf_1h_trend=timeframe_analysis.tf_1h.direction,
-                        tf_4h_trend=timeframe_analysis.tf_4h.direction,
+                        tf_15m_trend=timeframe_analysis.tf_15m.direction,
+                        tf_30m_trend=timeframe_analysis.tf_30m.direction,
                         reason="Don't trade against larger timeframe trend"
                     )
                     return
@@ -1080,8 +1081,8 @@ class AutoTrader:
                     logger.info(
                         "[TEST] Bypassing timeframe check - data sent to AI",
                         market_id=market.id,
-                        tf_1h_trend=timeframe_analysis.tf_1h.direction,
-                        tf_4h_trend=timeframe_analysis.tf_4h.direction,
+                        tf_15m_trend=timeframe_analysis.tf_15m.direction,
+                        tf_30m_trend=timeframe_analysis.tf_30m.direction,
                         bypassed=True
                     )
 

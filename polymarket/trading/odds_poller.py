@@ -86,11 +86,11 @@ class MarketOddsPoller:
 
             # Store snapshot (thread-safe)
             async with self._lock:
-                self.current_odds[fresh_market.id] = snapshot
+                self.current_odds[market.id] = snapshot
 
             logger.debug(
                 "Odds polled",
-                market_id=fresh_market.id,
+                market_id=market.id,
                 yes_odds=f"{yes_odds:.2f}",
                 no_odds=f"{no_odds:.2f}",
                 yes_qualifies=snapshot.yes_qualifies,
