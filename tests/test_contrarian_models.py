@@ -37,3 +37,6 @@ def test_contrarian_signal_overbought_creation():
     assert signal.suggested_direction == "DOWN"
     assert signal.rsi == 92.0
     assert signal.crowd_direction == "UP"
+    assert signal.crowd_confidence == 0.70
+    assert signal.confidence == 0.92
+    assert "overbought" in signal.reasoning.lower()
