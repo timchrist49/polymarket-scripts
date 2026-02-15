@@ -923,15 +923,17 @@ class AutoTrader:
                         price=f"${price_to_beat:,.2f}"
                     )
                 else:
-                    # Fallback to current price if historical fetch fails
-                    price_to_beat = btc_data.price
-                    self.market_tracker.set_price_to_beat(market_slug, price_to_beat)
-                    logger.warning(
-                        "Price-to-beat fallback to current price",
+                    # Historical price fetch failed - DO NOT fall back to current price
+                    # This would cause incorrect price_to_beat calculation
+                    logger.error(
+                        "Price-to-beat unavailable - all sources failed",
                         market_id=market.id,
-                        reason="Historical price fetch failed",
-                        price=f"${price_to_beat:,.2f}"
+                        market_slug=market_slug,
+                        market_start=start_time.isoformat(),
+                        reason="Historical price not available from any source"
                     )
+                    # Leave price_to_beat as None - caller will skip this market
+                    price_to_beat = None
 
             # Calculate price difference
             if price_to_beat:
