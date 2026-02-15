@@ -21,7 +21,8 @@ from polymarket.models import (
     TradingDecision,
     VolumeData,
     MarketRegime,
-    ArbitrageOpportunity
+    ArbitrageOpportunity,
+    ContrarianSignal
 )
 from polymarket.trading.timeframe_analyzer import TimeframeAnalysis
 from polymarket.config import Settings
@@ -57,6 +58,7 @@ class AIDecisionService:
         regime: MarketRegime | None = None,  # NEW: market regime
         arbitrage_opportunity: "ArbitrageOpportunity | None" = None,  # NEW: arbitrage detection
         market_signals: "Any | None" = None,  # NEW: CoinGecko Pro market signals
+        contrarian_signal: ContrarianSignal | None = None,  # NEW: contrarian mean-reversion signal
         force_trade: bool = False  # NEW: TEST MODE - force YES/NO decision
     ) -> TradingDecision:
         """Generate trading decision using AI with regime awareness, volume, timeframe, arbitrage, and market signals."""
@@ -68,7 +70,7 @@ class AIDecisionService:
                 btc_price, technical_indicators, aggregated_sentiment,
                 market_data, portfolio_value, orderbook_data,
                 volume_data, timeframe_analysis, regime,
-                arbitrage_opportunity, market_signals, force_trade
+                arbitrage_opportunity, market_signals, contrarian_signal, force_trade
             )
 
             # Call OpenAI with GPT-5-Nano parameters
@@ -248,6 +250,7 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
         regime: MarketRegime | None = None,
         arbitrage_opportunity: "ArbitrageOpportunity | None" = None,
         market_signals: "Any | None" = None,
+        contrarian_signal: ContrarianSignal | None = None,
         force_trade: bool = False
     ) -> str:
         """Build the AI prompt with all context including regime, volume, timeframe, orderbook, and market signals."""
@@ -603,6 +606,49 @@ Proceed with standard technical and sentiment analysis.
 ═══════════════════════════════════════════════════════════════════
 """
 
+        # NEW: Contrarian signal context
+        contrarian_context = ""
+        if contrarian_signal:
+            rsi_extreme = "EXTREMELY OVERSOLD" if contrarian_signal.rsi < 10 else "EXTREMELY OVERBOUGHT"
+            contrarian_context = f"""
+═══════════════════════════════════════════════════════════════════
+🔥 CONTRARIAN SETUP DETECTED 🔥
+═══════════════════════════════════════════════════════════════════
+
+Type: {contrarian_signal.type}
+RSI: {contrarian_signal.rsi:.1f} ({rsi_extreme})
+Crowd Betting: {contrarian_signal.crowd_direction} at {contrarian_signal.crowd_confidence:.0%} odds
+Contrarian Suggestion: BET {contrarian_signal.suggested_direction}
+
+Reasoning: {contrarian_signal.reasoning}
+
+⚠️ This is a mean-reversion signal. The crowd is heavily positioned for {contrarian_signal.crowd_direction},
+but extreme technical indicators suggest imminent reversal to {contrarian_signal.suggested_direction}.
+
+Confidence: {contrarian_signal.confidence:.0%}
+
+Consider:
+- RSI extremes (< 10 or > 90) often precede sharp reversals
+- Crowd consensus can indicate exhaustion of move
+- Mean reversion trades have favorable risk/reward at extremes
+
+STRATEGY:
+- If you agree with the contrarian signal, use HIGHER confidence (0.85-0.95)
+- The crowd is wrong at extremes - this is a statistical edge
+- Low odds (< 0.40) create high profit potential when contrarian bet wins
+
+═══════════════════════════════════════════════════════════════════
+"""
+        else:
+            contrarian_context = """
+═══════════════════════════════════════════════════════════════════
+🔥 CONTRARIAN SIGNAL STATUS
+═══════════════════════════════════════════════════════════════════
+No contrarian setup detected. RSI is not at extreme levels (< 10 or > 90).
+Proceed with standard technical and sentiment analysis.
+═══════════════════════════════════════════════════════════════════
+"""
+
         # Extract social and market details
         social = aggregated.social
         mkt = aggregated.market
@@ -627,6 +673,8 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 {arbitrage_context}
 
 {market_signals_context}
+
+{contrarian_context}
 
 {force_trade_instruction}
 

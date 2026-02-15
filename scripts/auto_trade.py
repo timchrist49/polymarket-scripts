@@ -1273,7 +1273,7 @@ class AutoTrader:
                     confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}"
                 )
 
-            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, arbitrage, and market signals
+            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, arbitrage, market signals, and contrarian signal
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
@@ -1286,6 +1286,7 @@ class AutoTrader:
                 regime=regime,  # NEW: market regime detection
                 arbitrage_opportunity=arbitrage_opportunity,  # NEW: arbitrage opportunity
                 market_signals=market_signals,  # NEW: CoinGecko Pro market signals
+                contrarian_signal=contrarian_signal,  # NEW: contrarian mean-reversion signal
                 force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
 
