@@ -29,9 +29,11 @@ class CryptoPriceStream:
         self,
         settings: Settings,
         buffer_enabled: bool = False,
-        buffer_file: str = "data/price_history.json"
+        buffer_file: str = "data/price_history.json",
+        use_chainlink: bool = True  # ← NEW: default to Chainlink
     ):
         self.settings = settings
+        self.use_chainlink = use_chainlink  # ← NEW
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._current_price: Optional[BTCPriceData] = None
         self._connected = False
@@ -59,23 +61,12 @@ class CryptoPriceStream:
                 logger.warning(f"Could not load price history: {e}")
 
         try:
-            async with websockets.connect(self.WS_URL) as ws:
+            async with websockets.connect(self.WS_URL, ping_interval=5) as ws:  # ← Add ping_interval
                 self._ws = ws
                 self._connected = True
 
-                # Subscribe to BTC prices from Binance source
-                # RTDS subscription format per official documentation
-                # NOTE: filters is a plain string (comma-separated symbols), NOT JSON
-                subscribe_msg = {
-                    "action": "subscribe",
-                    "subscriptions": [{
-                        "topic": "crypto_prices",
-                        "type": "update",
-                        "filters": "btcusdt"
-                    }]
-                }
-                await ws.send(json.dumps(subscribe_msg))
-                logger.info("Subscribed to Polymarket RTDS crypto_prices", symbol="btcusdt")
+                # Subscribe to appropriate feed
+                await self._subscribe_to_feed(ws)  # ← NEW method
 
                 # Listen for price updates
                 while self._running:
@@ -96,6 +87,41 @@ class CryptoPriceStream:
         finally:
             self._ws = None
             self._connected = False
+
+    async def _subscribe_to_feed(self, ws):  # ← NEW method
+        """Subscribe to Chainlink or Binance feed based on configuration."""
+        if self.use_chainlink:
+            # Chainlink format (verified working)
+            subscribe_msg = {
+                "action": "subscribe",
+                "subscriptions": [{
+                    "topic": "crypto_prices_chainlink",
+                    "type": "*",  # Must be "*" for Chainlink
+                    "filters": '{"symbol":"btc/usd"}'  # JSON as string
+                }]
+            }
+            logger.info(
+                "Subscribed to Polymarket RTDS crypto_prices_chainlink",
+                source="chainlink",
+                symbol="btc/usd"
+            )
+        else:
+            # Binance format (legacy fallback)
+            subscribe_msg = {
+                "action": "subscribe",
+                "subscriptions": [{
+                    "topic": "crypto_prices",
+                    "type": "update",
+                    "filters": "btcusdt"
+                }]
+            }
+            logger.info(
+                "Subscribed to Polymarket RTDS crypto_prices",
+                source="binance",
+                symbol="btcusdt"
+            )
+
+        await ws.send(json.dumps(subscribe_msg))
 
     async def _handle_message(self, message: str):
         """Parse and store price update."""
