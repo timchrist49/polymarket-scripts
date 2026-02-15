@@ -865,19 +865,26 @@ class AutoTrader:
                     )
                     return
 
-            # NEW: Early odds filtering (background poll check)
-            cached_odds = await self.odds_poller.get_odds(market.id)
-            if cached_odds:
-                if not (cached_odds.yes_qualifies or cached_odds.no_qualifies):
-                    logger.info(
-                        "Skipping market - neither side > 75% odds",
-                        market_id=market.id,
-                        yes_odds=f"{cached_odds.yes_odds:.2%}",
-                        no_odds=f"{cached_odds.no_odds:.2%}"
-                    )
-                    return  # Skip this market
-            else:
-                logger.debug("No cached odds available (polling may not have run yet)")
+            # Calculate fresh odds directly from Market object (no stale cache)
+            # market.best_bid = price to buy first outcome token
+            # For UP/DOWN markets: first outcome is UP
+            yes_odds = market.best_bid if market.best_bid else 0.50
+            no_odds = 1.0 - yes_odds
+
+            # Early filtering: skip markets where neither side > 75%
+            yes_qualifies = (yes_odds > 0.75)
+            no_qualifies = (no_odds > 0.75)
+
+            if not (yes_qualifies or no_qualifies):
+                logger.info(
+                    "Skipping market - neither side > 75% odds (fresh check)",
+                    market_id=market.id,
+                    yes_odds=f"{yes_odds:.2%}",
+                    no_odds=f"{no_odds:.2%}",
+                    outcomes=market.outcomes,
+                    best_bid=market.best_bid
+                )
+                return  # Skip this market
 
             # Get token IDs
             token_ids = market.get_token_ids()
