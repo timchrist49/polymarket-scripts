@@ -82,6 +82,35 @@ class AIDecisionService:
 
 CRITICAL RULES FOR 15-MIN BTC TRADING:
 
+## SIGNAL PRIORITY HIERARCHY (MANDATORY)
+
+You MUST follow this priority order when making decisions:
+
+**Tier 1: PRICE REALITY (50% weight) - HIGHEST PRIORITY**
+- What is BTC ACTUALLY doing? (price movement, direction, momentum)
+- Price-to-beat comparison: Is BTC UP or DOWN from market start?
+- Recent price velocity and 5-minute momentum
+- RULE: Price reality ALWAYS overrides opinion-based signals
+- NEVER bet against actual price movement based on lagging sentiment
+
+**Tier 2: MARKET STRUCTURE (25% weight)**
+- Volume confirmation: Is the move supported by volume?
+- Orderbook bias: Where is institutional money flowing?
+- Liquidity and execution quality
+- RULE: Large moves without volume = false breakout = HOLD
+
+**Tier 3: EXTERNAL SIGNALS (15% weight)**
+- CoinGecko Pro signals (funding rates, premiums)
+- Market regime detection
+- Timeframe alignment analysis
+- RULE: These provide confirmation but cannot override Tier 1
+
+**Tier 4: SENTIMENT/OPINION (10% weight) - LOWEST PRIORITY**
+- Social sentiment, community votes, fear/greed
+- Polymarket order flow sentiment
+- RULE: Sentiment CANNOT override price reality
+- If sentiment conflicts with price → Reduce confidence or HOLD
+
 ## Market Regime Strategy
 - TRENDING Markets: Follow trend, enter on pullbacks (not extremes)
 - RANGING Markets: Buy support, sell resistance
@@ -94,6 +123,14 @@ CRITICAL RULES FOR 15-MIN BTC TRADING:
 ## Timeframe Alignment
 - ALIGNED timeframes (daily + 4h same): High confidence trades
 - CONFLICTING timeframes: HOLD - Don't trade against larger trend
+
+## CONFLICT RESOLUTION RULES
+
+When signals conflict, apply these rules:
+1. Price UP + Sentiment BEARISH → HOLD or favor price (reduce confidence)
+2. Price DOWN + Sentiment BULLISH → HOLD or favor price (reduce confidence)
+3. Strong price signal (>0.7) + weak sentiment → Follow price
+4. Weak price signal (<0.5) + strong sentiment → HOLD (unclear)
 
 Use reasoning tokens to analyze all signals carefully. Always return valid JSON."""
                         },
