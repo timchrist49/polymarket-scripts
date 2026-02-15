@@ -62,11 +62,14 @@ class BTCPriceService:
         """Start Polymarket WebSocket stream."""
         if self._stream is None:
             # Enable price buffer for 24-hour price history
+            # Use Chainlink data by default for higher quality prices
             self._stream = CryptoPriceStream(
                 self.settings,
                 buffer_enabled=True,
-                buffer_file="data/price_history.json"
+                buffer_file="data/price_history.json",
+                use_chainlink=True
             )
+            logger.info("Initializing BTC price service with Chainlink data source")
             self._stream_task = asyncio.create_task(self._stream.start())
             await asyncio.sleep(1)  # Initial connection time
 
