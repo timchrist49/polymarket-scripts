@@ -2,12 +2,14 @@
 
 import pytest
 from decimal import Decimal
+from datetime import datetime
 from time import time
 from polymarket.trading.timeframe_analyzer import (
     TimeframeAnalyzer,
     TimeframeTrend,
     TimeframeAnalysis
 )
+from polymarket.models import BTCPriceData
 
 
 class MockPriceBuffer:
@@ -28,16 +30,24 @@ class MockPriceBuffer:
             timestamp = self.current_time - offset_seconds
             self.prices[timestamp] = price
 
-    async def get_price_at(self, timestamp: int) -> Decimal:
+    async def get_price_at(self, timestamp: int) -> BTCPriceData:
         """Return price at timestamp.
 
         Args:
             timestamp: Unix timestamp
 
         Returns:
-            Price at that timestamp, or None if not found
+            BTCPriceData at that timestamp, or None if not found
         """
-        return self.prices.get(timestamp)
+        price = self.prices.get(timestamp)
+        if price is None:
+            return None
+        return BTCPriceData(
+            price=price,
+            timestamp=datetime.fromtimestamp(timestamp),
+            source="mock",
+            volume_24h=Decimal("0")
+        )
 
 
 @pytest.mark.asyncio

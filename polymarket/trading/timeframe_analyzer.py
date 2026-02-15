@@ -74,18 +74,22 @@ class TimeframeAnalyzer:
             start_time = current_time - lookback_seconds
 
             # Get price from lookback_seconds ago
-            price_start = await self.price_buffer.get_price_at(start_time)
+            price_start_data = await self.price_buffer.get_price_at(start_time)
 
             # Get current price
-            price_end = await self.price_buffer.get_price_at(current_time)
+            price_end_data = await self.price_buffer.get_price_at(current_time)
 
-            if not price_start or not price_end:
+            if not price_start_data or not price_end_data:
                 logger.warning(
                     "Insufficient price data for timeframe",
                     timeframe=timeframe,
                     lookback_seconds=lookback_seconds
                 )
                 return None
+
+            # Extract decimal prices
+            price_start = price_start_data.price
+            price_end = price_end_data.price
 
             # Validate price_start
             if price_start <= 0:

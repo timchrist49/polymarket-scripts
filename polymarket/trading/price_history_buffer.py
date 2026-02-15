@@ -11,6 +11,8 @@ from typing import Optional, List
 from pathlib import Path
 import structlog
 
+from polymarket.models import BTCPriceData
+
 logger = structlog.get_logger()
 
 
@@ -113,17 +115,17 @@ class PriceHistoryBuffer:
     async def get_price_at(
         self,
         timestamp: int,
-        tolerance: int = 30
-    ) -> Optional[Decimal]:
+        tolerance: int = 0
+    ) -> Optional[BTCPriceData]:
         """
         Get price at specific timestamp with tolerance.
 
         Args:
             timestamp: Unix timestamp to query
-            tolerance: Maximum seconds difference (default: 30)
+            tolerance: Maximum seconds difference (default: 0 for exact match)
 
         Returns:
-            Price if found within tolerance, None otherwise
+            BTCPriceData if found within tolerance, None otherwise
 
         Note: Returns closest price within tolerance window
         """
@@ -148,9 +150,16 @@ class PriceHistoryBuffer:
                     requested_timestamp=timestamp,
                     found_timestamp=closest_entry.timestamp,
                     diff_seconds=min_diff,
-                    price=f"${closest_entry.price:,.2f}"
+                    price=f"${closest_entry.price:,.2f}",
+                    source=closest_entry.source
                 )
-                return closest_entry.price
+                # Convert PriceEntry to BTCPriceData
+                return BTCPriceData(
+                    price=closest_entry.price,
+                    timestamp=datetime.fromtimestamp(closest_entry.timestamp),
+                    source=closest_entry.source,
+                    volume_24h=Decimal("0")
+                )
 
             logger.debug(
                 "Price not found in buffer",

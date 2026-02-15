@@ -77,7 +77,8 @@ async def test_get_price_at_exact_timestamp():
 
     price = await buffer.get_price_at(1770875100)
 
-    assert price == Decimal("67018.35")
+    assert price is not None
+    assert price.price == Decimal("67018.35")
 
 
 @pytest.mark.asyncio
@@ -91,7 +92,8 @@ async def test_get_price_at_with_tolerance():
     # Query timestamp 5 seconds after first entry (within 30s tolerance)
     price = await buffer.get_price_at(1770875105, tolerance=30)
 
-    assert price == Decimal("67018.35")
+    assert price is not None
+    assert price.price == Decimal("67018.35")
 
 
 @pytest.mark.asyncio
@@ -220,7 +222,8 @@ async def test_load_from_disk_restores_buffer():
 
         assert buffer2.size() == 2
         price = await buffer2.get_price_at(1770875100)
-        assert price == Decimal("67018.35")
+        assert price is not None
+        assert price.price == Decimal("67018.35")
 
 
 @pytest.mark.asyncio
@@ -281,7 +284,8 @@ async def test_cleanup_removes_old_entries():
 
     # Verify recent entry still present
     price = await buffer.get_price_at(recent_timestamp, tolerance=5)
-    assert price == Decimal("67000.00")
+    assert price is not None
+    assert price.price == Decimal("67000.00")
 
 
 @pytest.mark.asyncio

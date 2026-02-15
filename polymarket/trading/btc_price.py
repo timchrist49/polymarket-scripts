@@ -469,18 +469,18 @@ class BTCPriceService:
         # Try buffer first (instant lookup, no network)
         if self._stream and self._stream.price_buffer:
             try:
-                price = await self._stream.price_buffer.get_price_at(
+                price_data = await self._stream.price_buffer.get_price_at(
                     timestamp,
                     tolerance=30  # 30-second window
                 )
-                if price:
+                if price_data:
                     logger.debug(
                         "Price found in buffer",
                         timestamp=timestamp,
-                        price=f"${price:,.2f}",
-                        source="buffer"
+                        price=f"${price_data.price:,.2f}",
+                        source=price_data.source
                     )
-                    return price
+                    return price_data.price
                 else:
                     logger.debug(
                         "Price not in buffer, falling back to CoinGecko",
