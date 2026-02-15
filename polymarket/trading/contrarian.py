@@ -67,3 +67,22 @@ def detect_contrarian_setup(
         )
 
     return None
+
+def get_movement_threshold(contrarian_signal: Optional[ContrarianSignal]) -> int:
+    """
+    Get BTC movement threshold based on contrarian signal presence.
+
+    Args:
+        contrarian_signal: Contrarian signal if detected, None otherwise
+
+    Returns:
+        Movement threshold in USD ($50 if contrarian, $100 otherwise)
+
+    Rationale:
+        Contrarian reversals often start with small movements, so we use
+        a lower threshold ($50) to catch early reversal signals. Normal
+        trades require larger movements ($100) for directional confirmation.
+    """
+    if contrarian_signal:
+        return 50  # Reduced threshold for reversals
+    return 100  # Normal threshold

@@ -47,6 +47,7 @@ from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer, TimeframeAn
 from polymarket.trading.signal_lag_detector import detect_signal_lag
 from polymarket.trading.conflict_detector import SignalConflictDetector, ConflictSeverity
 from polymarket.trading.odds_poller import MarketOddsPoller
+from polymarket.trading.contrarian import get_movement_threshold
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
@@ -977,7 +978,21 @@ class AutoTrader:
                         )
 
                 # Check minimum movement threshold to avoid entering too early
-                MIN_MOVEMENT_THRESHOLD = 100  # $100 minimum BTC movement
+                # NOTE: contrarian_signal will be set by Task 4 (pipeline integration)
+                # For now, it defaults to None
+                contrarian_signal = None  # TODO: Task 4 will set this properly
+
+                # Calculate threshold based on contrarian signal
+                MIN_MOVEMENT_THRESHOLD = get_movement_threshold(contrarian_signal)
+                if contrarian_signal:
+                    logger.info(
+                        "Contrarian setup - reducing movement threshold",
+                        market_id=market.id,
+                        default_threshold="$100",
+                        contrarian_threshold="$50",
+                        reasoning="Reversals start with small movements"
+                    )
+
                 abs_diff = abs(diff)
                 if abs_diff < MIN_MOVEMENT_THRESHOLD:
                     if not self.test_mode.enabled:
