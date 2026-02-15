@@ -123,6 +123,59 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
             # Validate and create decision
             decision = self._parse_decision(decision_data, market_data.get("token_id", ""))
 
+            # Apply weighted confidence calculation (tiered signal prioritization)
+            # This prevents sentiment from overriding price reality
+            if decision.action in ("YES", "NO"):
+                # Extract signal data
+                price_direction = "UP" if decision.action == "YES" else "DOWN"
+                price_signal_strength = decision.confidence  # AI's base confidence
+
+                # Volume confirmation
+                volume_confirmation = volume_data.is_high_volume if volume_data else False
+
+                # Orderbook bias
+                orderbook_bias = "neutral"
+                if orderbook_data:
+                    if orderbook_data.order_imbalance > 0.2:
+                        orderbook_bias = "bullish"
+                    elif orderbook_data.order_imbalance < -0.2:
+                        orderbook_bias = "bearish"
+
+                # CoinGecko signals
+                coingecko_signal_strength = 0.5
+                coingecko_direction = "neutral"
+                if market_signals and hasattr(market_signals, 'confidence'):
+                    coingecko_signal_strength = market_signals.confidence
+                    coingecko_direction = market_signals.direction
+
+                # Sentiment
+                sentiment_score = aggregated_sentiment.final_score
+                sentiment_confidence = aggregated_sentiment.final_confidence
+
+                # Calculate weighted confidence
+                weighted_confidence = self._calculate_weighted_confidence(
+                    price_signal_strength=price_signal_strength,
+                    price_direction=price_direction,
+                    volume_confirmation=volume_confirmation,
+                    orderbook_bias=orderbook_bias,
+                    coingecko_signal_strength=coingecko_signal_strength,
+                    coingecko_direction=coingecko_direction,
+                    sentiment_score=sentiment_score,
+                    sentiment_confidence=sentiment_confidence,
+                    base_confidence=decision.confidence
+                )
+
+                logger.info(
+                    "Applied tiered signal weighting",
+                    ai_confidence=f"{decision.confidence:.1%}",
+                    weighted_confidence=f"{weighted_confidence:.1%}",
+                    price_direction=price_direction,
+                    volume_confirmed=volume_confirmation,
+                    sentiment_score=f"{sentiment_score:+.2f}"
+                )
+
+                decision.confidence = weighted_confidence
+
             # Apply timeframe confidence modifier if available
             if timeframe_analysis:
                 base_confidence = decision.confidence
@@ -761,3 +814,104 @@ ORDERBOOK INTERPRETATION:
             position_size=Decimal("0"),
             stop_loss_threshold=0.40
         )
+
+    @staticmethod
+    def _calculate_weighted_confidence(
+        price_signal_strength: float,
+        price_direction: str,
+        volume_confirmation: bool,
+        orderbook_bias: str,
+        coingecko_signal_strength: float,
+        coingecko_direction: str,
+        sentiment_score: float,
+        sentiment_confidence: float,
+        base_confidence: float
+    ) -> float:
+        """
+        Calculate weighted confidence using tiered signal prioritization.
+
+        Tier 1 (Price Reality): BTC price movements - 50% weight
+        Tier 2 (Market Structure): Volume + orderbook - 25% weight
+        Tier 3 (External Signals): CoinGecko Pro - 15% weight
+        Tier 4 (Opinion): Sentiment - 10% weight
+
+        This prevents sentiment from overriding price reality.
+
+        Args:
+            price_signal_strength: 0.0-1.0, strength of price signal
+            price_direction: "UP", "DOWN", or "neutral"
+            volume_confirmation: True if volume supports the move
+            orderbook_bias: "bullish", "bearish", or "neutral"
+            coingecko_signal_strength: 0.0-1.0, strength of CoinGecko signal
+            coingecko_direction: "bullish", "bearish", or "neutral"
+            sentiment_score: -1.0 to +1.0, sentiment score
+            sentiment_confidence: 0.0-1.0, confidence in sentiment
+            base_confidence: 0.0-1.0, starting confidence
+
+        Returns:
+            Weighted confidence (0.0-1.0)
+        """
+        # Tier 1: Price Reality (50% weight)
+        # Price movements are ground truth
+        price_contribution = price_signal_strength * 0.50
+
+        # Tier 2: Market Structure (25% weight)
+        # Volume and orderbook provide confirmation
+        volume_score = 1.0 if volume_confirmation else 0.3
+        orderbook_score = {
+            "bullish": 0.8 if price_direction == "UP" else 0.2,
+            "bearish": 0.8 if price_direction == "DOWN" else 0.2,
+            "neutral": 0.5
+        }.get(orderbook_bias, 0.5)
+        market_structure = (volume_score + orderbook_score) / 2
+        structure_contribution = market_structure * 0.25
+
+        # Tier 3: External Signals (15% weight)
+        # CoinGecko Pro signals have moderate influence
+        coingecko_aligned = (
+            (price_direction == "UP" and coingecko_direction == "bullish") or
+            (price_direction == "DOWN" and coingecko_direction == "bearish") or
+            coingecko_direction == "neutral"
+        )
+        coingecko_score = coingecko_signal_strength if coingecko_aligned else (1.0 - coingecko_signal_strength)
+        coingecko_contribution = coingecko_score * 0.15
+
+        # Tier 4: Opinion (10% weight)
+        # Sentiment has lowest priority
+        sentiment_direction = "UP" if sentiment_score > 0.2 else "DOWN" if sentiment_score < -0.2 else "neutral"
+        sentiment_aligned = (
+            (price_direction == "UP" and sentiment_direction == "UP") or
+            (price_direction == "DOWN" and sentiment_direction == "DOWN") or
+            sentiment_direction == "neutral"
+        )
+        sentiment_strength = abs(sentiment_score)  # 0.0-1.0
+        sentiment_effective = sentiment_strength * sentiment_confidence
+        sentiment_final_score = sentiment_effective if sentiment_aligned else (1.0 - sentiment_effective)
+        sentiment_contribution = sentiment_final_score * 0.10
+
+        # Calculate weighted confidence
+        weighted_conf = (
+            price_contribution +
+            structure_contribution +
+            coingecko_contribution +
+            sentiment_contribution
+        )
+
+        # Detect major conflicts (price vs sentiment)
+        # If price and sentiment strongly disagree, reduce confidence significantly
+        price_is_bullish = price_direction == "UP" and price_signal_strength > 0.7
+        price_is_bearish = price_direction == "DOWN" and price_signal_strength > 0.7
+        sentiment_is_bullish = sentiment_score > 0.5 and sentiment_confidence > 0.7
+        sentiment_is_bearish = sentiment_score < -0.5 and sentiment_confidence > 0.7
+
+        major_conflict = (
+            (price_is_bullish and sentiment_is_bearish) or
+            (price_is_bearish and sentiment_is_bullish)
+        )
+
+        if major_conflict:
+            # Severe penalty for price-sentiment conflicts
+            weighted_conf *= 0.5
+
+        # Ensure result is in valid range
+        return max(0.0, min(1.0, weighted_conf))
