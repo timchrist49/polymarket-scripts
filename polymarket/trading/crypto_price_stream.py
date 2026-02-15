@@ -124,7 +124,7 @@ class CryptoPriceStream:
         await ws.send(json.dumps(subscribe_msg))
 
     async def _handle_message(self, message: str):
-        """Parse and store price update."""
+        """Parse and store price update from Binance or Chainlink feed."""
         try:
             # Skip empty messages (WebSocket pings/heartbeats)
             if not message or not message.strip():
@@ -135,60 +135,114 @@ class CryptoPriceStream:
             msg_type = data.get("type")
             payload = data.get("payload", {})
 
-            if topic == "crypto_prices":
-                # Handle initial subscription data dump
-                if msg_type == "subscribe" and payload.get("symbol") == "btcusdt":
-                    # Initial dump contains 'data' array with historical prices
-                    # Use the most recent price
-                    price_data = payload.get("data", [])
-                    if price_data:
-                        latest = price_data[-1]
-                        self._current_price = BTCPriceData(
-                            price=Decimal(str(latest["value"])),
-                            timestamp=datetime.fromtimestamp(latest["timestamp"] / 1000),
-                            source="polymarket",
-                            volume_24h=Decimal("0")  # Not provided in crypto_prices
-                        )
-                        logger.debug(
-                            "BTC price (initial)",
-                            price=f"${self._current_price.price:,.2f}",
-                            source="polymarket"
-                        )
+            # Handle Chainlink feed
+            if topic == "crypto_prices_chainlink":
+                await self._handle_chainlink_message(msg_type, payload, data)
 
-                        # Append to buffer if enabled
-                        await self._append_to_buffer(
-                            latest["timestamp"] // 1000,  # Convert ms to seconds
-                            Decimal(str(latest["value"]))
-                        )
-
-                # Handle real-time price updates
-                elif msg_type == "update" and payload.get("symbol") == "btcusdt":
-                    self._current_price = BTCPriceData(
-                        price=Decimal(str(payload["value"])),
-                        timestamp=datetime.fromtimestamp(payload["timestamp"] / 1000),
-                        source="polymarket",
-                        volume_24h=Decimal("0")  # Not provided in crypto_prices
-                    )
-                    logger.debug(
-                        "BTC price update",
-                        price=f"${self._current_price.price:,.2f}",
-                        source="polymarket"
-                    )
-
-                    # Append to buffer if enabled
-                    await self._append_to_buffer(
-                        payload["timestamp"] // 1000,  # Convert ms to seconds
-                        Decimal(str(payload["value"]))
-                    )
+            # Handle Binance feed (legacy)
+            elif topic == "crypto_prices":
+                await self._handle_binance_message(msg_type, payload)
 
         except Exception as e:
             logger.error("Failed to parse price message", error=str(e))
 
-    async def _append_to_buffer(self, timestamp: int, price: Decimal):
+    async def _handle_chainlink_message(self, msg_type: str, payload: dict, data: dict):
+        """Handle Chainlink price messages."""
+        if msg_type == "subscribe" and payload.get("data"):
+            # Initial data dump - use latest price
+            price_data = payload["data"]
+            if price_data:
+                latest = price_data[-1]
+                self._current_price = BTCPriceData(
+                    price=Decimal(str(latest["value"])),
+                    timestamp=datetime.fromtimestamp(latest["timestamp"] / 1000),
+                    source="chainlink",  # ← Mark source
+                    volume_24h=Decimal("0")
+                )
+                logger.debug(
+                    "BTC price (initial)",
+                    price=f"${self._current_price.price:,.2f}",
+                    source="chainlink"
+                )
+
+                # Append to buffer
+                await self._append_to_buffer(
+                    latest["timestamp"] // 1000,
+                    Decimal(str(latest["value"])),
+                    source="chainlink"  # ← Mark source
+                )
+
+        elif msg_type == "update":
+            # Real-time update
+            self._current_price = BTCPriceData(
+                price=Decimal(str(payload["value"])),
+                timestamp=datetime.fromtimestamp(payload["timestamp"] / 1000),
+                source="chainlink",  # ← Mark source
+                volume_24h=Decimal("0")
+            )
+            logger.debug(
+                "BTC price update",
+                price=f"${self._current_price.price:,.2f}",
+                source="chainlink"
+            )
+
+            # Append to buffer
+            await self._append_to_buffer(
+                payload["timestamp"] // 1000,
+                Decimal(str(payload["value"])),
+                source="chainlink"  # ← Mark source
+            )
+
+    async def _handle_binance_message(self, msg_type: str, payload: dict):
+        """Handle Binance price messages (legacy fallback)."""
+        if msg_type == "subscribe" and payload.get("symbol") == "btcusdt":
+            # Initial dump
+            price_data = payload.get("data", [])
+            if price_data:
+                latest = price_data[-1]
+                self._current_price = BTCPriceData(
+                    price=Decimal(str(latest["value"])),
+                    timestamp=datetime.fromtimestamp(latest["timestamp"] / 1000),
+                    source="binance",  # ← Mark source
+                    volume_24h=Decimal("0")
+                )
+                logger.debug(
+                    "BTC price (initial)",
+                    price=f"${self._current_price.price:,.2f}",
+                    source="binance"
+                )
+
+                await self._append_to_buffer(
+                    latest["timestamp"] // 1000,
+                    Decimal(str(latest["value"])),
+                    source="binance"  # ← Mark source
+                )
+
+        elif msg_type == "update" and payload.get("symbol") == "btcusdt":
+            # Real-time update
+            self._current_price = BTCPriceData(
+                price=Decimal(str(payload["value"])),
+                timestamp=datetime.fromtimestamp(payload["timestamp"] / 1000),
+                source="binance",  # ← Mark source
+                volume_24h=Decimal("0")
+            )
+            logger.debug(
+                "BTC price update",
+                price=f"${self._current_price.price:,.2f}",
+                source="binance"
+            )
+
+            await self._append_to_buffer(
+                payload["timestamp"] // 1000,
+                Decimal(str(payload["value"])),
+                source="binance"  # ← Mark source
+            )
+
+    async def _append_to_buffer(self, timestamp: int, price: Decimal, source: str = "unknown"):
         """Append price to buffer if enabled. Errors don't crash WebSocket."""
         if self.price_buffer:
             try:
-                await self.price_buffer.append(timestamp, price, source="polymarket")
+                await self.price_buffer.append(timestamp, price, source=source)
             except Exception as e:
                 logger.error(f"Failed to append to price buffer: {e}")
                 # Don't crash WebSocket on buffer failure
