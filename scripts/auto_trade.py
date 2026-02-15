@@ -788,15 +788,8 @@ class AutoTrader:
                 now = datetime.now(timezone.utc)
                 time_remaining = (market.end_date - now).total_seconds()
 
-                # Filter: Require >= 5 minutes remaining
-                if time_remaining < 300:
-                    filtered_count += 1
-                    logger.debug(
-                        "Filtered end-phase market",
-                        market_id=market.id,
-                        time_remaining_sec=int(time_remaining)
-                    )
-                    continue
+                # End-phase filter DISABLED - allow trading in final minutes
+                # (User requested removal to catch late odds spikes)
 
                 tradeable.append(market)
 
