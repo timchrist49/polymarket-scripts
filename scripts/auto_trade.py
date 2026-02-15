@@ -1422,21 +1422,21 @@ class AutoTrader:
                 yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
                 no_odds_fresh = 1.0 - yes_odds_fresh
 
-                # Check if AI's chosen side still qualifies
-                if decision.action == "YES" and yes_odds_fresh <= 0.75:
+                # Check if AI's chosen side still qualifies (70% threshold)
+                if decision.action == "YES" and yes_odds_fresh <= 0.70:
                     logger.info(
                         "Skipping trade - YES odds below threshold at execution time",
                         market_id=market.id,
                         odds=f"{yes_odds_fresh:.2%}",
-                        threshold="75%"
+                        threshold="70%"
                     )
                     return
-                elif decision.action == "NO" and no_odds_fresh <= 0.75:
+                elif decision.action == "NO" and no_odds_fresh <= 0.70:
                     logger.info(
                         "Skipping trade - NO odds below threshold at execution time",
                         market_id=market.id,
                         odds=f"{no_odds_fresh:.2%}",
-                        threshold="75%"
+                        threshold="70%"
                     )
                     return
 
@@ -1444,8 +1444,8 @@ class AutoTrader:
                 odds_yes = yes_odds_fresh
                 odds_no = no_odds_fresh
                 odds_qualified = (
-                    (decision.action == "YES" and yes_odds_fresh > 0.75) or
-                    (decision.action == "NO" and no_odds_fresh > 0.75)
+                    (decision.action == "YES" and yes_odds_fresh > 0.70) or
+                    (decision.action == "NO" and no_odds_fresh > 0.70)
                 )
             else:
                 # If we can't fetch fresh odds, use cached
