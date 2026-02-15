@@ -452,6 +452,41 @@ class BTCPriceService:
         )
         return None
 
+    async def _fetch_chainlink_from_buffer(self, timestamp: int) -> Optional[Decimal]:
+        """
+        Fetch Chainlink historical price from buffer with ±30s tolerance.
+
+        Args:
+            timestamp: Unix timestamp (seconds)
+
+        Returns:
+            Chainlink price from buffer, or None if not available
+        """
+        if self._stream and self._stream.price_buffer:
+            try:
+                price_data = await self._stream.price_buffer.get_price_at(
+                    timestamp,
+                    tolerance=30  # ±30s window for market start times
+                )
+
+                if price_data and price_data.source == "chainlink":
+                    logger.info(
+                        "Historical price from Chainlink buffer",
+                        timestamp=timestamp,
+                        price=f"${price_data.price:,.2f}",
+                        source="chainlink",
+                        age_seconds=int((datetime.now().timestamp() - timestamp))
+                    )
+                    return price_data.price
+            except Exception as e:
+                logger.warning(
+                    "Buffer lookup failed",
+                    timestamp=timestamp,
+                    error=str(e)
+                )
+
+        return None
+
     async def _fetch_binance_at_timestamp(self, timestamp: int) -> Optional[Decimal]:
         """
         Fetch BTC price at specific timestamp from Binance.
