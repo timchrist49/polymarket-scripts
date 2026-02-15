@@ -34,7 +34,7 @@ async def test_receive_btc_price():
     price = await stream.get_current_price()
     assert price is not None
     assert price.price > Decimal("0")
-    assert price.source == "polymarket"
+    assert price.source == "chainlink"
 
     await stream.stop()
 
@@ -53,7 +53,7 @@ async def test_btc_price_service_with_polymarket():
 
     # Get current price
     price = await service.get_current_price()
-    assert price.source == "polymarket"
+    assert price.source == "chainlink"
     assert price.price > Decimal("0")
 
     await service.close()
