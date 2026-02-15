@@ -26,6 +26,14 @@ def detect_contrarian_setup(
         - OVERSOLD: RSI < 10 AND DOWN odds > 65%
         - OVERBOUGHT: RSI > 90 AND UP odds > 65%
     """
+    # Validate inputs
+    if not 0.0 <= rsi <= 100.0:
+        raise ValueError(f"rsi must be in [0.0, 100.0], got {rsi}")
+    if not 0.0 <= yes_odds <= 1.0:
+        raise ValueError(f"yes_odds must be in [0.0, 1.0], got {yes_odds}")
+    if not 0.0 <= no_odds <= 1.0:
+        raise ValueError(f"no_odds must be in [0.0, 1.0], got {no_odds}")
+
     # OVERSOLD: RSI extremely low, crowd betting DOWN
     if rsi < 10 and no_odds > 0.65:
         # Higher confidence for more extreme RSI
