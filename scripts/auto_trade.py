@@ -704,12 +704,13 @@ class AutoTrader:
             except Exception as e:
                 logger.warning("Regime detection failed", error=str(e))
 
-            # Step 4: Aggregate Signals - NEW (includes funding + dominance)
+            # Step 4: Aggregate Signals - NEW (includes funding + dominance + contrarian)
             aggregated_sentiment = self.aggregator.aggregate(
                 social_sentiment,
                 market_signals,
                 funding=funding_signal,
-                dominance=dominance_signal
+                dominance=dominance_signal,
+                contrarian=contrarian_signal
             )
 
             logger.info(

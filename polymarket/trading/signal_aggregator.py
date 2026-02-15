@@ -5,11 +5,28 @@ Combines social sentiment and market microstructure with dynamic confidence.
 """
 
 from datetime import datetime
+from dataclasses import dataclass
 import structlog
 
-from polymarket.models import SocialSentiment, MarketSignals, FundingRateSignal, BTCDominanceSignal, AggregatedSentiment
+from polymarket.models import (
+    SocialSentiment,
+    MarketSignals,
+    FundingRateSignal,
+    BTCDominanceSignal,
+    AggregatedSentiment,
+    ContrarianSignal
+)
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class Signal:
+    """Standardized signal format for aggregation."""
+    name: str
+    score: float  # -1.0 to +1.0
+    confidence: float  # 0.0 to 1.0
+    weight: float  # Relative importance
 
 
 class SignalAggregator:
@@ -20,6 +37,7 @@ class SignalAggregator:
     SOCIAL_WEIGHT = 0.20  # Social sentiment (fear/greed, trending, votes)
     FUNDING_WEIGHT = 0.20  # Funding rates (perpetual futures sentiment)
     DOMINANCE_WEIGHT = 0.15  # BTC dominance (capital flow)
+    CONTRARIAN_WEIGHT = 2.0  # High weight for extreme contrarian signals
     # Note: Order book is already part of MARKET_WEIGHT (5% internally)
 
     # Agreement boost/penalty limits
@@ -28,6 +46,26 @@ class SignalAggregator:
 
     # Confidence penalty when one source missing
     MISSING_SOURCE_PENALTY = 0.7  # Use 70% of confidence
+
+    def contrarian_to_signal(self, contrarian: ContrarianSignal) -> Signal:
+        """
+        Convert ContrarianSignal to regular Signal for aggregation.
+
+        Args:
+            contrarian: Contrarian signal to convert
+
+        Returns:
+            Signal with contrarian scoring (+1.0 for UP, -1.0 for DOWN, weight=2.0)
+        """
+        # Score: +1.0 for UP, -1.0 for DOWN
+        score = +1.0 if contrarian.suggested_direction == "UP" else -1.0
+
+        return Signal(
+            name="contrarian_rsi",
+            score=score,
+            confidence=contrarian.confidence,
+            weight=self.CONTRARIAN_WEIGHT
+        )
 
     def _calculate_agreement_score(self, score1: float, score2: float) -> float:
         """
@@ -65,16 +103,18 @@ class SignalAggregator:
         social: SocialSentiment,
         market: MarketSignals,
         funding: FundingRateSignal | None = None,
-        dominance: BTCDominanceSignal | None = None
+        dominance: BTCDominanceSignal | None = None,
+        contrarian: ContrarianSignal | None = None
     ) -> AggregatedSentiment:
         """
-        Aggregate social, market, funding, and dominance signals with dynamic confidence.
+        Aggregate social, market, funding, dominance, and contrarian signals with dynamic confidence.
 
         Args:
             social: Social sentiment data
             market: Market microstructure data
             funding: Funding rate signals (optional)
             dominance: BTC dominance signals (optional)
+            contrarian: Contrarian RSI signals (optional, high weight)
 
         Returns:
             AggregatedSentiment with final score, confidence, and agreement info.
@@ -98,6 +138,18 @@ class SignalAggregator:
         if dominance and dominance.confidence > 0:
             available_signals.append(("dominance", dominance.score, dominance.confidence, self.DOMINANCE_WEIGHT))
             total_weight += self.DOMINANCE_WEIGHT
+
+        # Add contrarian signal with high weight if detected
+        if contrarian:
+            signal = self.contrarian_to_signal(contrarian)
+            available_signals.append((signal.name, signal.score, signal.confidence, signal.weight))
+            total_weight += signal.weight
+            logger.info(
+                "Added contrarian signal to sentiment aggregation",
+                score=f"{signal.score:+.2f}",
+                weight=signal.weight,
+                confidence=f"{signal.confidence:.2f}"
+            )
 
         # Case 1: Multiple signals available
         if len(available_signals) >= 2:
@@ -127,18 +179,25 @@ class SignalAggregator:
             # Classify signal
             signal_type = self._classify_signal(final_score, final_confidence)
 
-            logger.info(
-                "Signals aggregated",
-                social_score=f"{social.score:+.2f}" if social.confidence > 0 else "N/A",
-                market_score=f"{market.score:+.2f}" if market.confidence > 0 else "N/A",
-                funding_score=f"{funding.score:+.2f}" if funding and funding.confidence > 0 else "N/A",
-                dominance_score=f"{dominance.score:+.2f}" if dominance and dominance.confidence > 0 else "N/A",
-                final_score=f"{final_score:+.2f}",
-                final_conf=f"{final_confidence:.2f}",
-                agreement=f"{agreement_multiplier:.2f}x",
-                signal=signal_type,
-                num_signals=len(available_signals)
-            )
+            # Prepare log data
+            log_data = {
+                "social_score": f"{social.score:+.2f}" if social.confidence > 0 else "N/A",
+                "market_score": f"{market.score:+.2f}" if market.confidence > 0 else "N/A",
+                "funding_score": f"{funding.score:+.2f}" if funding and funding.confidence > 0 else "N/A",
+                "dominance_score": f"{dominance.score:+.2f}" if dominance and dominance.confidence > 0 else "N/A",
+                "final_score": f"{final_score:+.2f}",
+                "final_conf": f"{final_confidence:.2f}",
+                "agreement": f"{agreement_multiplier:.2f}x",
+                "signal": signal_type,
+                "num_signals": len(available_signals)
+            }
+
+            # Add contrarian score if present
+            if contrarian:
+                contrarian_sig = self.contrarian_to_signal(contrarian)
+                log_data["contrarian_score"] = f"{contrarian_sig.score:+.2f}"
+
+            logger.info("Signals aggregated", **log_data)
 
         # Case 2: Only one signal available
         elif len(available_signals) == 1:
