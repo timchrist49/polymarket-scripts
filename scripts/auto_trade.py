@@ -646,7 +646,38 @@ class AutoTrader:
                     trend="NEUTRAL"
                 )
 
-            # Step 3.5: Market Regime Detection
+            # Step 3.5: Contrarian Signal Detection
+            contrarian_signal = None
+            try:
+                from polymarket.trading.contrarian import detect_contrarian_setup
+
+                # Calculate odds from market (use first market as reference)
+                if markets:
+                    reference_market = markets[0]
+                    yes_odds = reference_market.best_bid if reference_market.best_bid else 0.50
+                    no_odds = 1.0 - yes_odds
+
+                    contrarian_signal = detect_contrarian_setup(
+                        rsi=indicators.rsi,
+                        yes_odds=yes_odds,
+                        no_odds=no_odds
+                    )
+
+                    if contrarian_signal:
+                        logger.info(
+                            "Contrarian signal detected",
+                            type=contrarian_signal.type,
+                            rsi=f"{contrarian_signal.rsi:.1f}",
+                            suggested_direction=contrarian_signal.suggested_direction,
+                            crowd_direction=contrarian_signal.crowd_direction,
+                            crowd_confidence=f"{contrarian_signal.crowd_confidence:.0%}",
+                            confidence=f"{contrarian_signal.confidence:.0%}"
+                        )
+            except Exception as e:
+                logger.warning("Contrarian detection failed, continuing without", error=str(e))
+                contrarian_signal = None
+
+            # Step 3.6: Market Regime Detection
             regime = None
             try:
                 # Calculate price changes from historical data
@@ -720,7 +751,8 @@ class AutoTrader:
                     cycle_start_time,  # NEW: pass cycle start time for JIT metrics
                     volume_data,  # NEW: volume data for AI context
                     timeframe_analysis,  # NEW: timeframe analysis for AI context
-                    regime  # NEW: market regime for adaptive strategy
+                    regime,  # NEW: market regime for adaptive strategy
+                    contrarian_signal  # NEW: contrarian signal detection
                 )
 
             # Step 7: Stop-loss check
@@ -844,7 +876,8 @@ class AutoTrader:
         cycle_start_time: datetime,  # NEW: for JIT execution metrics
         volume_data,  # NEW: volume data for breakout confirmation
         timeframe_analysis,  # NEW: multi-timeframe trend analysis
-        regime  # NEW: market regime detection
+        regime,  # NEW: market regime detection
+        contrarian_signal  # NEW: contrarian signal detection
     ) -> None:
         """Process a single market for trading decision."""
         try:
@@ -978,9 +1011,7 @@ class AutoTrader:
                         )
 
                 # Check minimum movement threshold to avoid entering too early
-                # NOTE: contrarian_signal will be set by Task 4 (pipeline integration)
-                # For now, it defaults to None
-                contrarian_signal = None  # TODO: Task 4 will set this properly
+                # contrarian_signal is set by Step 3.5 (Contrarian Signal Detection) above
 
                 # Calculate threshold based on contrarian signal
                 MIN_MOVEMENT_THRESHOLD = get_movement_threshold(contrarian_signal)
