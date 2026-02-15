@@ -36,6 +36,7 @@ class PerformanceDatabase:
         # Run migrations
         self._migrate_add_timeframe_columns()
         self._migrate_add_verification_columns()
+        self._migrate_add_contrarian_columns()
 
         logger.info("Performance database initialized", db_path=db_path)
 
@@ -271,6 +272,40 @@ class PerformanceDatabase:
         self.conn.commit()
         logger.info("Order verification migration complete")
 
+    def _migrate_add_contrarian_columns(self):
+        """Add contrarian strategy columns to trades table."""
+        cursor = self.conn.cursor()
+
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(trades)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Add contrarian columns if they don't exist
+        contrarian_columns = [
+            ("contrarian_detected", "BOOLEAN DEFAULT 0"),
+            ("contrarian_type", "VARCHAR(50) DEFAULT NULL"),
+        ]
+
+        for column_name, column_type in contrarian_columns:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE trades ADD COLUMN {column_name} {column_type}")
+                    logger.info(f"Added contrarian column: {column_name}")
+                except sqlite3.OperationalError as e:
+                    logger.warning(f"Could not add column {column_name}: {e}")
+
+        # Create index for contrarian queries
+        try:
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trades_contrarian_detected
+                ON trades(contrarian_detected) WHERE contrarian_detected = 1
+            """)
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Index creation failed: {e}")
+
+        self.conn.commit()
+        logger.info("Contrarian strategy migration complete")
+
     def log_trade(self, trade_data: dict) -> int:
         """
         Log a trade decision to the database.
@@ -301,8 +336,9 @@ class PerformanceDatabase:
                 btc_dominance, btc_dominance_change_24h,
                 whale_activity, order_book_imbalance, spread_bps,
                 volatility,
+                contrarian_detected, contrarian_type,
                 is_test_mode
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade_data["timestamp"],
             trade_data["market_slug"],
@@ -349,6 +385,8 @@ class PerformanceDatabase:
             trade_data.get("order_book_imbalance"),
             trade_data.get("spread_bps"),
             trade_data.get("volatility"),
+            trade_data.get("contrarian_detected", False),
+            trade_data.get("contrarian_type"),
             trade_data.get("is_test_mode", 0)
         ))
 

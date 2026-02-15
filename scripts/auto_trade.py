@@ -1406,7 +1406,9 @@ class AutoTrader:
                     arbitrage_edge=arbitrage_opportunity.edge_percentage if arbitrage_opportunity else None,
                     arbitrage_urgency=arbitrage_opportunity.urgency if arbitrage_opportunity else None,
                     is_test_mode=self.test_mode.enabled,
-                    timeframe_analysis=timeframe_analysis
+                    timeframe_analysis=timeframe_analysis,
+                    contrarian_detected=bool(contrarian_signal),
+                    contrarian_type=contrarian_signal.type if contrarian_signal else None
                 )
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))
@@ -1437,6 +1439,34 @@ class AutoTrader:
                     reasoning=decision.reasoning,
                     position_size=str(decision.position_size)
                 )
+
+            # Log AI's response to contrarian suggestion
+            if contrarian_signal:
+                # Map contrarian direction to action
+                contrarian_action_map = {
+                    "UP": "YES",
+                    "DOWN": "NO"
+                }
+                suggested_action = contrarian_action_map.get(contrarian_signal.suggested_direction, "UNKNOWN")
+
+                if decision.action == suggested_action:
+                    logger.info(
+                        "AI accepted contrarian suggestion",
+                        market_id=market.id,
+                        contrarian_type=contrarian_signal.type,
+                        suggested=contrarian_signal.suggested_direction,
+                        ai_action=decision.action,
+                        ai_confidence=f"{decision.confidence:.2f}"
+                    )
+                else:
+                    logger.info(
+                        "AI rejected contrarian suggestion",
+                        market_id=market.id,
+                        contrarian_type=contrarian_signal.type,
+                        suggested=contrarian_signal.suggested_direction,
+                        ai_action=decision.action,
+                        ai_reasoning=decision.reasoning[:100] if decision.reasoning else "No reasoning provided"
+                    )
 
             # Skip if HOLD decision
             if decision.action == "HOLD" or token_id is None:
