@@ -161,9 +161,17 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
             # Validate and create decision
             decision = self._parse_decision(decision_data, market_data.get("token_id", ""))
 
+            # Skip tiered weighting for arbitrage opportunities (mathematical certainty)
+            # Arbitrage confidence is based on price discrepancy, not prediction
+            if arbitrage_opportunity and decision.action in ("YES", "NO"):
+                logger.info(
+                    "Skipping tiered weighting for arbitrage opportunity",
+                    ai_confidence=f"{decision.confidence:.1%}",
+                    arbitrage_edge=f"{arbitrage_opportunity.edge_percentage:.1%}"
+                )
             # Apply weighted confidence calculation (tiered signal prioritization)
             # This prevents sentiment from overriding price reality
-            if decision.action in ("YES", "NO"):
+            elif decision.action in ("YES", "NO"):
                 # Extract signal data
                 price_direction = "UP" if decision.action == "YES" else "DOWN"
                 price_signal_strength = decision.confidence  # AI's base confidence

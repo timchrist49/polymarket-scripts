@@ -1,116 +1,8 @@
 {
   "version": "1.0",
-  "last_updated": "2026-02-16T19:12:16.070522",
+  "last_updated": "2026-02-16T20:05:23.346674",
   "retention_hours": 24,
   "prices": [
-    {
-      "timestamp": 1771225784,
-      "price": "68494.260237714",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:45.222695"
-    },
-    {
-      "timestamp": 1771225785,
-      "price": "68494.25941441572",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:46.414659"
-    },
-    {
-      "timestamp": 1771225786,
-      "price": "68494.71030688228",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:47.392002"
-    },
-    {
-      "timestamp": 1771225787,
-      "price": "68494.7432503682",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:48.369842"
-    },
-    {
-      "timestamp": 1771225788,
-      "price": "68494.8250799056",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:49.361316"
-    },
-    {
-      "timestamp": 1771225789,
-      "price": "68495.14445959327",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:50.444077"
-    },
-    {
-      "timestamp": 1771225790,
-      "price": "68495.11446001119",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:50.954856"
-    },
-    {
-      "timestamp": 1771225791,
-      "price": "68495.09069481348",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:52.024715"
-    },
-    {
-      "timestamp": 1771225792,
-      "price": "68495.13422348995",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:53.062673"
-    },
-    {
-      "timestamp": 1771225793,
-      "price": "68495.33252773219",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:53.978830"
-    },
-    {
-      "timestamp": 1771225794,
-      "price": "68495.33272999316",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:54.964218"
-    },
-    {
-      "timestamp": 1771225795,
-      "price": "68495.33144686933",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:55.995710"
-    },
-    {
-      "timestamp": 1771225796,
-      "price": "68495.72332175815",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:57.079049"
-    },
-    {
-      "timestamp": 1771225797,
-      "price": "68495.82948650146",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:58.406484"
-    },
-    {
-      "timestamp": 1771225798,
-      "price": "68496.39241689857",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:09:59.237219"
-    },
-    {
-      "timestamp": 1771225799,
-      "price": "68511.98366325395",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:10:00.101083"
-    },
-    {
-      "timestamp": 1771225800,
-      "price": "68507.21657",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:10:00.964008"
-    },
-    {
-      "timestamp": 1771225801,
-      "price": "68507.074599",
-      "source": "chainlink",
-      "received_at": "2026-02-16T07:10:01.783183"
-    },
     {
       "timestamp": 1771225802,
       "price": "68504.3899315",
@@ -17282,6 +17174,114 @@
       "price": "67919.08959419891",
       "source": "chainlink",
       "received_at": "2026-02-16T19:12:14.896536"
+    },
+    {
+      "timestamp": 1771271766,
+      "price": "67925.80513168675",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:07.093294"
+    },
+    {
+      "timestamp": 1771271767,
+      "price": "67925.84519877417",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:08.094078"
+    },
+    {
+      "timestamp": 1771271768,
+      "price": "67925.84340232958",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:09.006670"
+    },
+    {
+      "timestamp": 1771271771,
+      "price": "67925.99959733247",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:12.222245"
+    },
+    {
+      "timestamp": 1771271775,
+      "price": "67926.0305955",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:16.123592"
+    },
+    {
+      "timestamp": 1771271776,
+      "price": "67929.17510889807",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:16.906991"
+    },
+    {
+      "timestamp": 1771271786,
+      "price": "67937.5755315",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:26.993751"
+    },
+    {
+      "timestamp": 1771271787,
+      "price": "67937.586149",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:28.224980"
+    },
+    {
+      "timestamp": 1771271788,
+      "price": "67937.5890775",
+      "source": "chainlink",
+      "received_at": "2026-02-16T19:56:29.159714"
+    },
+    {
+      "timestamp": 1771272302,
+      "price": "67909.67318864062",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:03.511628"
+    },
+    {
+      "timestamp": 1771272303,
+      "price": "67909.582936132",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:04.218554"
+    },
+    {
+      "timestamp": 1771272304,
+      "price": "67905.53276",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:05.496994"
+    },
+    {
+      "timestamp": 1771272306,
+      "price": "67901.074284",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:07.192744"
+    },
+    {
+      "timestamp": 1771272309,
+      "price": "67897.773044",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:10.485344"
+    },
+    {
+      "timestamp": 1771272310,
+      "price": "67897.7747395",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:11.084847"
+    },
+    {
+      "timestamp": 1771272320,
+      "price": "67897.2978922966",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:21.085268"
+    },
+    {
+      "timestamp": 1771272321,
+      "price": "67897.22108780115",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:22.323286"
+    },
+    {
+      "timestamp": 1771272322,
+      "price": "67896.64145898283",
+      "source": "chainlink",
+      "received_at": "2026-02-16T20:05:23.286732"
     }
   ]
 }

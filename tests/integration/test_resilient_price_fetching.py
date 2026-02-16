@@ -87,7 +87,7 @@ async def test_stale_cache_fallback():
     settings = Settings()
     service = BTCPriceService(settings)
 
-    # First call succeeds
+    # First call succeeds - mock primary source (CoinGecko) not Binance
     success_data = [
         PricePoint(
             price=Decimal("67000"),
@@ -95,7 +95,7 @@ async def test_stale_cache_fallback():
             timestamp=datetime.now()
         )
     ]
-    service._fetch_binance_history = AsyncMock(return_value=success_data)
+    service._fetch_coingecko_history = AsyncMock(return_value=success_data)
 
     result1 = await service.get_price_history(minutes=1)
     assert len(result1) == 1
