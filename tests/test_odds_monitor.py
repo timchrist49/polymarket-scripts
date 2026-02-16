@@ -6,7 +6,8 @@ from polymarket.trading.odds_monitor import OddsMonitor
 from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
 from polymarket.trading.market_validator import MarketValidator
 from polymarket.models import WebSocketOddsSnapshot
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from freezegun import freeze_time
 
 
 def test_odds_monitor_initialization():
@@ -315,9 +316,8 @@ async def test_check_opportunities_stale_odds():
     on_opportunity = Mock()
 
     # Mock current odds: YES=0.75 (above threshold) but stale (3 minutes old)
-    from datetime import timedelta
     stale_time = datetime.now(timezone.utc) - timedelta(seconds=180)  # 3 minutes ago
-    
+
     mock_snapshot = WebSocketOddsSnapshot(
         market_id="test-market-123",
         yes_odds=0.75,
@@ -348,3 +348,173 @@ async def test_check_opportunities_stale_odds():
     assert result is None
     # Verify market validation was never called (staleness check happens first)
     validator.is_market_active.assert_not_called()
+
+
+@pytest.mark.asyncio
+@freeze_time("2026-02-16 14:30:00")
+async def test_sustained_threshold_triggers_after_5_seconds():
+    """Test opportunity triggered only after sustained 5 seconds."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: YES=0.75 (above threshold)
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.75,
+        no_odds=0.25,
+        timestamp=datetime.now(timezone.utc),
+        best_bid=0.75,
+        best_ask=0.25
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+    validator.is_market_active = Mock(return_value=True)
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0,
+        sustained_duration_seconds=5.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # First check - opportunity detected but not sustained
+    await monitor._check_and_handle_opportunity()
+    assert on_opportunity.call_count == 0  # Not called yet (< 5 seconds)
+
+    # 3 seconds later - still not sustained
+    with freeze_time("2026-02-16 14:30:03"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 0  # Not called yet (< 5 seconds)
+
+    # 5 seconds later - sustained threshold met
+    with freeze_time("2026-02-16 14:30:05"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 1  # NOW called (>= 5 seconds)
+        on_opportunity.assert_called_with("btc-updown-15m-1234567890", "YES", 0.75)
+
+
+@pytest.mark.asyncio
+@freeze_time("2026-02-16 14:30:00")
+async def test_cooldown_prevents_rapid_fire():
+    """Test 30-second cooldown prevents multiple triggers."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: YES=0.75 (above threshold)
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.75,
+        no_odds=0.25,
+        timestamp=datetime.now(timezone.utc),
+        best_bid=0.75,
+        best_ask=0.25
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+    validator.is_market_active = Mock(return_value=True)
+
+    # Initialize monitor with cooldown
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0,
+        sustained_duration_seconds=5.0,
+        cooldown_seconds=30.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # First call at 14:30:00 - start tracking
+    await monitor._check_and_handle_opportunity()
+    assert on_opportunity.call_count == 0  # Not yet sustained
+
+    # Trigger first opportunity (5 seconds sustained)
+    with freeze_time("2026-02-16 14:30:05"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 1
+
+    # 10 seconds later - still in cooldown (< 30 seconds)
+    with freeze_time("2026-02-16 14:30:15"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 1  # Not called again (cooldown)
+
+    # 31 seconds later - cooldown expired, but need to start new sustained period
+    with freeze_time("2026-02-16 14:30:36"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 1  # Not triggered yet (new sustained period started)
+
+    # 5 seconds after cooldown expiry - sustained threshold met again
+    with freeze_time("2026-02-16 14:30:41"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 2  # NOW triggered (5s sustained after cooldown)
+
+
+@pytest.mark.asyncio
+@freeze_time("2026-02-16 14:30:00")
+async def test_threshold_broken_resets_timer():
+    """Test dropping below threshold resets sustained timer."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0,
+        sustained_duration_seconds=5.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+    validator.is_market_active = Mock(return_value=True)
+
+    # First check - odds above threshold (0.75)
+    high_odds = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.75,
+        no_odds=0.25,
+        timestamp=datetime.now(timezone.utc),
+        best_bid=0.75,
+        best_ask=0.25
+    )
+    streamer.get_current_odds = Mock(return_value=high_odds)
+    await monitor._check_and_handle_opportunity()
+
+    # 3 seconds later - odds drop below threshold (0.60)
+    low_odds = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.60,
+        no_odds=0.40,
+        timestamp=datetime.now(timezone.utc),
+        best_bid=0.60,
+        best_ask=0.40
+    )
+    with freeze_time("2026-02-16 14:30:03"):
+        streamer.get_current_odds = Mock(return_value=low_odds)
+        await monitor._check_and_handle_opportunity()
+
+    # 5 seconds from original - odds back above threshold (0.75)
+    with freeze_time("2026-02-16 14:30:05"):
+        streamer.get_current_odds = Mock(return_value=high_odds)
+        await monitor._check_and_handle_opportunity()
+        # Should NOT trigger (timer was reset at 3s mark)
+        assert on_opportunity.call_count == 0
+
+    # 3 seconds from reset (8 seconds from original) - still not sustained
+    with freeze_time("2026-02-16 14:30:08"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 0  # Still not 5s from reset (only 3s)
+
+    # 5 seconds from reset (10 seconds from original) - NOW sustained
+    with freeze_time("2026-02-16 14:30:10"):
+        await monitor._check_and_handle_opportunity()
+        assert on_opportunity.call_count == 1  # Triggered (5s from reset at 14:30:05)

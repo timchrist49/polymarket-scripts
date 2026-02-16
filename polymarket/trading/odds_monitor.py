@@ -171,6 +171,82 @@ class OddsMonitor:
             )
             return None
 
+    async def _check_and_handle_opportunity(self) -> None:
+        """Check for opportunities and handle sustained threshold + cooldown logic."""
+        # Check for opportunity
+        opportunity = await self._check_opportunities()
+
+        if not opportunity:
+            # No opportunity - clear threshold tracking for this market
+            market_id = self._market_id
+            if market_id and market_id in self._threshold_start_time:
+                logger.debug(
+                    "Opportunity lost, clearing threshold tracking",
+                    market_id=market_id
+                )
+                self._threshold_start_time.pop(market_id, None)
+            return
+
+        # Extract opportunity details
+        market_slug = opportunity["market_slug"]
+        direction = opportunity["direction"]
+        odds = opportunity["odds"]
+        market_id = self._market_id
+
+        # Check cooldown
+        if market_id in self._last_trigger_time:
+            time_since_last = (datetime.now(timezone.utc) - self._last_trigger_time[market_id]).total_seconds()
+            if time_since_last < self._cooldown_duration:
+                logger.debug(
+                    "In cooldown period, skipping",
+                    market_id=market_id,
+                    time_since_last=time_since_last,
+                    cooldown_duration=self._cooldown_duration
+                )
+                return
+
+        # Track sustained threshold
+        now = datetime.now(timezone.utc)
+
+        if market_id not in self._threshold_start_time:
+            # First time above threshold
+            logger.debug(
+                "Threshold exceeded, starting sustained timer",
+                market_id=market_id,
+                direction=direction,
+                odds=odds
+            )
+            self._threshold_start_time[market_id] = now
+            return
+
+        # Check if sustained for required duration
+        sustained_duration = (now - self._threshold_start_time[market_id]).total_seconds()
+
+        if sustained_duration >= self._sustained_duration:
+            # Sustained threshold met - trigger opportunity
+            logger.info(
+                "Sustained threshold met, triggering opportunity",
+                market_slug=market_slug,
+                market_id=market_id,
+                direction=direction,
+                odds=odds,
+                sustained_duration=sustained_duration
+            )
+
+            # Call the callback
+            self._on_opportunity_detected(market_slug, direction, odds)
+
+            # Update tracking
+            self._last_trigger_time[market_id] = now
+            self._threshold_start_time.pop(market_id, None)
+        else:
+            logger.debug(
+                "Threshold sustained but not long enough yet",
+                market_id=market_id,
+                sustained_duration=sustained_duration,
+                required_duration=self._sustained_duration
+            )
+
     async def _monitor_loop(self) -> None:
         """Monitor loop placeholder (implemented in Task 7)."""
         try:
