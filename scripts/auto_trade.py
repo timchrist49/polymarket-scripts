@@ -151,10 +151,11 @@ class AutoTrader:
         self.market_validator = MarketValidator()
         self.odds_monitor = OddsMonitor(
             streamer=self.realtime_streamer,
-            bot=self,
-            threshold=0.70,
-            sustained_seconds=5,
-            cooldown_seconds=30
+            validator=self.market_validator,
+            on_opportunity_detected=self._handle_opportunity_detected,
+            threshold_percentage=70.0,
+            sustained_duration_seconds=5.0,
+            cooldown_seconds=30.0
         )
         logger.info(
             "OddsMonitor initialized for event-driven triggering",
@@ -244,6 +245,23 @@ class AutoTrader:
                 min_edge=f"{self.test_mode.min_arbitrage_edge * 100:.0f}%"
             )
             logger.warning("=" * 70)
+
+    def _handle_opportunity_detected(self, market_slug: str, direction: str, odds: float) -> None:
+        """Handle detected trading opportunity by triggering cycle asynchronously.
+
+        Args:
+            market_slug: The market that triggered the opportunity
+            direction: YES or NO
+            odds: Current odds value
+        """
+        logger.info(
+            "Opportunity detected, triggering cycle",
+            market_slug=market_slug,
+            direction=direction,
+            odds=odds
+        )
+        # Create async task to run cycle (non-blocking)
+        asyncio.create_task(self.run_cycle())
 
     async def initialize(self) -> None:
         """Initialize async resources before trading cycles."""
