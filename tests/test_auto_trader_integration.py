@@ -51,3 +51,40 @@ async def test_autotrader_start_stop_with_odds_monitor():
     await trader.btc_service.close()
     await trader.social_service.close()
     await trader.realtime_streamer.stop()
+
+
+def test_autotrader_dry_run_mode_skips_cycle_triggering(monkeypatch):
+    """Test that dry-run mode prevents opportunity callback from triggering cycles."""
+    import os
+    from scripts.auto_trade import AutoTrader
+
+    # Set environment variable for dry-run mode (DRY_RUN controls settings.dry_run)
+    monkeypatch.setenv("DRY_RUN", "true")
+
+    # Create settings - will read from environment
+    settings = Settings()
+    assert settings.dry_run is True  # Verify dry_run is enabled
+
+    trader = AutoTrader(settings)
+
+    # Track if run_cycle would be called
+    cycle_triggered = False
+
+    original_run_cycle = trader.run_cycle
+
+    async def mock_run_cycle():
+        nonlocal cycle_triggered
+        cycle_triggered = True
+        await original_run_cycle()
+
+    trader.run_cycle = mock_run_cycle
+
+    # Call the opportunity detected handler
+    trader._handle_opportunity_detected(
+        market_slug="btc-above-100k",
+        direction="YES",
+        odds=0.75
+    )
+
+    # Verify cycle was NOT triggered in dry-run mode
+    assert cycle_triggered is False

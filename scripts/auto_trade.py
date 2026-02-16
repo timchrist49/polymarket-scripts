@@ -254,6 +254,16 @@ class AutoTrader:
             direction: YES or NO
             odds: Current odds value
         """
+        # Skip cycle triggering in dry-run mode
+        if self.settings.dry_run:
+            logger.info(
+                "Dry-run mode: opportunity detected but not triggering cycle",
+                market_slug=market_slug,
+                direction=direction,
+                odds=odds
+            )
+            return
+
         logger.info(
             "Opportunity detected, triggering cycle",
             market_slug=market_slug,
@@ -2275,13 +2285,22 @@ class AutoTrader:
         # Initialize async resources
         await self.initialize()
 
-        while self.running:
-            await self.run_cycle()
+        # OLD TIMER-BASED LOOP (replaced by OddsMonitor event-driven triggering)
+        # Keeping this code commented for reference during transition period
+        # while self.running:
+        #     await self.run_cycle()
+        #
+        #     # Wait before next cycle
+        #     if self.running:
+        #         logger.info(f"Waiting {self.interval} seconds until next cycle...")
+        #         await asyncio.sleep(self.interval)
 
-            # Wait before next cycle
-            if self.running:
-                logger.info(f"Waiting {self.interval} seconds until next cycle...")
-                await asyncio.sleep(self.interval)
+        # NEW EVENT-DRIVEN APPROACH:
+        # OddsMonitor now triggers cycles via _handle_opportunity_detected callback
+        # when sustained high odds (>70% for 5s) are detected.
+        # Keep the bot running until interrupted, but don't loop on timer.
+        while self.running:
+            await asyncio.sleep(1)  # Keep alive loop, actual cycles triggered by events
 
         # Cleanup
         # Cancel background tasks
