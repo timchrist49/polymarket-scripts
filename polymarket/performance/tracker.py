@@ -57,6 +57,8 @@ class PerformanceTracker:
         arbitrage_edge: float | None = None,
         arbitrage_urgency: str | None = None,
         timeframe_analysis: Optional['TimeframeAnalysis'] = None,
+        contrarian_detected: bool = False,
+        contrarian_type: Optional[str] = None,
         is_test_mode: bool = False
     ) -> int:
         """
@@ -180,6 +182,10 @@ class PerformanceTracker:
                 "order_book_imbalance": order_book_imbalance,
                 "spread_bps": spread_bps,
                 "volatility": volatility,
+
+                # Contrarian strategy tracking
+                "contrarian_detected": contrarian_detected,
+                "contrarian_type": contrarian_type,
 
                 # Test mode flag
                 "is_test_mode": 1 if is_test_mode else 0

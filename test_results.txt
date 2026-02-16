@@ -1,0 +1,1242 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy
+configfile: pytest.ini
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 431 items
+
+tests/integration/test_contrarian_integration.py::test_contrarian_pipeline_oversold PASSED [  0%]
+tests/integration/test_contrarian_integration.py::test_contrarian_pipeline_overbought PASSED [  0%]
+tests/integration/test_contrarian_integration.py::test_contrarian_pipeline_no_signal PASSED [  0%]
+tests/integration/test_contrarian_integration.py::test_contrarian_pipeline_extreme_rsi_weak_consensus PASSED [  0%]
+tests/integration/test_contrarian_integration.py::test_contrarian_pipeline_moderate_rsi_strong_consensus PASSED [  1%]
+tests/integration/test_contrarian_integration.py::test_contrarian_confidence_scaling PASSED [  1%]
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier1 PASSED [  1%]
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier2_approved PASSED [  1%]
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier3_rejected PASSED [  2%]
+tests/integration/test_load_resilience.py::test_high_volume_trade_logging PASSED [  2%]
+tests/integration/test_load_resilience.py::test_openai_failure_graceful_degradation PASSED [  2%]
+tests/integration/test_load_resilience.py::test_telegram_failure_doesnt_block_trading PASSED [  2%]
+tests/integration/test_load_resilience.py::test_database_concurrent_access PASSED [  3%]
+tests/integration/test_load_resilience.py::test_archival_under_load PASSED [  3%]
+tests/integration/test_load_resilience.py::test_reflection_with_invalid_data PASSED [  3%]
+tests/integration/test_resilient_price_fetching.py::test_complete_resilience_flow PASSED [  3%]
+tests/integration/test_resilient_price_fetching.py::test_settlement_validation_integration PASSED [  3%]
+tests/integration/test_resilient_price_fetching.py::test_stale_cache_fallback FAILED [  4%]
+tests/integration/test_resilient_price_fetching.py::test_configuration_integration PASSED [  4%]
+tests/test_ai_decision.py::test_make_decision_with_arbitrage FAILED      [  4%]
+tests/test_arbitrage_detector.py::test_detect_yes_arbitrage PASSED       [  4%]
+tests/test_arbitrage_detector.py::test_detect_no_arbitrage PASSED        [  5%]
+tests/test_arbitrage_detector.py::test_no_arbitrage_opportunity PASSED   [  5%]
+tests/test_arbitrage_detector.py::test_high_edge_urgency PASSED          [  5%]
+tests/test_arbitrage_detector.py::test_confidence_boost_scales_with_edge PASSED [  5%]
+tests/test_arbitrage_detector.py::test_confidence_boost_capped_at_20pct PASSED [  6%]
+tests/test_arbitrage_follows_probability.py::test_follows_yes_probability_with_positive_edge PASSED [  6%]
+tests/test_arbitrage_follows_probability.py::test_holds_when_yes_probability_but_negative_edge PASSED [  6%]
+tests/test_arbitrage_follows_probability.py::test_follows_no_probability_with_positive_edge PASSED [  6%]
+tests/test_arbitrage_follows_probability.py::test_real_trade_247_scenario PASSED [  6%]
+tests/test_arbitrage_models.py::test_arbitrage_opportunity_creation PASSED [  7%]
+tests/test_arbitrage_models.py::test_arbitrage_opportunity_validation PASSED [  7%]
+tests/test_arbitrage_models.py::test_arbitrage_opportunity_probability_validation PASSED [  7%]
+tests/test_arbitrage_models.py::test_arbitrage_opportunity_odds_validation PASSED [  7%]
+tests/test_arbitrage_models.py::test_arbitrage_opportunity_all_actions PASSED [  8%]
+tests/test_arbitrage_models.py::test_arbitrage_opportunity_all_urgencies PASSED [  8%]
+tests/test_arbitrage_models.py::test_limit_order_strategy_creation PASSED [  8%]
+tests/test_arbitrage_models.py::test_limit_order_strategy_urgency_validation PASSED [  8%]
+tests/test_arbitrage_models.py::test_limit_order_strategy_target_price_validation PASSED [  9%]
+tests/test_arbitrage_models.py::test_limit_order_strategy_timeout_validation PASSED [  9%]
+tests/test_arbitrage_models.py::test_limit_order_strategy_all_urgencies PASSED [  9%]
+tests/test_arbitrage_models.py::test_limit_order_strategy_boundary_values PASSED [  9%]
+tests/test_auth.py::test_auth_manager_read_only_mode PASSED              [  9%]
+tests/test_auth.py::test_auth_manager_trading_mode_requires_key PASSED   [ 10%]
+tests/test_auth.py::test_auth_manager_trading_mode_missing_key PASSED    [ 10%]
+tests/test_auth.py::test_auth_manager_masked_key PASSED                  [ 10%]
+tests/test_auth.py::test_auth_manager_singleton PASSED                   [ 10%]
+tests/test_auth.py::test_auth_manager_clob_kwargs_read_only PASSED       [ 11%]
+tests/test_auth.py::test_auth_manager_clob_kwargs_trading PASSED         [ 11%]
+tests/test_auth.py::test_auth_manager_api_credentials PASSED             [ 11%]
+tests/test_auto_trade.py::test_full_trading_cycle FAILED                 [ 11%]
+tests/test_auto_trade_arbitrage_integration.py::test_arbitrage_imports_successful PASSED [ 12%]
+tests/test_auto_trade_arbitrage_integration.py::test_arbitrage_code_paths_exist PASSED [ 12%]
+tests/test_auto_trade_arbitrage_integration.py::test_arbitrage_data_flow FAILED [ 12%]
+tests/test_auto_trade_no_current_fallback.py::test_skip_trade_if_historical_price_unavailable PASSED [ 12%]
+tests/test_auto_trade_no_current_fallback.py::test_historical_price_success_sets_price_to_beat PASSED [ 12%]
+tests/test_background_tasks.py::test_saver_runs_periodically PASSED      [ 13%]
+tests/test_background_tasks.py::test_cleaner_runs_periodically PASSED    [ 13%]
+tests/test_background_tasks.py::test_saver_handles_errors_gracefully PASSED [ 13%]
+tests/test_background_tasks.py::test_cleaner_handles_errors_gracefully PASSED [ 13%]
+tests/test_background_tasks.py::test_tasks_respond_to_cancellation PASSED [ 14%]
+tests/test_btc_price.py::test_candle_cache_is_integrated PASSED          [ 14%]
+tests/test_btc_price.py::test_get_price_history_fallback_to_coingecko PASSED [ 14%]
+tests/test_btc_price.py::test_get_price_at_timestamp_uses_validator PASSED [ 14%]
+tests/test_btc_price.py::test_fetch_binance_at_timestamp_checks_buffer_first PASSED [ 15%]
+tests/test_btc_price.py::test_fetch_binance_at_timestamp_falls_back_to_binance PASSED [ 15%]
+tests/test_btc_price.py::test_fetch_binance_at_timestamp_buffer_disabled PASSED [ 15%]
+tests/test_btc_price.py::test_calculate_15min_volatility PASSED          [ 15%]
+tests/test_btc_price_chainlink_lookup.py::test_fetch_chainlink_from_buffer_success PASSED [ 16%]
+tests/test_btc_price_chainlink_lookup.py::test_fetch_chainlink_from_buffer_miss PASSED [ 16%]
+tests/test_btc_price_chainlink_lookup.py::test_fetch_chainlink_from_buffer_wrong_source PASSED [ 16%]
+tests/test_btc_price_chainlink_lookup.py::test_fetch_chainlink_from_buffer_no_stream PASSED [ 16%]
+tests/test_btc_price_chainlink_lookup.py::test_fetch_chainlink_from_buffer_no_buffer PASSED [ 16%]
+tests/test_btc_price_chainlink_lookup.py::test_fetch_chainlink_from_buffer_exception PASSED [ 17%]
+tests/test_btc_price_fallbacks.py::test_fetch_coingecko_history PASSED   [ 17%]
+tests/test_btc_price_fallbacks.py::test_fetch_kraken_history PASSED      [ 17%]
+tests/test_chainlink_integration.py::test_historical_market_price_accuracy PASSED [ 17%]
+tests/test_chainlink_rtds.py::test_binance_feed FAILED                   [ 18%]
+tests/test_chainlink_rtds.py::test_chainlink_feed FAILED                 [ 18%]
+tests/test_client.py::test_client_read_only_mode PASSED                  [ 18%]
+tests/test_client.py::test_floor_to_15min_interval PASSED                [ 18%]
+tests/test_client.py::test_generate_btc_slug PASSED                      [ 19%]
+tests/test_client.py::test_generate_btc_slug_default_time PASSED         [ 19%]
+tests/test_client.py::test_client_trading_mode PASSED                    [ 19%]
+tests/test_client.py::test_client_clob_requires_trading PASSED           [ 19%]
+tests/test_client.py::test_floor_boundary_cases PASSED                   [ 19%]
+tests/test_client.py::test_generate_slug_consistency PASSED              [ 20%]
+tests/test_client_limit_orders.py::test_place_limit_order FAILED         [ 20%]
+tests/test_client_limit_orders.py::test_check_order_status PASSED        [ 20%]
+tests/test_client_limit_orders.py::test_cancel_order PASSED              [ 20%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_price FAILED [ 21%]
+tests/test_client_limit_orders.py::test_place_limit_order_negative_size FAILED [ 21%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_side FAILED [ 21%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_tick_size_zero FAILED [ 21%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_tick_size_negative FAILED [ 22%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_tick_size_too_large FAILED [ 22%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_token_id_empty FAILED [ 22%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_token_id_none FAILED [ 22%]
+tests/test_client_limit_orders.py::test_place_limit_order_invalid_token_id_too_short FAILED [ 22%]
+tests/test_client_limit_orders.py::test_check_order_status_empty_id PASSED [ 23%]
+tests/test_client_limit_orders.py::test_check_order_status_none_id PASSED [ 23%]
+tests/test_client_limit_orders.py::test_cancel_order_empty_id PASSED     [ 23%]
+tests/test_client_limit_orders.py::test_cancel_order_none_id PASSED      [ 23%]
+tests/test_client_limit_orders.py::test_place_limit_order_api_error FAILED [ 24%]
+tests/test_client_limit_orders.py::test_check_order_status_api_error PASSED [ 24%]
+tests/test_client_limit_orders.py::test_cancel_order_api_error PASSED    [ 24%]
+tests/test_client_limit_orders.py::test_place_limit_order_price_rounding FAILED [ 24%]
+tests/test_client_limit_orders.py::test_place_limit_order_price_clamping_upper FAILED [ 25%]
+tests/test_client_limit_orders.py::test_place_limit_order_boundary_prices FAILED [ 25%]
+tests/test_confidence_adjusted_edge.py::test_high_confidence_low_threshold PASSED [ 25%]
+tests/test_confidence_adjusted_edge.py::test_medium_confidence_medium_threshold PASSED [ 25%]
+tests/test_confidence_adjusted_edge.py::test_low_confidence_high_threshold PASSED [ 25%]
+tests/test_confidence_adjusted_edge.py::test_symmetric_for_probability_below_50 PASSED [ 26%]
+tests/test_config.py::test_settings_default_mode PASSED                  [ 26%]
+tests/test_config.py::test_settings_trading_mode PASSED                  [ 26%]
+tests/test_config.py::test_settings_trading_mode_missing_credentials PASSED [ 26%]
+tests/test_config.py::test_settings_clob_url_default PASSED              [ 27%]
+tests/test_config.py::test_settings_gamma_url_default PASSED             [ 27%]
+tests/test_config.py::test_settings_repr_masks_credentials PASSED        [ 27%]
+tests/test_config.py::test_settings_repr_with_none_credentials PASSED    [ 27%]
+tests/test_config.py::test_price_fetch_config_defaults PASSED            [ 28%]
+tests/test_conflict_detector.py::test_no_conflicts PASSED                [ 28%]
+tests/test_conflict_detector.py::test_minor_conflict_one_signal PASSED   [ 28%]
+tests/test_conflict_detector.py::test_moderate_conflict_two_signals PASSED [ 28%]
+tests/test_conflict_detector.py::test_severe_conflict_three_signals PASSED [ 29%]
+tests/test_conflict_detector.py::test_severe_conflict_timeframes_conflicting PASSED [ 29%]
+tests/test_conflict_detector.py::test_market_signals_ignored_when_low_confidence PASSED [ 29%]
+tests/test_conflict_detector.py::test_neutral_signals_dont_conflict PASSED [ 29%]
+tests/test_contrarian_database.py::test_contrarian_fields_in_schema PASSED [ 29%]
+tests/test_contrarian_database.py::test_store_trade_with_contrarian PASSED [ 30%]
+tests/test_contrarian_database.py::test_store_trade_without_contrarian PASSED [ 30%]
+tests/test_contrarian_database.py::test_contrarian_index_exists PASSED   [ 30%]
+tests/test_contrarian_database.py::test_query_contrarian_trades_only PASSED [ 30%]
+tests/test_contrarian_detection.py::test_oversold_reversal_detected PASSED [ 31%]
+tests/test_contrarian_detection.py::test_overbought_reversal_detected PASSED [ 31%]
+tests/test_contrarian_detection.py::test_no_contrarian_signal_rsi_not_extreme PASSED [ 31%]
+tests/test_contrarian_detection.py::test_no_contrarian_signal_odds_not_extreme PASSED [ 31%]
+tests/test_contrarian_detection.py::test_oversold_edge_case_rsi_10 PASSED [ 32%]
+tests/test_contrarian_detection.py::test_oversold_edge_case_odds_65 PASSED [ 32%]
+tests/test_contrarian_detection.py::test_confidence_increases_with_extreme_rsi PASSED [ 32%]
+tests/test_contrarian_detection.py::test_invalid_rsi_negative PASSED     [ 32%]
+tests/test_contrarian_detection.py::test_invalid_rsi_above_100 PASSED    [ 32%]
+tests/test_contrarian_detection.py::test_invalid_odds_negative PASSED    [ 33%]
+tests/test_contrarian_detection.py::test_invalid_odds_above_1 PASSED     [ 33%]
+tests/test_contrarian_detection.py::test_overbought_edge_case_odds_65 PASSED [ 33%]
+tests/test_contrarian_integration.py::test_log_trade_with_contrarian_data PASSED [ 33%]
+tests/test_contrarian_integration.py::test_log_trade_without_contrarian_data PASSED [ 34%]
+tests/test_contrarian_models.py::test_contrarian_signal_oversold_creation PASSED [ 34%]
+tests/test_contrarian_models.py::test_contrarian_signal_overbought_creation PASSED [ 34%]
+tests/test_contrarian_models.py::test_contrarian_signal_invalid_rsi PASSED [ 34%]
+tests/test_contrarian_models.py::test_contrarian_signal_invalid_confidence PASSED [ 35%]
+tests/test_contrarian_models.py::test_contrarian_signal_invalid_crowd_confidence PASSED [ 35%]
+tests/test_contrarian_models.py::test_contrarian_signal_inconsistent_oversold PASSED [ 35%]
+tests/test_contrarian_models.py::test_contrarian_signal_inconsistent_overbought PASSED [ 35%]
+tests/test_contrarian_models.py::test_contrarian_signal_empty_reasoning PASSED [ 35%]
+tests/test_contrarian_sentiment.py::test_contrarian_signal_added_to_aggregation PASSED [ 36%]
+tests/test_contrarian_sentiment.py::test_contrarian_down_signal PASSED   [ 36%]
+tests/test_contrarian_threshold.py::test_movement_threshold_reduced_with_contrarian PASSED [ 36%]
+tests/test_contrarian_threshold.py::test_movement_threshold_normal_without_contrarian PASSED [ 36%]
+tests/test_crypto_price_stream.py::test_websocket_connect PASSED         [ 37%]
+tests/test_crypto_price_stream.py::test_receive_btc_price PASSED         [ 37%]
+tests/test_crypto_price_stream.py::test_btc_price_service_with_polymarket PASSED [ 37%]
+tests/test_crypto_price_stream.py::test_price_buffer_integration PASSED  [ 37%]
+tests/test_crypto_price_stream_chainlink.py::test_chainlink_subscription_format PASSED [ 38%]
+tests/test_crypto_price_stream_chainlink.py::test_binance_subscription_format PASSED [ 38%]
+tests/test_crypto_price_stream_chainlink.py::test_parse_chainlink_initial_message PASSED [ 38%]
+tests/test_crypto_price_stream_chainlink.py::test_parse_chainlink_update_message PASSED [ 38%]
+tests/test_end_phase_filter.py::test_filters_end_phase_markets FAILED    [ 38%]
+tests/test_end_phase_filter.py::test_logs_filtered_count FAILED          [ 39%]
+tests/test_exceptions.py::test_exception_hierarchy PASSED                [ 39%]
+tests/test_exceptions.py::test_exception_messages PASSED                 [ 39%]
+tests/test_fetch_markets_script.py::test_fetch_markets_btc_mode PASSED   [ 39%]
+tests/test_fetch_markets_script.py::test_fetch_markets_search PASSED     [ 40%]
+tests/test_fetch_markets_script.py::test_fetch_markets_json_output PASSED [ 40%]
+tests/test_fetch_markets_script.py::test_fetch_markets_invalid_args PASSED [ 40%]
+tests/test_fetch_markets_script.py::test_fetch_markets_all_flag PASSED   [ 40%]
+tests/test_integration_sentiment.py::test_full_sentiment_pipeline PASSED [ 41%]
+tests/test_integration_sentiment.py::test_graceful_degradation PASSED    [ 41%]
+tests/test_logging.py::test_setup_logging_creates_logger PASSED          [ 41%]
+tests/test_logging.py::test_get_logger_returns_same_instance PASSED      [ 41%]
+tests/test_logging.py::test_logger_output_format PASSED                  [ 41%]
+tests/test_market_microstructure.py::test_collect_market_data_structure PASSED [ 42%]
+tests/test_market_microstructure.py::test_calculate_momentum_score PASSED [ 42%]
+tests/test_market_microstructure.py::test_calculate_volume_flow_score PASSED [ 42%]
+tests/test_market_microstructure.py::test_calculate_whale_activity_score PASSED [ 42%]
+tests/test_market_microstructure.py::test_calculate_market_score PASSED  [ 43%]
+tests/test_market_microstructure.py::test_calculate_confidence PASSED    [ 43%]
+tests/test_market_microstructure.py::test_get_market_score_with_mock_data PASSED [ 43%]
+tests/test_market_microstructure.py::test_websocket_connection_real PASSED [ 43%]
+tests/test_market_microstructure.py::test_websocket_subscription_uses_correct_clob_format PASSED [ 44%]
+tests/test_market_tracker.py::test_parse_market_slug FAILED              [ 44%]
+tests/test_market_tracker.py::test_calculate_time_remaining FAILED       [ 44%]
+tests/test_market_tracker.py::test_track_price_to_beat PASSED            [ 44%]
+tests/test_market_tracker.py::test_is_end_of_market FAILED               [ 45%]
+tests/test_market_tracker.py::test_ai_decision_with_gpt5_nano PASSED     [ 45%]
+tests/test_models.py::test_market_model_minimal PASSED                   [ 45%]
+tests/test_models.py::test_market_model_with_outcomes PASSED             [ 45%]
+tests/test_models.py::test_order_request_validation PASSED               [ 45%]
+tests/test_models.py::test_order_request_invalid_side PASSED             [ 46%]
+tests/test_models.py::test_order_request_invalid_price PASSED            [ 46%]
+tests/test_models.py::test_social_sentiment_model PASSED                 [ 46%]
+tests/test_models.py::test_market_signals_model PASSED                   [ 46%]
+tests/test_models.py::test_aggregated_sentiment_model PASSED             [ 47%]
+tests/test_models.py::test_social_sentiment_validation PASSED            [ 47%]
+tests/test_models.py::test_market_signals_validation PASSED              [ 47%]
+tests/test_models.py::test_aggregated_sentiment_validation PASSED        [ 47%]
+tests/test_odds_poller.py::test_odds_polling_basic PASSED                [ 48%]
+tests/test_odds_poller.py::test_odds_polling_threshold_yes_qualifies PASSED [ 48%]
+tests/test_odds_poller.py::test_odds_polling_threshold_no_qualifies PASSED [ 48%]
+tests/test_odds_poller.py::test_odds_polling_neither_qualifies PASSED    [ 48%]
+tests/test_odds_poller.py::test_get_odds_returns_none_if_not_cached PASSED [ 48%]
+tests/test_odds_poller.py::test_odds_polling_handles_exceptions PASSED   [ 49%]
+tests/test_order_verifier.py::TestOrderVerifier::test_quick_check_filled PASSED [ 49%]
+tests/test_order_verifier.py::TestOrderVerifier::test_quick_check_partial_fill PASSED [ 49%]
+tests/test_order_verifier.py::TestOrderVerifier::test_quick_check_failed PASSED [ 49%]
+tests/test_order_verifier.py::TestOrderVerifier::test_quick_check_timeout PASSED [ 50%]
+tests/test_order_verifier.py::TestOrderVerifier::test_verify_order_full_success PASSED [ 50%]
+tests/test_order_verifier.py::TestOrderVerifier::test_verify_order_full_partial PASSED [ 50%]
+tests/test_order_verifier.py::TestOrderVerifier::test_verify_order_full_not_found PASSED [ 50%]
+tests/test_order_verifier.py::TestOrderVerifier::test_calculate_price_discrepancy PASSED [ 51%]
+tests/test_paper_trading_integration.py::test_signal_lag_and_conflict_integration PASSED [ 51%]
+tests/test_paper_trading_integration.py::test_odds_poller_integration PASSED [ 51%]
+tests/test_paper_trading_integration.py::test_odds_poller_filtering_integration PASSED [ 51%]
+tests/test_paper_trading_integration.py::test_conflict_severity_classification_integration PASSED [ 51%]
+tests/test_paper_trading_integration.py::test_signal_lag_threshold_integration PASSED [ 52%]
+tests/test_parallel_fetch.py::test_primary_succeeds PASSED               [ 52%]
+tests/test_parallel_fetch.py::test_primary_fails_fallback_succeeds PASSED [ 52%]
+tests/test_parallel_fetch.py::test_all_sources_fail PASSED               [ 52%]
+tests/test_parallel_fetch.py::test_fastest_fallback_wins PASSED          [ 53%]
+tests/test_performance_adjuster.py::test_parameter_bounds PASSED         [ 53%]
+tests/test_performance_adjuster.py::test_validate_within_bounds PASSED   [ 53%]
+tests/test_performance_adjuster.py::test_validate_outside_bounds PASSED  [ 53%]
+tests/test_performance_adjuster.py::test_classify_tier_1_auto PASSED     [ 54%]
+tests/test_performance_adjuster.py::test_classify_tier_2_approval PASSED [ 54%]
+tests/test_performance_adjuster.py::test_classify_tier_3_pause PASSED    [ 54%]
+tests/test_performance_adjuster.py::test_calculate_change_percent PASSED [ 54%]
+tests/test_performance_adjuster.py::test_apply_tier_1_adjustment PASSED  [ 54%]
+tests/test_performance_adjuster.py::test_reject_tier_2_without_approval PASSED [ 55%]
+tests/test_performance_adjuster.py::test_reject_out_of_bounds PASSED     [ 55%]
+tests/test_performance_adjuster.py::test_apply_tier_2_with_approval PASSED [ 55%]
+tests/test_performance_adjuster.py::test_apply_tier_2_with_rejection PASSED [ 55%]
+tests/test_performance_adjuster.py::test_reject_tier_3_emergency PASSED  [ 56%]
+tests/test_performance_adjuster.py::test_trigger_emergency_pause PASSED  [ 56%]
+tests/test_performance_adjuster.py::test_emergency_pause_file_stops_trading PASSED [ 56%]
+tests/test_performance_archival.py::test_identify_archivable_trades PASSED [ 56%]
+tests/test_performance_archival.py::test_archive_trades_to_json PASSED   [ 57%]
+tests/test_performance_archival.py::test_archive_file_format PASSED      [ 57%]
+tests/test_performance_cleanup.py::test_run_cleanup PASSED               [ 57%]
+tests/test_performance_cleanup.py::test_cleanup_with_notification PASSED [ 57%]
+tests/test_performance_cleanup.py::test_scheduler_interval PASSED        [ 58%]
+tests/test_performance_cleanup.py::test_check_emergency_triggers_database_size PASSED [ 58%]
+tests/test_performance_cleanup.py::test_check_emergency_triggers_disk_space PASSED [ 58%]
+tests/test_performance_cleanup.py::test_emergency_cleanup_aggressive PASSED [ 58%]
+tests/test_performance_database.py::test_create_tables PASSED            [ 58%]
+tests/test_performance_database.py::test_create_indexes PASSED           [ 59%]
+tests/test_performance_database.py::test_log_trade PASSED                [ 59%]
+tests/test_performance_database.py::test_update_outcome PASSED           [ 59%]
+tests/test_performance_database.py::test_update_outcome_missed_opportunity PASSED [ 59%]
+tests/test_performance_metrics.py::test_calculate_win_rate PASSED        [ 60%]
+tests/test_performance_metrics.py::test_calculate_profit_loss PASSED     [ 60%]
+tests/test_performance_metrics.py::test_signal_performance PASSED        [ 60%]
+tests/test_performance_reflection.py::test_generate_reflection_prompt PASSED [ 60%]
+tests/test_performance_reflection.py::test_analyze_performance PASSED    [ 61%]
+tests/test_performance_tracker.py::test_log_decision PASSED              [ 61%]
+tests/test_place_order_script.py::test_place_order_dry_run PASSED        [ 61%]
+tests/test_place_order_script.py::test_place_order_missing_trading_creds PASSED [ 61%]
+tests/test_place_order_script.py::test_place_order_missing_required_args PASSED [ 61%]
+tests/test_place_order_script.py::test_place_order_manual_market_id PASSED [ 62%]
+tests/test_portfolio_status_script.py::test_portfolio_status_empty PASSED [ 62%]
+tests/test_portfolio_status_script.py::test_portfolio_status_json PASSED [ 62%]
+tests/test_portfolio_status_script.py::test_portfolio_status_with_market_filter PASSED [ 62%]
+tests/test_portfolio_status_script.py::test_portfolio_status_trading_mode_no_creds PASSED [ 63%]
+tests/test_price_cache.py::test_get_ttl_old_candle PASSED                [ 63%]
+tests/test_price_cache.py::test_get_ttl_recent_candle PASSED             [ 63%]
+tests/test_price_cache.py::test_get_ttl_current_candle PASSED            [ 63%]
+tests/test_price_cache.py::test_get_ttl_boundary_60_minutes PASSED       [ 64%]
+tests/test_price_cache.py::test_get_ttl_boundary_5_minutes PASSED        [ 64%]
+tests/test_price_cache.py::test_get_ttl_future_timestamp PASSED          [ 64%]
+tests/test_price_cache.py::test_put_and_get_candle PASSED                [ 64%]
+tests/test_price_cache.py::test_is_valid_fresh_cache PASSED              [ 64%]
+tests/test_price_cache.py::test_is_valid_missing_cache PASSED            [ 65%]
+tests/test_price_cache.py::test_is_valid_expired_cache PASSED            [ 65%]
+tests/test_price_history_buffer.py::test_buffer_initializes_empty PASSED [ 65%]
+tests/test_price_history_buffer.py::test_buffer_has_correct_max_length PASSED [ 65%]
+tests/test_price_history_buffer.py::test_append_adds_price_to_buffer PASSED [ 66%]
+tests/test_price_history_buffer.py::test_append_rejects_out_of_order_timestamps PASSED [ 66%]
+tests/test_price_history_buffer.py::test_append_marks_buffer_dirty PASSED [ 66%]
+tests/test_price_history_buffer.py::test_get_price_at_exact_timestamp PASSED [ 66%]
+tests/test_price_history_buffer.py::test_get_price_at_with_tolerance PASSED [ 67%]
+tests/test_price_history_buffer.py::test_get_price_at_returns_none_if_not_found PASSED [ 67%]
+tests/test_price_history_buffer.py::test_get_price_range_returns_all_in_range PASSED [ 67%]
+tests/test_price_history_buffer.py::test_get_price_range_empty_buffer PASSED [ 67%]
+tests/test_price_history_buffer.py::test_save_to_disk_creates_json_file PASSED [ 67%]
+tests/test_price_history_buffer.py::test_save_to_disk_uses_atomic_write PASSED [ 68%]
+tests/test_price_history_buffer.py::test_save_clears_dirty_flag PASSED   [ 68%]
+tests/test_price_history_buffer.py::test_load_from_disk_restores_buffer PASSED [ 68%]
+tests/test_price_history_buffer.py::test_load_from_disk_handles_missing_file PASSED [ 68%]
+tests/test_price_history_buffer.py::test_load_from_disk_handles_corrupted_json PASSED [ 69%]
+tests/test_price_history_buffer.py::test_cleanup_removes_old_entries PASSED [ 69%]
+tests/test_price_history_buffer.py::test_cleanup_marks_buffer_dirty PASSED [ 69%]
+tests/test_price_history_buffer_tolerance.py::test_get_price_at_with_tolerance PASSED [ 69%]
+tests/test_price_history_buffer_tolerance.py::test_get_price_at_outside_tolerance PASSED [ 70%]
+tests/test_price_history_buffer_tolerance.py::test_get_price_at_finds_closest_within_tolerance PASSED [ 70%]
+tests/test_price_history_buffer_tolerance.py::test_get_price_at_exact_match_preferred PASSED [ 70%]
+tests/test_price_history_buffer_tolerance.py::test_get_price_at_tolerance_boundary PASSED [ 70%]
+tests/test_price_history_buffer_tolerance.py::test_get_price_at_preserves_source_attribution PASSED [ 70%]
+tests/test_probability_calculator.py::test_above_target_high_probability PASSED [ 71%]
+tests/test_probability_calculator.py::test_below_target_low_probability PASSED [ 71%]
+tests/test_probability_calculator.py::test_at_target_neutral_probability PASSED [ 71%]
+tests/test_probability_calculator.py::test_upward_momentum_helps_reach_target PASSED [ 71%]
+tests/test_probability_calculator.py::test_time_matters_when_far_from_target PASSED [ 72%]
+tests/test_probability_calculator.py::test_volatility_affects_confidence PASSED [ 72%]
+tests/test_probability_calculator.py::test_end_phase_far_below_target PASSED [ 72%]
+tests/test_probability_calculator.py::test_probability_bounds PASSED     [ 72%]
+tests/test_probability_calculator.py::test_invalid_prices PASSED         [ 73%]
+tests/test_probability_calculator.py::test_invalid_target_price PASSED   [ 73%]
+tests/test_probability_calculator.py::test_invalid_volatility PASSED     [ 73%]
+tests/test_probability_calculator.py::test_invalid_orderbook_imbalance PASSED [ 73%]
+tests/test_retry.py::test_retry_success_on_first_try PASSED              [ 74%]
+tests/test_retry.py::test_retry_success_after_failure PASSED             [ 74%]
+tests/test_retry.py::test_retry_exhausted PASSED                         [ 74%]
+tests/test_retry_logic.py::test_retry_success_on_first_attempt PASSED    [ 74%]
+tests/test_retry_logic.py::test_retry_success_after_failure PASSED       [ 74%]
+tests/test_retry_logic.py::test_retry_all_attempts_fail PASSED           [ 75%]
+tests/test_retry_logic.py::test_retry_respects_timeout PASSED            [ 75%]
+tests/test_risk.py::TestOddsMultiplier::test_high_odds_no_scaling PASSED [ 75%]
+tests/test_risk.py::TestOddsMultiplier::test_low_odds_scaled_down PASSED [ 75%]
+tests/test_risk.py::TestOddsMultiplier::test_below_minimum_odds_rejected PASSED [ 76%]
+tests/test_risk.py::TestOddsExtraction::test_extract_yes_odds PASSED     [ 76%]
+tests/test_risk.py::TestOddsExtraction::test_extract_no_odds PASSED      [ 76%]
+tests/test_risk.py::TestOddsExtraction::test_extract_odds_default_fallback PASSED [ 76%]
+tests/test_risk.py::TestOddsExtraction::test_extract_odds_invalid_action PASSED [ 77%]
+tests/test_risk.py::TestOddsExtraction::test_extract_odds_none_value PASSED [ 77%]
+tests/test_risk.py::TestPositionSizingWithOdds::test_position_sizing_low_odds_scaled_down PASSED [ 77%]
+tests/test_risk.py::TestPositionSizingWithOdds::test_position_sizing_high_odds_unchanged PASSED [ 77%]
+tests/test_risk.py::TestPositionSizingWithOdds::test_position_sizing_below_minimum_odds_rejected FAILED [ 77%]
+tests/test_rtds_correct.py::test_binance_feed FAILED                     [ 78%]
+tests/test_rtds_correct.py::test_chainlink_feed FAILED                   [ 78%]
+tests/test_rtds_fixed.py::test_feed ERROR                                [ 78%]
+tests/test_settlement_bug_fix.py::test_parse_market_start_returns_start_time PASSED [ 78%]
+tests/test_settlement_bug_fix.py::test_parse_market_start_subtraction PASSED [ 79%]
+tests/test_settlement_bug_fix.py::test_settlement_outcome_btc_goes_up PASSED [ 79%]
+tests/test_settlement_bug_fix.py::test_settlement_outcome_btc_goes_down PASSED [ 79%]
+tests/test_settlement_bug_fix.py::test_settlement_outcome_no_movement PASSED [ 79%]
+tests/test_settlement_bug_fix.py::test_profit_loss_yes_trade_wins FAILED [ 80%]
+tests/test_settlement_bug_fix.py::test_profit_loss_no_trade_loses FAILED [ 80%]
+tests/test_settlement_bug_fix.py::test_real_world_trade_228 FAILED       [ 80%]
+tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_verification FAILED [ 80%]
+tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_failed_verification PASSED [ 80%]
+tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_price_discrepancy FAILED [ 81%]
+tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_partial_fill FAILED [ 81%]
+tests/test_settlement_validator_fallback.py::test_validator_uses_chainlink_first PASSED [ 81%]
+tests/test_settlement_validator_fallback.py::test_validator_falls_back_to_coingecko PASSED [ 81%]
+tests/test_settlement_validator_fallback.py::test_validator_falls_back_to_binance PASSED [ 82%]
+tests/test_settlement_validator_fallback.py::test_validator_returns_none_if_all_fail PASSED [ 82%]
+tests/test_settler.py::TestTimestampParsing::test_parse_valid_market_slug PASSED [ 82%]
+tests/test_settler.py::TestTimestampParsing::test_parse_different_format PASSED [ 82%]
+tests/test_settler.py::TestTimestampParsing::test_parse_invalid_slug_returns_none PASSED [ 83%]
+tests/test_settler.py::TestTimestampParsing::test_parse_empty_slug_returns_none PASSED [ 83%]
+tests/test_settler.py::TestOutcomeDetermination::test_price_up_means_yes_wins PASSED [ 83%]
+tests/test_settler.py::TestOutcomeDetermination::test_price_down_means_no_wins PASSED [ 83%]
+tests/test_settler.py::TestOutcomeDetermination::test_price_tie_defaults_to_no PASSED [ 83%]
+tests/test_settler.py::TestOutcomeDetermination::test_small_price_increase_still_yes PASSED [ 84%]
+tests/test_settler.py::TestProfitLossCalculation::test_yes_wins_profit_calculation PASSED [ 84%]
+tests/test_settler.py::TestProfitLossCalculation::test_yes_loses_loss_calculation PASSED [ 84%]
+tests/test_settler.py::TestProfitLossCalculation::test_no_wins_profit_calculation PASSED [ 84%]
+tests/test_settler.py::TestProfitLossCalculation::test_no_loses_loss_calculation PASSED [ 85%]
+tests/test_settler.py::TestProfitLossCalculation::test_high_confidence_yes_wins PASSED [ 85%]
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades PASSED [ 85%]
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit PASSED   [ 85%]
+tests/test_settler.py::TestSettlementOrchestration::test_settle_pending_trades_success PASSED [ 86%]
+tests/test_settler.py::TestSettlementOrchestration::test_settle_skips_on_price_fetch_failure PASSED [ 86%]
+tests/test_settler.py::TestBTCPriceFetching::test_get_btc_price_at_timestamp_success PASSED [ 86%]
+tests/test_settler.py::TestBTCPriceFetching::test_get_btc_price_returns_none_on_failure PASSED [ 86%]
+tests/test_signal_aggregator.py::test_agreement_score_perfect_alignment PASSED [ 87%]
+tests/test_signal_aggregator.py::test_agreement_score_conflict PASSED    [ 87%]
+tests/test_signal_aggregator.py::test_aggregate_strong_bullish PASSED    [ 87%]
+tests/test_signal_aggregator.py::test_aggregate_conflicting_signals PASSED [ 87%]
+tests/test_signal_aggregator.py::test_aggregate_missing_social PASSED    [ 87%]
+tests/test_signal_lag_detector.py::test_lag_detection_btc_up_sentiment_bearish PASSED [ 88%]
+tests/test_signal_lag_detector.py::test_lag_detection_btc_down_sentiment_bullish PASSED [ 88%]
+tests/test_signal_lag_detector.py::test_no_lag_when_aligned_bullish PASSED [ 88%]
+tests/test_signal_lag_detector.py::test_no_lag_when_aligned_bearish PASSED [ 88%]
+tests/test_signal_lag_detector.py::test_no_lag_when_low_confidence_contradiction PASSED [ 89%]
+tests/test_signal_lag_detector.py::test_neutral_sentiment_no_lag PASSED  [ 89%]
+tests/test_signal_weighting.py::test_price_movement_overrides_sentiment PASSED [ 89%]
+tests/test_signal_weighting.py::test_aligned_signals_boost_confidence PASSED [ 89%]
+tests/test_signal_weighting.py::test_volume_requirement_reduces_confidence PASSED [ 90%]
+tests/test_signal_weighting.py::test_coingecko_signals_moderate_weight PASSED [ 90%]
+tests/test_smart_order_executor.py::test_execute_high_urgency_order PASSED [ 90%]
+tests/test_smart_order_executor.py::test_execute_medium_urgency_order PASSED [ 90%]
+tests/test_smart_order_executor.py::test_order_timeout_with_fallback PASSED [ 90%]
+tests/test_smart_order_executor.py::test_low_urgency_no_fallback PASSED  [ 91%]
+tests/test_smart_order_executor.py::test_sell_side_order PASSED          [ 91%]
+tests/test_social_sentiment.py::test_fetch_fear_greed PASSED             [ 91%]
+tests/test_social_sentiment.py::test_fetch_trending PASSED               [ 91%]
+tests/test_social_sentiment.py::test_fetch_sentiment_votes PASSED        [ 92%]
+tests/test_social_sentiment.py::test_get_social_score_all_sources PASSED [ 92%]
+tests/test_social_sentiment.py::test_score_calculation_bullish PASSED    [ 92%]
+tests/test_social_sentiment.py::test_score_calculation_bearish PASSED    [ 92%]
+tests/test_stale_policy.py::test_record_success_resets_failures PASSED   [ 93%]
+tests/test_stale_policy.py::test_record_failure_increments_count PASSED  [ 93%]
+tests/test_stale_policy.py::test_can_use_stale_cache_fresh PASSED        [ 93%]
+tests/test_stale_policy.py::test_can_use_stale_cache_too_old PASSED      [ 93%]
+tests/test_stale_policy.py::test_can_use_stale_cache_no_cache PASSED     [ 93%]
+tests/test_stale_policy.py::test_get_stale_cache_with_warning PASSED     [ 94%]
+tests/test_stale_policy.py::test_get_stale_cache_too_old_returns_none PASSED [ 94%]
+tests/test_stale_policy.py::test_should_skip_cycle PASSED                [ 94%]
+tests/test_telegram_bot.py::test_send_notification PASSED                [ 94%]
+tests/test_telegram_bot.py::test_disabled_telegram PASSED                [ 95%]
+tests/test_telegram_bot.py::test_request_approval_approved PASSED        [ 95%]
+tests/test_telegram_bot.py::test_request_approval_rejected PASSED        [ 95%]
+tests/test_telegram_bot.py::test_request_approval_timeout PASSED         [ 95%]
+tests/test_telegram_bot.py::test_request_approval_no_bot PASSED          [ 96%]
+tests/test_timeframe_analyzer.py::test_aligned_bullish_trend PASSED      [ 96%]
+tests/test_timeframe_analyzer.py::test_aligned_bearish_trend PASSED      [ 96%]
+tests/test_timeframe_analyzer.py::test_mixed_signals PASSED              [ 96%]
+tests/test_timeframe_analyzer.py::test_strong_bullish PASSED             [ 96%]
+tests/test_timeframe_analyzer.py::test_insufficient_data PASSED          [ 97%]
+tests/test_timeframes_4tf.py::test_analyzes_4_timeframes PASSED          [ 97%]
+tests/test_timeframes_4tf.py::test_alignment_all_4_bullish PASSED        [ 97%]
+tests/test_timeframes_4tf.py::test_alignment_3_of_4_bullish PASSED       [ 97%]
+tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_trade_outcome FAILED [ 98%]
+tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_nonexistent_trade FAILED [ 98%]
+tests/test_verification.py::TestAcceptance::test_fetch_markets_works_in_read_only_mode PASSED [ 98%]
+tests/test_verification.py::TestAcceptance::test_place_order_dry_run_works_without_trading_creds PASSED [ 98%]
+tests/test_verification.py::TestAcceptance::test_place_order_fails_clearly_without_trading_creds PASSED [ 99%]
+tests/test_verification.py::TestAcceptance::test_portfolio_status_returns_empty_not_crash PASSED [ 99%]
+tests/test_verification.py::TestAcceptance::test_all_scripts_exit_zero_on_success PASSED [ 99%]
+tests/test_volatility.py::test_volatility_calculation_from_buffer PASSED [ 99%]
+tests/test_volatility.py::test_volatility_fallback_when_no_buffer PASSED [100%]
+
+==================================== ERRORS ====================================
+_________________________ ERROR at setup of test_feed __________________________
+file /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_rtds_fixed.py, line 15
+  async def test_feed(topic: str, symbol: str, label: str):
+      """Test a specific feed with correct JSON filter format."""
+      print(f"\n{'='*60}")
+      print(f"{label}")
+      print(f"{'='*60}")
+
+      try:
+          async with websockets.connect(WS_URL) as ws:
+              # Subscribe with JSON filter format
+              subscribe_msg = {
+                  "action": "subscribe",
+                  "subscriptions": [{
+                      "topic": topic,
+                      "type": "update",
+                      "filters": {"symbol": symbol}  # JSON object format
+                  }]
+              }
+
+              print(f"✓ Connected to RTDS")
+              print(f"  Topic: {topic}")
+              print(f"  Symbol: {symbol}")
+              print(f"\nSending subscription:")
+              print(json.dumps(subscribe_msg, indent=2))
+
+              await ws.send(json.dumps(subscribe_msg))
+              print(f"\n✓ Subscription sent, waiting for messages...")
+
+              # Collect price updates
+              prices = []
+              message_count = 0
+              max_messages = 10
+              max_timeouts = 5
+              timeout_count = 0
+
+              while len(prices) < 3 and timeout_count < max_timeouts and message_count < max_messages:
+                  try:
+                      message = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                      message_count += 1
+
+                      if not message or not message.strip():
+                          continue
+
+                      data = json.loads(message)
+
+                      # Check for errors
+                      if data.get("statusCode") == 400:
+                          print(f"\n✗ Server error:")
+                          print(json.dumps(data, indent=2))
+                          return None
+
+                      # Show first few messages for debugging
+                      if message_count <= 3:
+                          print(f"\n[Message #{message_count}]")
+                          print(json.dumps(data, indent=2))
+
+                      msg_topic = data.get("topic")
+                      msg_type = data.get("type")
+                      payload = data.get("payload", {})
+
+                      if msg_topic == topic:
+                          if msg_type == "subscribe":
+                              # Initial data dump
+                              price_data = payload.get("data", [])
+                              if price_data:
+                                  latest = price_data[-1]
+                                  price = Decimal(str(latest["value"]))
+                                  prices.append(price)
+                                  print(f"\n✓ Initial price: ${price:,.2f}")
+
+                          elif msg_type == "update":
+                              # Real-time update
+                              price = Decimal(str(payload["value"]))
+                              prices.append(price)
+                              print(f"✓ Update: ${price:,.2f}")
+
+                  except asyncio.TimeoutError:
+                      timeout_count += 1
+                      print(".", end="", flush=True)
+                      continue
+
+              print(f"\n\nReceived {len(prices)} price updates")
+
+              if prices:
+                  avg = sum(prices) / len(prices)
+                  print(f"Average price: ${avg:,.2f}")
+                  return prices
+              else:
+                  print("✗ No price updates received")
+                  return None
+
+      except Exception as e:
+          print(f"\n✗ Test failed: {e}")
+          import traceback
+          traceback.print_exc()
+          return None
+E       fixture 'topic' not found
+>       available fixtures: _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, read_only_env, record_property, record_testsuite_property, record_xml_attribute, recwarn, reset_state, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, trading_env, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_rtds_fixed.py:15
+=================================== FAILURES ===================================
+__________________________ test_stale_cache_fallback ___________________________
+tests/integration/test_resilient_price_fetching.py:100: in test_stale_cache_fallback
+    result1 = await service.get_price_history(minutes=1)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+polymarket/trading/btc_price.py:404: in get_price_history
+    raise Exception("Failed to fetch price history from all sources")
+E   Exception: Failed to fetch price history from all sources
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:04:20 [debug    ] Trying primary source
+2026-02-16 05:04:21 [debug    ] Fetched CoinGecko history      candles=0 minutes=1
+2026-02-16 05:04:21 [error    ] Stale cache too old or unavailable
+______________________ test_make_decision_with_arbitrage _______________________
+tests/test_ai_decision.py:134: in test_make_decision_with_arbitrage
+    assert decision.confidence == 0.92
+E   AssertionError: assert 0.66875 == 0.92
+E    +  where 0.66875 = TradingDecision(action='YES', confidence=0.66875, reasoning='Arbitrage edge', token_id='test', position_size=Decimal('50'), stop_loss_threshold=0.4).confidence
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:04:21 [info     ] Applied tiered signal weighting ai_confidence=92.0% price_direction=UP sentiment_score=+0.45 volume_confirmed=False weighted_confidence=66.9%
+___________________________ test_full_trading_cycle ____________________________
+tests/test_auto_trade.py:52: in test_full_trading_cycle
+    assert 0 <= indicators.rsi <= 100
+E   AssertionError: assert 0 <= nan
+E    +  where nan = TechnicalIndicators(rsi=nan, macd_value=47.20298367297801, macd_signal=36.87382265332981, macd_histogram=10.329161019648197, ema_short=68715.25968774683, ema_long=68666.29493570092, sma_50=68666.29493570092, volume_change=0.0, price_velocity=1.9804456209240016, trend='BULLISH').rsi
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:04:22 [info     ] Connecting to Polymarket CLOB WebSocket condition_id=None duration=120
+2026-02-16 05:04:22 [debug    ] Sentiment votes fetched        down=34.23 up=65.77
+2026-02-16 05:04:22 [info     ] Fetched BTC price from CoinGecko price=68710.0
+2026-02-16 05:04:22 [debug    ] BTC trending                   rank=2
+2026-02-16 05:04:22 [debug    ] Sent subscription              condition_id=None
+2026-02-16 05:04:22 [debug    ] Fear & Greed fetched           value=12
+2026-02-16 05:04:22 [info     ] Social sentiment calculated    confidence=1.00 score=-0.06 signal=STRONG_NEUTRAL sources=['fear_greed', 'trending', 'votes']
+2026-02-16 05:06:22 [info     ] Data collection complete       duration=120 trades=0
+2026-02-16 05:06:22 [warning  ] Low liquidity                  trades=0
+2026-02-16 05:06:22 [info     ] Market microstructure calculated confidence=0.00 score=+0.00 signal=CONFLICTED_NEUTRAL whales=0
+2026-02-16 05:06:22 [warning  ] Using social signals only (others unavailable)
+2026-02-16 05:06:22 [debug    ] Trying primary source
+2026-02-16 05:06:23 [debug    ] Fetched CoinGecko history      candles=12 minutes=60
+2026-02-16 05:06:23 [debug    ] Fetched and cached price history candles=12 minutes=60
+2026-02-16 05:06:23 [warning  ] Insufficient data for all indicators points=12
+___________________________ test_arbitrage_data_flow ___________________________
+tests/test_auto_trade_arbitrage_integration.py:154: in test_arbitrage_data_flow
+    await trader._process_market(
+E   TypeError: AutoTrader._process_market() missing 1 required positional argument: 'contrarian_signal'
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:06:23 [info     ] Price-to-beat data loaded      count=265 markets=['btc-updown-15m-1770906600', 'btc-updown-15m-1770907500', 'btc-updown-15m-1770908400', 'btc-updown-15m-1770909300', 'btc-updown-15m-1770910200', 'btc-updown-15m-1770911100', 'btc-updown-15m-1770912000', 'btc-updown-15m-1770912900', 'btc-updown-15m-1770913800', 'btc-updown-15m-1770914700', 'btc-updown-15m-1770915600', 'btc-updown-15m-1770916500', 'btc-updown-15m-1770917400', 'btc-updown-15m-1770918300', 'btc-updown-15m-1770919200', 'btc-updown-15m-1770920100', 'btc-updown-15m-1770921000', 'btc-updown-15m-1770921900', 'btc-updown-15m-1770922800', 'btc-updown-15m-1770923700', 'btc-updown-15m-1770924600', 'btc-updown-15m-1770925500', 'btc-updown-15m-1770926400', 'btc-updown-15m-1770927300', 'btc-updown-15m-1770928200', 'btc-updown-15m-1770929100', 'btc-updown-15m-1770930000', 'btc-updown-15m-1770930900', 'btc-updown-15m-1770931800', 'btc-updown-15m-1770932700', 'btc-updown-15m-1770933600', 'btc-updown-15m-1770934500', 'btc-updown-15m-1770935400', 'btc-updown-15m-1770936300', 'btc-updown-15m-1770937200', 'btc-updown-15m-1770938100', 'btc-updown-15m-1770939000', 'btc-updown-15m-1770939900', 'btc-updown-15m-1770940800', 'btc-updown-15m-1770941700', 'btc-updown-15m-1770942600', 'btc-updown-15m-1770943500', 'btc-updown-15m-1770944400', 'btc-updown-15m-1770945300', 'btc-updown-15m-1770946200', 'btc-updown-15m-1770947100', 'btc-updown-15m-1770948000', 'btc-updown-15m-1770961500', 'btc-updown-15m-1770962400', 'btc-updown-15m-1770963300', 'btc-updown-15m-1770964200', 'btc-updown-15m-1770965100', 'btc-updown-15m-1770966000', 'btc-updown-15m-1770966900', 'btc-updown-15m-1770967800', 'btc-updown-15m-1770968700', 'btc-updown-15m-1770969600', 'btc-updown-15m-1770970500', 'btc-updown-15m-1770971400', 'btc-updown-15m-1770972300', 'btc-updown-15m-1770973200', 'btc-updown-15m-1770974100', 'btc-updown-15m-1770975000', 'btc-updown-15m-1770975900', 'btc-updown-15m-1770976800', 'btc-updown-15m-1770977700', 'btc-updown-15m-1770978600', 'btc-updown-15m-1770979500', 'btc-updown-15m-1770980400', 'btc-updown-15m-1770981300', 'btc-updown-15m-1770982200', 'btc-updown-15m-1770983100', 'btc-updown-15m-1770984000', 'btc-updown-15m-1770984900', 'btc-updown-15m-1770985800', 'btc-updown-15m-1770986700', 'btc-updown-15m-1770987600', 'btc-updown-15m-1770988500', 'btc-updown-15m-1770989400', 'btc-updown-15m-1770990300', 'btc-updown-15m-1770991200', 'btc-updown-15m-1770992100', 'btc-updown-15m-1770993000', 'btc-updown-15m-1770993900', 'btc-updown-15m-1770996600', 'btc-updown-15m-1770997500', 'btc-updown-15m-1770998400', 'btc-updown-15m-1770999300', 'btc-updown-15m-1771000200', 'btc-updown-15m-1771001100', 'btc-updown-15m-1771002000', 'btc-updown-15m-1771002900', 'btc-updown-15m-1771003800', 'btc-updown-15m-1771004700', 'btc-updown-15m-1771005600', 'btc-updown-15m-1771006500', 'btc-updown-15m-1771007400', 'btc-updown-15m-1771008300', 'btc-updown-15m-1771009200', 'btc-updown-15m-1771010100', 'btc-updown-15m-1771011000', 'btc-updown-15m-1771011900', 'btc-updown-15m-1771012800', 'btc-updown-15m-1771013700', 'btc-updown-15m-1771014600', 'btc-updown-15m-1771015500', 'btc-updown-15m-1771016400', 'btc-updown-15m-1771017300', 'btc-updown-15m-1771018200', 'btc-updown-15m-1771019100', 'btc-updown-15m-1771020000', 'btc-updown-15m-1771020900', 'btc-updown-15m-1771021800', 'btc-updown-15m-1771022700', 'btc-updown-15m-1771023600', 'btc-updown-15m-1771024500', 'btc-updown-15m-1771025400', 'btc-updown-15m-1771026300', 'btc-updown-15m-1771027200', 'btc-updown-15m-1771028100', 'btc-updown-15m-1771029000', 'btc-updown-15m-1771029900', 'btc-updown-15m-1771030800', 'btc-updown-15m-1771031700', 'btc-updown-15m-1771032600', 'btc-updown-15m-1771033500', 'btc-updown-15m-1771034400', 'btc-updown-15m-1771035300', 'btc-updown-15m-1771036200', 'btc-updown-15m-1771037100', 'btc-updown-15m-1771038000', 'btc-updown-15m-1771038900', 'btc-updown-15m-1771039800', 'btc-updown-15m-1771040700', 'btc-updown-15m-1771041600', 'btc-updown-15m-1771042500', 'btc-updown-15m-1771043400', 'btc-updown-15m-1771044300', 'btc-updown-15m-1771045200', 'btc-updown-15m-1771046100', 'btc-updown-15m-1771047000', 'btc-updown-15m-1771047900', 'btc-updown-15m-1771048800', 'btc-updown-15m-1771049700', 'btc-updown-15m-1771050600', 'btc-updown-15m-1771051500', 'btc-updown-15m-1771052400', 'btc-updown-15m-1771053300', 'btc-updown-15m-1771054200', 'btc-updown-15m-1771055100', 'btc-updown-15m-1771056000', 'btc-updown-15m-1771056900', 'btc-updown-15m-1771057800', 'btc-updown-15m-1771058700', 'btc-updown-15m-1771059600', 'btc-updown-15m-1771060500', 'btc-updown-15m-1771061400', 'btc-updown-15m-1771062300', 'btc-updown-15m-1771063200', 'btc-updown-15m-1771064100', 'btc-updown-15m-1771065000', 'btc-updown-15m-1771065900', 'btc-updown-15m-1771066800', 'btc-updown-15m-1739203200', 'btc-updown-15m-1771079400', 'btc-updown-15m-1771080300', 'btc-updown-15m-1771081200', 'btc-updown-15m-1771082100', 'btc-updown-15m-1771083000', 'btc-updown-15m-1771083900', 'btc-updown-15m-1771096500', 'btc-updown-15m-1771097400', 'btc-updown-15m-1771098300', 'btc-updown-15m-1771099200', 'btc-updown-15m-1771100100', 'btc-updown-15m-1771101000', 'btc-updown-15m-1771101900', 'btc-updown-15m-1771102800', 'btc-updown-15m-1771103700', 'btc-updown-15m-1771104600', 'btc-updown-15m-1771105500', 'btc-updown-15m-1771106400', 'btc-updown-15m-1771107300', 'btc-updown-15m-1771108200', 'btc-updown-15m-1771109100', 'btc-updown-15m-1771110000', 'btc-updown-15m-1771110900', 'btc-updown-15m-1771111800', 'btc-updown-15m-1771112700', 'btc-updown-15m-1771113600', 'btc-updown-15m-1771114500', 'btc-updown-15m-1771115400', 'btc-updown-15m-1771116300', 'btc-updown-15m-1771117200', 'btc-updown-15m-1771118100', 'btc-updown-15m-1771119000', 'btc-updown-15m-1771119900', 'btc-updown-15m-1771120800', 'btc-updown-15m-1771121700', 'btc-updown-15m-1771122600', 'btc-updown-15m-1771123500', 'btc-updown-15m-1771124400', 'btc-updown-15m-1771125300', 'btc-updown-15m-1771126200', 'btc-updown-15m-1771127100', 'btc-updown-15m-1771128000', 'btc-updown-15m-1771128900', 'btc-updown-15m-1771129800', 'btc-updown-15m-1771130700', 'btc-updown-15m-1771131600', 'btc-updown-15m-1771132500', 'btc-updown-15m-1771133400', 'btc-updown-15m-1771134300', 'btc-updown-15m-1771135200', 'btc-updown-15m-1771136100', 'btc-updown-15m-1771137000', 'btc-updown-15m-1771137900', 'btc-updown-15m-1771138800', 'btc-updown-15m-1771139700', 'btc-updown-15m-1771140600', 'btc-updown-15m-1771141500', 'btc-updown-15m-1771142400', 'btc-updown-15m-1771143300', 'btc-updown-15m-1771144200', 'btc-updown-15m-1771145100', 'btc-updown-15m-1771146000', 'btc-updown-15m-1771146900', 'btc-updown-15m-1771147800', 'btc-updown-15m-1771148700', 'btc-updown-15m-1771149600', 'btc-updown-15m-1771150500', 'btc-updown-15m-1771151400', 'btc-updown-15m-1771152300', 'btc-updown-15m-1771153200', 'btc-updown-15m-1771154100', 'btc-updown-15m-1771155000', 'btc-updown-15m-1771155900', 'btc-updown-15m-1771156800', 'btc-updown-15m-1771157700', 'btc-updown-15m-1771158600', 'btc-updown-15m-1771159500', 'btc-updown-15m-1771168500', 'btc-updown-15m-1771177500', 'btc-updown-15m-1771181100', 'btc-updown-15m-1771184700', 'btc-updown-15m-1771189200', 'btc-updown-15m-1771191000', 'btc-updown-15m-1771191900', 'btc-updown-15m-1771193700', 'btc-updown-15m-1771195500', 'btc-updown-15m-1771196400', 'btc-updown-15m-1771200900', 'btc-updown-15m-1771201800', 'btc-updown-15m-1771202700', 'btc-updown-15m-1771203600', 'btc-updown-15m-1771205400', 'btc-updown-15m-1771209000', 'btc-updown-15m-1771209900', 'btc-updown-15m-1771210800', 'btc-updown-15m-1771211700', 'btc-updown-15m-1771212600', 'btc-updown-15m-1771214400', 'btc-updown-15m-1771215300', 'btc-updown-15m-1771216200', 'btc-updown-15m-1771217100']
+2026-02-16 05:06:23 [info     ] Order verification migration complete
+2026-02-16 05:06:23 [info     ] Added contrarian column: contrarian_detected
+2026-02-16 05:06:23 [info     ] Added contrarian column: contrarian_type
+2026-02-16 05:06:23 [info     ] Contrarian strategy migration complete
+2026-02-16 05:06:23 [info     ] Performance database initialized db_path=data/performance.db
+2026-02-16 05:06:23 [info     ] Performance tracker initialized
+2026-02-16 05:06:23 [info     ] Telegram bot disabled
+______________________________ test_binance_feed _______________________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_____________________________ test_chainlink_feed ______________________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+____________________________ test_place_limit_order ____________________________
+tests/test_client_limit_orders.py:18: in test_place_limit_order
+    result = await client.place_limit_order(
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+_____________________ test_place_limit_order_invalid_price _____________________
+tests/test_client_limit_orders.py:76: in test_place_limit_order_invalid_price
+    await client.place_limit_order("test-token-1234567890", "BUY", price=1.5, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:75: in test_place_limit_order_invalid_price
+    with pytest.raises(ValidationError, match="Price must be 0.0-1.0"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'Price must be 0.0-1.0'
+E     Actual message: 'Limit orders require TRADING mode'
+_____________________ test_place_limit_order_negative_size _____________________
+tests/test_client_limit_orders.py:84: in test_place_limit_order_negative_size
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.5, size=-10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:83: in test_place_limit_order_negative_size
+    with pytest.raises(ValidationError, match="Size must be positive"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'Size must be positive'
+E     Actual message: 'Limit orders require TRADING mode'
+_____________________ test_place_limit_order_invalid_side ______________________
+tests/test_client_limit_orders.py:92: in test_place_limit_order_invalid_side
+    await client.place_limit_order("test-token-1234567890", "INVALID", price=0.5, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:91: in test_place_limit_order_invalid_side
+    with pytest.raises(ValidationError, match="Side must be BUY or SELL"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'Side must be BUY or SELL'
+E     Actual message: 'Limit orders require TRADING mode'
+________________ test_place_limit_order_invalid_tick_size_zero _________________
+tests/test_client_limit_orders.py:100: in test_place_limit_order_invalid_tick_size_zero
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.5, size=10, tick_size=0)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:99: in test_place_limit_order_invalid_tick_size_zero
+    with pytest.raises(ValidationError, match="tick_size must be"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'tick_size must be'
+E     Actual message: 'Limit orders require TRADING mode'
+______________ test_place_limit_order_invalid_tick_size_negative _______________
+tests/test_client_limit_orders.py:108: in test_place_limit_order_invalid_tick_size_negative
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.5, size=10, tick_size=-0.01)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:107: in test_place_limit_order_invalid_tick_size_negative
+    with pytest.raises(ValidationError, match="tick_size must be"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'tick_size must be'
+E     Actual message: 'Limit orders require TRADING mode'
+______________ test_place_limit_order_invalid_tick_size_too_large ______________
+tests/test_client_limit_orders.py:116: in test_place_limit_order_invalid_tick_size_too_large
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.5, size=10, tick_size=1.5)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:115: in test_place_limit_order_invalid_tick_size_too_large
+    with pytest.raises(ValidationError, match="tick_size must be"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'tick_size must be'
+E     Actual message: 'Limit orders require TRADING mode'
+________________ test_place_limit_order_invalid_token_id_empty _________________
+tests/test_client_limit_orders.py:124: in test_place_limit_order_invalid_token_id_empty
+    await client.place_limit_order("", "BUY", price=0.5, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:123: in test_place_limit_order_invalid_token_id_empty
+    with pytest.raises(ValidationError, match="Invalid token_id"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'Invalid token_id'
+E     Actual message: 'Limit orders require TRADING mode'
+_________________ test_place_limit_order_invalid_token_id_none _________________
+tests/test_client_limit_orders.py:132: in test_place_limit_order_invalid_token_id_none
+    await client.place_limit_order(None, "BUY", price=0.5, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:131: in test_place_limit_order_invalid_token_id_none
+    with pytest.raises(ValidationError, match="Invalid token_id"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'Invalid token_id'
+E     Actual message: 'Limit orders require TRADING mode'
+______________ test_place_limit_order_invalid_token_id_too_short _______________
+tests/test_client_limit_orders.py:140: in test_place_limit_order_invalid_token_id_too_short
+    await client.place_limit_order("short", "BUY", price=0.5, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+
+During handling of the above exception, another exception occurred:
+tests/test_client_limit_orders.py:139: in test_place_limit_order_invalid_token_id_too_short
+    with pytest.raises(ValidationError, match="Invalid token_id"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'Invalid token_id'
+E     Actual message: 'Limit orders require TRADING mode'
+_______________________ test_place_limit_order_api_error _______________________
+tests/test_client_limit_orders.py:183: in test_place_limit_order_api_error
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.5, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+____________________ test_place_limit_order_price_rounding _____________________
+tests/test_client_limit_orders.py:227: in test_place_limit_order_price_rounding
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.556, size=10, tick_size=0.01)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+_________________ test_place_limit_order_price_clamping_upper __________________
+tests/test_client_limit_orders.py:242: in test_place_limit_order_price_clamping_upper
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.999999, size=10, tick_size=0.01)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+____________________ test_place_limit_order_boundary_prices ____________________
+tests/test_client_limit_orders.py:257: in test_place_limit_order_boundary_prices
+    await client.place_limit_order("test-token-1234567890", "BUY", price=0.0, size=10)
+polymarket/client.py:554: in place_limit_order
+    raise ValidationError("Limit orders require TRADING mode")
+E   polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+________________________ test_filters_end_phase_markets ________________________
+tests/test_end_phase_filter.py:67: in test_filters_end_phase_markets
+    assert time_remaining >= 300, f"Market {market.id} has only {time_remaining}s remaining"
+E   AssertionError: Market market-1 has only 179.999338s remaining
+E   assert 179.999338 >= 300
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:06:56 [info     ] Price-to-beat data loaded      count=265 markets=['btc-updown-15m-1770906600', 'btc-updown-15m-1770907500', 'btc-updown-15m-1770908400', 'btc-updown-15m-1770909300', 'btc-updown-15m-1770910200', 'btc-updown-15m-1770911100', 'btc-updown-15m-1770912000', 'btc-updown-15m-1770912900', 'btc-updown-15m-1770913800', 'btc-updown-15m-1770914700', 'btc-updown-15m-1770915600', 'btc-updown-15m-1770916500', 'btc-updown-15m-1770917400', 'btc-updown-15m-1770918300', 'btc-updown-15m-1770919200', 'btc-updown-15m-1770920100', 'btc-updown-15m-1770921000', 'btc-updown-15m-1770921900', 'btc-updown-15m-1770922800', 'btc-updown-15m-1770923700', 'btc-updown-15m-1770924600', 'btc-updown-15m-1770925500', 'btc-updown-15m-1770926400', 'btc-updown-15m-1770927300', 'btc-updown-15m-1770928200', 'btc-updown-15m-1770929100', 'btc-updown-15m-1770930000', 'btc-updown-15m-1770930900', 'btc-updown-15m-1770931800', 'btc-updown-15m-1770932700', 'btc-updown-15m-1770933600', 'btc-updown-15m-1770934500', 'btc-updown-15m-1770935400', 'btc-updown-15m-1770936300', 'btc-updown-15m-1770937200', 'btc-updown-15m-1770938100', 'btc-updown-15m-1770939000', 'btc-updown-15m-1770939900', 'btc-updown-15m-1770940800', 'btc-updown-15m-1770941700', 'btc-updown-15m-1770942600', 'btc-updown-15m-1770943500', 'btc-updown-15m-1770944400', 'btc-updown-15m-1770945300', 'btc-updown-15m-1770946200', 'btc-updown-15m-1770947100', 'btc-updown-15m-1770948000', 'btc-updown-15m-1770961500', 'btc-updown-15m-1770962400', 'btc-updown-15m-1770963300', 'btc-updown-15m-1770964200', 'btc-updown-15m-1770965100', 'btc-updown-15m-1770966000', 'btc-updown-15m-1770966900', 'btc-updown-15m-1770967800', 'btc-updown-15m-1770968700', 'btc-updown-15m-1770969600', 'btc-updown-15m-1770970500', 'btc-updown-15m-1770971400', 'btc-updown-15m-1770972300', 'btc-updown-15m-1770973200', 'btc-updown-15m-1770974100', 'btc-updown-15m-1770975000', 'btc-updown-15m-1770975900', 'btc-updown-15m-1770976800', 'btc-updown-15m-1770977700', 'btc-updown-15m-1770978600', 'btc-updown-15m-1770979500', 'btc-updown-15m-1770980400', 'btc-updown-15m-1770981300', 'btc-updown-15m-1770982200', 'btc-updown-15m-1770983100', 'btc-updown-15m-1770984000', 'btc-updown-15m-1770984900', 'btc-updown-15m-1770985800', 'btc-updown-15m-1770986700', 'btc-updown-15m-1770987600', 'btc-updown-15m-1770988500', 'btc-updown-15m-1770989400', 'btc-updown-15m-1770990300', 'btc-updown-15m-1770991200', 'btc-updown-15m-1770992100', 'btc-updown-15m-1770993000', 'btc-updown-15m-1770993900', 'btc-updown-15m-1770996600', 'btc-updown-15m-1770997500', 'btc-updown-15m-1770998400', 'btc-updown-15m-1770999300', 'btc-updown-15m-1771000200', 'btc-updown-15m-1771001100', 'btc-updown-15m-1771002000', 'btc-updown-15m-1771002900', 'btc-updown-15m-1771003800', 'btc-updown-15m-1771004700', 'btc-updown-15m-1771005600', 'btc-updown-15m-1771006500', 'btc-updown-15m-1771007400', 'btc-updown-15m-1771008300', 'btc-updown-15m-1771009200', 'btc-updown-15m-1771010100', 'btc-updown-15m-1771011000', 'btc-updown-15m-1771011900', 'btc-updown-15m-1771012800', 'btc-updown-15m-1771013700', 'btc-updown-15m-1771014600', 'btc-updown-15m-1771015500', 'btc-updown-15m-1771016400', 'btc-updown-15m-1771017300', 'btc-updown-15m-1771018200', 'btc-updown-15m-1771019100', 'btc-updown-15m-1771020000', 'btc-updown-15m-1771020900', 'btc-updown-15m-1771021800', 'btc-updown-15m-1771022700', 'btc-updown-15m-1771023600', 'btc-updown-15m-1771024500', 'btc-updown-15m-1771025400', 'btc-updown-15m-1771026300', 'btc-updown-15m-1771027200', 'btc-updown-15m-1771028100', 'btc-updown-15m-1771029000', 'btc-updown-15m-1771029900', 'btc-updown-15m-1771030800', 'btc-updown-15m-1771031700', 'btc-updown-15m-1771032600', 'btc-updown-15m-1771033500', 'btc-updown-15m-1771034400', 'btc-updown-15m-1771035300', 'btc-updown-15m-1771036200', 'btc-updown-15m-1771037100', 'btc-updown-15m-1771038000', 'btc-updown-15m-1771038900', 'btc-updown-15m-1771039800', 'btc-updown-15m-1771040700', 'btc-updown-15m-1771041600', 'btc-updown-15m-1771042500', 'btc-updown-15m-1771043400', 'btc-updown-15m-1771044300', 'btc-updown-15m-1771045200', 'btc-updown-15m-1771046100', 'btc-updown-15m-1771047000', 'btc-updown-15m-1771047900', 'btc-updown-15m-1771048800', 'btc-updown-15m-1771049700', 'btc-updown-15m-1771050600', 'btc-updown-15m-1771051500', 'btc-updown-15m-1771052400', 'btc-updown-15m-1771053300', 'btc-updown-15m-1771054200', 'btc-updown-15m-1771055100', 'btc-updown-15m-1771056000', 'btc-updown-15m-1771056900', 'btc-updown-15m-1771057800', 'btc-updown-15m-1771058700', 'btc-updown-15m-1771059600', 'btc-updown-15m-1771060500', 'btc-updown-15m-1771061400', 'btc-updown-15m-1771062300', 'btc-updown-15m-1771063200', 'btc-updown-15m-1771064100', 'btc-updown-15m-1771065000', 'btc-updown-15m-1771065900', 'btc-updown-15m-1771066800', 'btc-updown-15m-1739203200', 'btc-updown-15m-1771079400', 'btc-updown-15m-1771080300', 'btc-updown-15m-1771081200', 'btc-updown-15m-1771082100', 'btc-updown-15m-1771083000', 'btc-updown-15m-1771083900', 'btc-updown-15m-1771096500', 'btc-updown-15m-1771097400', 'btc-updown-15m-1771098300', 'btc-updown-15m-1771099200', 'btc-updown-15m-1771100100', 'btc-updown-15m-1771101000', 'btc-updown-15m-1771101900', 'btc-updown-15m-1771102800', 'btc-updown-15m-1771103700', 'btc-updown-15m-1771104600', 'btc-updown-15m-1771105500', 'btc-updown-15m-1771106400', 'btc-updown-15m-1771107300', 'btc-updown-15m-1771108200', 'btc-updown-15m-1771109100', 'btc-updown-15m-1771110000', 'btc-updown-15m-1771110900', 'btc-updown-15m-1771111800', 'btc-updown-15m-1771112700', 'btc-updown-15m-1771113600', 'btc-updown-15m-1771114500', 'btc-updown-15m-1771115400', 'btc-updown-15m-1771116300', 'btc-updown-15m-1771117200', 'btc-updown-15m-1771118100', 'btc-updown-15m-1771119000', 'btc-updown-15m-1771119900', 'btc-updown-15m-1771120800', 'btc-updown-15m-1771121700', 'btc-updown-15m-1771122600', 'btc-updown-15m-1771123500', 'btc-updown-15m-1771124400', 'btc-updown-15m-1771125300', 'btc-updown-15m-1771126200', 'btc-updown-15m-1771127100', 'btc-updown-15m-1771128000', 'btc-updown-15m-1771128900', 'btc-updown-15m-1771129800', 'btc-updown-15m-1771130700', 'btc-updown-15m-1771131600', 'btc-updown-15m-1771132500', 'btc-updown-15m-1771133400', 'btc-updown-15m-1771134300', 'btc-updown-15m-1771135200', 'btc-updown-15m-1771136100', 'btc-updown-15m-1771137000', 'btc-updown-15m-1771137900', 'btc-updown-15m-1771138800', 'btc-updown-15m-1771139700', 'btc-updown-15m-1771140600', 'btc-updown-15m-1771141500', 'btc-updown-15m-1771142400', 'btc-updown-15m-1771143300', 'btc-updown-15m-1771144200', 'btc-updown-15m-1771145100', 'btc-updown-15m-1771146000', 'btc-updown-15m-1771146900', 'btc-updown-15m-1771147800', 'btc-updown-15m-1771148700', 'btc-updown-15m-1771149600', 'btc-updown-15m-1771150500', 'btc-updown-15m-1771151400', 'btc-updown-15m-1771152300', 'btc-updown-15m-1771153200', 'btc-updown-15m-1771154100', 'btc-updown-15m-1771155000', 'btc-updown-15m-1771155900', 'btc-updown-15m-1771156800', 'btc-updown-15m-1771157700', 'btc-updown-15m-1771158600', 'btc-updown-15m-1771159500', 'btc-updown-15m-1771168500', 'btc-updown-15m-1771177500', 'btc-updown-15m-1771181100', 'btc-updown-15m-1771184700', 'btc-updown-15m-1771189200', 'btc-updown-15m-1771191000', 'btc-updown-15m-1771191900', 'btc-updown-15m-1771193700', 'btc-updown-15m-1771195500', 'btc-updown-15m-1771196400', 'btc-updown-15m-1771200900', 'btc-updown-15m-1771201800', 'btc-updown-15m-1771202700', 'btc-updown-15m-1771203600', 'btc-updown-15m-1771205400', 'btc-updown-15m-1771209000', 'btc-updown-15m-1771209900', 'btc-updown-15m-1771210800', 'btc-updown-15m-1771211700', 'btc-updown-15m-1771212600', 'btc-updown-15m-1771214400', 'btc-updown-15m-1771215300', 'btc-updown-15m-1771216200', 'btc-updown-15m-1771217100']
+2026-02-16 05:06:56 [info     ] Order verification migration complete
+2026-02-16 05:06:56 [info     ] Contrarian strategy migration complete
+2026-02-16 05:06:56 [info     ] Performance database initialized db_path=data/performance.db
+2026-02-16 05:06:56 [info     ] Performance tracker initialized
+2026-02-16 05:06:56 [info     ] Telegram bot initialized
+2026-02-16 05:06:56 [info     ] Markets filtered               filtered_end_phase=0 total=2 tradeable=2
+___________________________ test_logs_filtered_count ___________________________
+tests/test_end_phase_filter.py:126: in test_logs_filtered_count
+    assert len(markets) == 0, "Market with <5 min should be filtered out"
+E   AssertionError: Market with <5 min should be filtered out
+E   assert 1 == 0
+E    +  where 1 = len([Market(id='market-end-phase', condition_id='condition-1', question='Test market', slug='test-1', description=None, active=True, closed=False, accepting_orders=True, end_date=datetime.datetime(2026, 2, 16, 5, 8, 57, 13957, tzinfo=TzInfo(0)), start_date=None, outcomes=['Up', 'Down'], outcome_prices=None, clob_token_ids='["token-1", "token-2"]', order_price_min_tick_size=None, order_min_size=None, best_bid=None, best_ask=None, last_trade_price=None, volume_num=None, volume24hr=None, liquidity_num=None, category=None)])
+____________________________ test_parse_market_slug ____________________________
+tests/test_market_tracker.py:18: in test_parse_market_slug
+    assert start_time == datetime.fromtimestamp(1739203200, tz=timezone.utc)
+E   assert datetime.datetime(2025, 2, 10, 15, 45, tzinfo=datetime.timezone.utc) == datetime.datetime(2025, 2, 10, 16, 0, tzinfo=datetime.timezone.utc)
+E    +  where datetime.datetime(2025, 2, 10, 16, 0, tzinfo=datetime.timezone.utc) = <built-in method fromtimestamp of type object at 0xa4fd20>(1739203200, tz=datetime.timezone.utc)
+E    +    where <built-in method fromtimestamp of type object at 0xa4fd20> = datetime.fromtimestamp
+E    +    and   datetime.timezone.utc = timezone.utc
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:11:37 [info     ] Price-to-beat data loaded      count=265 markets=['btc-updown-15m-1770906600', 'btc-updown-15m-1770907500', 'btc-updown-15m-1770908400', 'btc-updown-15m-1770909300', 'btc-updown-15m-1770910200', 'btc-updown-15m-1770911100', 'btc-updown-15m-1770912000', 'btc-updown-15m-1770912900', 'btc-updown-15m-1770913800', 'btc-updown-15m-1770914700', 'btc-updown-15m-1770915600', 'btc-updown-15m-1770916500', 'btc-updown-15m-1770917400', 'btc-updown-15m-1770918300', 'btc-updown-15m-1770919200', 'btc-updown-15m-1770920100', 'btc-updown-15m-1770921000', 'btc-updown-15m-1770921900', 'btc-updown-15m-1770922800', 'btc-updown-15m-1770923700', 'btc-updown-15m-1770924600', 'btc-updown-15m-1770925500', 'btc-updown-15m-1770926400', 'btc-updown-15m-1770927300', 'btc-updown-15m-1770928200', 'btc-updown-15m-1770929100', 'btc-updown-15m-1770930000', 'btc-updown-15m-1770930900', 'btc-updown-15m-1770931800', 'btc-updown-15m-1770932700', 'btc-updown-15m-1770933600', 'btc-updown-15m-1770934500', 'btc-updown-15m-1770935400', 'btc-updown-15m-1770936300', 'btc-updown-15m-1770937200', 'btc-updown-15m-1770938100', 'btc-updown-15m-1770939000', 'btc-updown-15m-1770939900', 'btc-updown-15m-1770940800', 'btc-updown-15m-1770941700', 'btc-updown-15m-1770942600', 'btc-updown-15m-1770943500', 'btc-updown-15m-1770944400', 'btc-updown-15m-1770945300', 'btc-updown-15m-1770946200', 'btc-updown-15m-1770947100', 'btc-updown-15m-1770948000', 'btc-updown-15m-1770961500', 'btc-updown-15m-1770962400', 'btc-updown-15m-1770963300', 'btc-updown-15m-1770964200', 'btc-updown-15m-1770965100', 'btc-updown-15m-1770966000', 'btc-updown-15m-1770966900', 'btc-updown-15m-1770967800', 'btc-updown-15m-1770968700', 'btc-updown-15m-1770969600', 'btc-updown-15m-1770970500', 'btc-updown-15m-1770971400', 'btc-updown-15m-1770972300', 'btc-updown-15m-1770973200', 'btc-updown-15m-1770974100', 'btc-updown-15m-1770975000', 'btc-updown-15m-1770975900', 'btc-updown-15m-1770976800', 'btc-updown-15m-1770977700', 'btc-updown-15m-1770978600', 'btc-updown-15m-1770979500', 'btc-updown-15m-1770980400', 'btc-updown-15m-1770981300', 'btc-updown-15m-1770982200', 'btc-updown-15m-1770983100', 'btc-updown-15m-1770984000', 'btc-updown-15m-1770984900', 'btc-updown-15m-1770985800', 'btc-updown-15m-1770986700', 'btc-updown-15m-1770987600', 'btc-updown-15m-1770988500', 'btc-updown-15m-1770989400', 'btc-updown-15m-1770990300', 'btc-updown-15m-1770991200', 'btc-updown-15m-1770992100', 'btc-updown-15m-1770993000', 'btc-updown-15m-1770993900', 'btc-updown-15m-1770996600', 'btc-updown-15m-1770997500', 'btc-updown-15m-1770998400', 'btc-updown-15m-1770999300', 'btc-updown-15m-1771000200', 'btc-updown-15m-1771001100', 'btc-updown-15m-1771002000', 'btc-updown-15m-1771002900', 'btc-updown-15m-1771003800', 'btc-updown-15m-1771004700', 'btc-updown-15m-1771005600', 'btc-updown-15m-1771006500', 'btc-updown-15m-1771007400', 'btc-updown-15m-1771008300', 'btc-updown-15m-1771009200', 'btc-updown-15m-1771010100', 'btc-updown-15m-1771011000', 'btc-updown-15m-1771011900', 'btc-updown-15m-1771012800', 'btc-updown-15m-1771013700', 'btc-updown-15m-1771014600', 'btc-updown-15m-1771015500', 'btc-updown-15m-1771016400', 'btc-updown-15m-1771017300', 'btc-updown-15m-1771018200', 'btc-updown-15m-1771019100', 'btc-updown-15m-1771020000', 'btc-updown-15m-1771020900', 'btc-updown-15m-1771021800', 'btc-updown-15m-1771022700', 'btc-updown-15m-1771023600', 'btc-updown-15m-1771024500', 'btc-updown-15m-1771025400', 'btc-updown-15m-1771026300', 'btc-updown-15m-1771027200', 'btc-updown-15m-1771028100', 'btc-updown-15m-1771029000', 'btc-updown-15m-1771029900', 'btc-updown-15m-1771030800', 'btc-updown-15m-1771031700', 'btc-updown-15m-1771032600', 'btc-updown-15m-1771033500', 'btc-updown-15m-1771034400', 'btc-updown-15m-1771035300', 'btc-updown-15m-1771036200', 'btc-updown-15m-1771037100', 'btc-updown-15m-1771038000', 'btc-updown-15m-1771038900', 'btc-updown-15m-1771039800', 'btc-updown-15m-1771040700', 'btc-updown-15m-1771041600', 'btc-updown-15m-1771042500', 'btc-updown-15m-1771043400', 'btc-updown-15m-1771044300', 'btc-updown-15m-1771045200', 'btc-updown-15m-1771046100', 'btc-updown-15m-1771047000', 'btc-updown-15m-1771047900', 'btc-updown-15m-1771048800', 'btc-updown-15m-1771049700', 'btc-updown-15m-1771050600', 'btc-updown-15m-1771051500', 'btc-updown-15m-1771052400', 'btc-updown-15m-1771053300', 'btc-updown-15m-1771054200', 'btc-updown-15m-1771055100', 'btc-updown-15m-1771056000', 'btc-updown-15m-1771056900', 'btc-updown-15m-1771057800', 'btc-updown-15m-1771058700', 'btc-updown-15m-1771059600', 'btc-updown-15m-1771060500', 'btc-updown-15m-1771061400', 'btc-updown-15m-1771062300', 'btc-updown-15m-1771063200', 'btc-updown-15m-1771064100', 'btc-updown-15m-1771065000', 'btc-updown-15m-1771065900', 'btc-updown-15m-1771066800', 'btc-updown-15m-1739203200', 'btc-updown-15m-1771079400', 'btc-updown-15m-1771080300', 'btc-updown-15m-1771081200', 'btc-updown-15m-1771082100', 'btc-updown-15m-1771083000', 'btc-updown-15m-1771083900', 'btc-updown-15m-1771096500', 'btc-updown-15m-1771097400', 'btc-updown-15m-1771098300', 'btc-updown-15m-1771099200', 'btc-updown-15m-1771100100', 'btc-updown-15m-1771101000', 'btc-updown-15m-1771101900', 'btc-updown-15m-1771102800', 'btc-updown-15m-1771103700', 'btc-updown-15m-1771104600', 'btc-updown-15m-1771105500', 'btc-updown-15m-1771106400', 'btc-updown-15m-1771107300', 'btc-updown-15m-1771108200', 'btc-updown-15m-1771109100', 'btc-updown-15m-1771110000', 'btc-updown-15m-1771110900', 'btc-updown-15m-1771111800', 'btc-updown-15m-1771112700', 'btc-updown-15m-1771113600', 'btc-updown-15m-1771114500', 'btc-updown-15m-1771115400', 'btc-updown-15m-1771116300', 'btc-updown-15m-1771117200', 'btc-updown-15m-1771118100', 'btc-updown-15m-1771119000', 'btc-updown-15m-1771119900', 'btc-updown-15m-1771120800', 'btc-updown-15m-1771121700', 'btc-updown-15m-1771122600', 'btc-updown-15m-1771123500', 'btc-updown-15m-1771124400', 'btc-updown-15m-1771125300', 'btc-updown-15m-1771126200', 'btc-updown-15m-1771127100', 'btc-updown-15m-1771128000', 'btc-updown-15m-1771128900', 'btc-updown-15m-1771129800', 'btc-updown-15m-1771130700', 'btc-updown-15m-1771131600', 'btc-updown-15m-1771132500', 'btc-updown-15m-1771133400', 'btc-updown-15m-1771134300', 'btc-updown-15m-1771135200', 'btc-updown-15m-1771136100', 'btc-updown-15m-1771137000', 'btc-updown-15m-1771137900', 'btc-updown-15m-1771138800', 'btc-updown-15m-1771139700', 'btc-updown-15m-1771140600', 'btc-updown-15m-1771141500', 'btc-updown-15m-1771142400', 'btc-updown-15m-1771143300', 'btc-updown-15m-1771144200', 'btc-updown-15m-1771145100', 'btc-updown-15m-1771146000', 'btc-updown-15m-1771146900', 'btc-updown-15m-1771147800', 'btc-updown-15m-1771148700', 'btc-updown-15m-1771149600', 'btc-updown-15m-1771150500', 'btc-updown-15m-1771151400', 'btc-updown-15m-1771152300', 'btc-updown-15m-1771153200', 'btc-updown-15m-1771154100', 'btc-updown-15m-1771155000', 'btc-updown-15m-1771155900', 'btc-updown-15m-1771156800', 'btc-updown-15m-1771157700', 'btc-updown-15m-1771158600', 'btc-updown-15m-1771159500', 'btc-updown-15m-1771168500', 'btc-updown-15m-1771177500', 'btc-updown-15m-1771181100', 'btc-updown-15m-1771184700', 'btc-updown-15m-1771189200', 'btc-updown-15m-1771191000', 'btc-updown-15m-1771191900', 'btc-updown-15m-1771193700', 'btc-updown-15m-1771195500', 'btc-updown-15m-1771196400', 'btc-updown-15m-1771200900', 'btc-updown-15m-1771201800', 'btc-updown-15m-1771202700', 'btc-updown-15m-1771203600', 'btc-updown-15m-1771205400', 'btc-updown-15m-1771209000', 'btc-updown-15m-1771209900', 'btc-updown-15m-1771210800', 'btc-updown-15m-1771211700', 'btc-updown-15m-1771212600', 'btc-updown-15m-1771214400', 'btc-updown-15m-1771215300', 'btc-updown-15m-1771216200', 'btc-updown-15m-1771217100']
+________________________ test_calculate_time_remaining _________________________
+tests/test_market_tracker.py:33: in test_calculate_time_remaining
+    assert remaining == 600  # 10 minutes remaining (15 - 5)
+    ^^^^^^^^^^^^^^^^^^^^^^^
+E   assert 0 == 600
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:11:37 [info     ] Price-to-beat data loaded      count=265 markets=['btc-updown-15m-1770906600', 'btc-updown-15m-1770907500', 'btc-updown-15m-1770908400', 'btc-updown-15m-1770909300', 'btc-updown-15m-1770910200', 'btc-updown-15m-1770911100', 'btc-updown-15m-1770912000', 'btc-updown-15m-1770912900', 'btc-updown-15m-1770913800', 'btc-updown-15m-1770914700', 'btc-updown-15m-1770915600', 'btc-updown-15m-1770916500', 'btc-updown-15m-1770917400', 'btc-updown-15m-1770918300', 'btc-updown-15m-1770919200', 'btc-updown-15m-1770920100', 'btc-updown-15m-1770921000', 'btc-updown-15m-1770921900', 'btc-updown-15m-1770922800', 'btc-updown-15m-1770923700', 'btc-updown-15m-1770924600', 'btc-updown-15m-1770925500', 'btc-updown-15m-1770926400', 'btc-updown-15m-1770927300', 'btc-updown-15m-1770928200', 'btc-updown-15m-1770929100', 'btc-updown-15m-1770930000', 'btc-updown-15m-1770930900', 'btc-updown-15m-1770931800', 'btc-updown-15m-1770932700', 'btc-updown-15m-1770933600', 'btc-updown-15m-1770934500', 'btc-updown-15m-1770935400', 'btc-updown-15m-1770936300', 'btc-updown-15m-1770937200', 'btc-updown-15m-1770938100', 'btc-updown-15m-1770939000', 'btc-updown-15m-1770939900', 'btc-updown-15m-1770940800', 'btc-updown-15m-1770941700', 'btc-updown-15m-1770942600', 'btc-updown-15m-1770943500', 'btc-updown-15m-1770944400', 'btc-updown-15m-1770945300', 'btc-updown-15m-1770946200', 'btc-updown-15m-1770947100', 'btc-updown-15m-1770948000', 'btc-updown-15m-1770961500', 'btc-updown-15m-1770962400', 'btc-updown-15m-1770963300', 'btc-updown-15m-1770964200', 'btc-updown-15m-1770965100', 'btc-updown-15m-1770966000', 'btc-updown-15m-1770966900', 'btc-updown-15m-1770967800', 'btc-updown-15m-1770968700', 'btc-updown-15m-1770969600', 'btc-updown-15m-1770970500', 'btc-updown-15m-1770971400', 'btc-updown-15m-1770972300', 'btc-updown-15m-1770973200', 'btc-updown-15m-1770974100', 'btc-updown-15m-1770975000', 'btc-updown-15m-1770975900', 'btc-updown-15m-1770976800', 'btc-updown-15m-1770977700', 'btc-updown-15m-1770978600', 'btc-updown-15m-1770979500', 'btc-updown-15m-1770980400', 'btc-updown-15m-1770981300', 'btc-updown-15m-1770982200', 'btc-updown-15m-1770983100', 'btc-updown-15m-1770984000', 'btc-updown-15m-1770984900', 'btc-updown-15m-1770985800', 'btc-updown-15m-1770986700', 'btc-updown-15m-1770987600', 'btc-updown-15m-1770988500', 'btc-updown-15m-1770989400', 'btc-updown-15m-1770990300', 'btc-updown-15m-1770991200', 'btc-updown-15m-1770992100', 'btc-updown-15m-1770993000', 'btc-updown-15m-1770993900', 'btc-updown-15m-1770996600', 'btc-updown-15m-1770997500', 'btc-updown-15m-1770998400', 'btc-updown-15m-1770999300', 'btc-updown-15m-1771000200', 'btc-updown-15m-1771001100', 'btc-updown-15m-1771002000', 'btc-updown-15m-1771002900', 'btc-updown-15m-1771003800', 'btc-updown-15m-1771004700', 'btc-updown-15m-1771005600', 'btc-updown-15m-1771006500', 'btc-updown-15m-1771007400', 'btc-updown-15m-1771008300', 'btc-updown-15m-1771009200', 'btc-updown-15m-1771010100', 'btc-updown-15m-1771011000', 'btc-updown-15m-1771011900', 'btc-updown-15m-1771012800', 'btc-updown-15m-1771013700', 'btc-updown-15m-1771014600', 'btc-updown-15m-1771015500', 'btc-updown-15m-1771016400', 'btc-updown-15m-1771017300', 'btc-updown-15m-1771018200', 'btc-updown-15m-1771019100', 'btc-updown-15m-1771020000', 'btc-updown-15m-1771020900', 'btc-updown-15m-1771021800', 'btc-updown-15m-1771022700', 'btc-updown-15m-1771023600', 'btc-updown-15m-1771024500', 'btc-updown-15m-1771025400', 'btc-updown-15m-1771026300', 'btc-updown-15m-1771027200', 'btc-updown-15m-1771028100', 'btc-updown-15m-1771029000', 'btc-updown-15m-1771029900', 'btc-updown-15m-1771030800', 'btc-updown-15m-1771031700', 'btc-updown-15m-1771032600', 'btc-updown-15m-1771033500', 'btc-updown-15m-1771034400', 'btc-updown-15m-1771035300', 'btc-updown-15m-1771036200', 'btc-updown-15m-1771037100', 'btc-updown-15m-1771038000', 'btc-updown-15m-1771038900', 'btc-updown-15m-1771039800', 'btc-updown-15m-1771040700', 'btc-updown-15m-1771041600', 'btc-updown-15m-1771042500', 'btc-updown-15m-1771043400', 'btc-updown-15m-1771044300', 'btc-updown-15m-1771045200', 'btc-updown-15m-1771046100', 'btc-updown-15m-1771047000', 'btc-updown-15m-1771047900', 'btc-updown-15m-1771048800', 'btc-updown-15m-1771049700', 'btc-updown-15m-1771050600', 'btc-updown-15m-1771051500', 'btc-updown-15m-1771052400', 'btc-updown-15m-1771053300', 'btc-updown-15m-1771054200', 'btc-updown-15m-1771055100', 'btc-updown-15m-1771056000', 'btc-updown-15m-1771056900', 'btc-updown-15m-1771057800', 'btc-updown-15m-1771058700', 'btc-updown-15m-1771059600', 'btc-updown-15m-1771060500', 'btc-updown-15m-1771061400', 'btc-updown-15m-1771062300', 'btc-updown-15m-1771063200', 'btc-updown-15m-1771064100', 'btc-updown-15m-1771065000', 'btc-updown-15m-1771065900', 'btc-updown-15m-1771066800', 'btc-updown-15m-1739203200', 'btc-updown-15m-1771079400', 'btc-updown-15m-1771080300', 'btc-updown-15m-1771081200', 'btc-updown-15m-1771082100', 'btc-updown-15m-1771083000', 'btc-updown-15m-1771083900', 'btc-updown-15m-1771096500', 'btc-updown-15m-1771097400', 'btc-updown-15m-1771098300', 'btc-updown-15m-1771099200', 'btc-updown-15m-1771100100', 'btc-updown-15m-1771101000', 'btc-updown-15m-1771101900', 'btc-updown-15m-1771102800', 'btc-updown-15m-1771103700', 'btc-updown-15m-1771104600', 'btc-updown-15m-1771105500', 'btc-updown-15m-1771106400', 'btc-updown-15m-1771107300', 'btc-updown-15m-1771108200', 'btc-updown-15m-1771109100', 'btc-updown-15m-1771110000', 'btc-updown-15m-1771110900', 'btc-updown-15m-1771111800', 'btc-updown-15m-1771112700', 'btc-updown-15m-1771113600', 'btc-updown-15m-1771114500', 'btc-updown-15m-1771115400', 'btc-updown-15m-1771116300', 'btc-updown-15m-1771117200', 'btc-updown-15m-1771118100', 'btc-updown-15m-1771119000', 'btc-updown-15m-1771119900', 'btc-updown-15m-1771120800', 'btc-updown-15m-1771121700', 'btc-updown-15m-1771122600', 'btc-updown-15m-1771123500', 'btc-updown-15m-1771124400', 'btc-updown-15m-1771125300', 'btc-updown-15m-1771126200', 'btc-updown-15m-1771127100', 'btc-updown-15m-1771128000', 'btc-updown-15m-1771128900', 'btc-updown-15m-1771129800', 'btc-updown-15m-1771130700', 'btc-updown-15m-1771131600', 'btc-updown-15m-1771132500', 'btc-updown-15m-1771133400', 'btc-updown-15m-1771134300', 'btc-updown-15m-1771135200', 'btc-updown-15m-1771136100', 'btc-updown-15m-1771137000', 'btc-updown-15m-1771137900', 'btc-updown-15m-1771138800', 'btc-updown-15m-1771139700', 'btc-updown-15m-1771140600', 'btc-updown-15m-1771141500', 'btc-updown-15m-1771142400', 'btc-updown-15m-1771143300', 'btc-updown-15m-1771144200', 'btc-updown-15m-1771145100', 'btc-updown-15m-1771146000', 'btc-updown-15m-1771146900', 'btc-updown-15m-1771147800', 'btc-updown-15m-1771148700', 'btc-updown-15m-1771149600', 'btc-updown-15m-1771150500', 'btc-updown-15m-1771151400', 'btc-updown-15m-1771152300', 'btc-updown-15m-1771153200', 'btc-updown-15m-1771154100', 'btc-updown-15m-1771155000', 'btc-updown-15m-1771155900', 'btc-updown-15m-1771156800', 'btc-updown-15m-1771157700', 'btc-updown-15m-1771158600', 'btc-updown-15m-1771159500', 'btc-updown-15m-1771168500', 'btc-updown-15m-1771177500', 'btc-updown-15m-1771181100', 'btc-updown-15m-1771184700', 'btc-updown-15m-1771189200', 'btc-updown-15m-1771191000', 'btc-updown-15m-1771191900', 'btc-updown-15m-1771193700', 'btc-updown-15m-1771195500', 'btc-updown-15m-1771196400', 'btc-updown-15m-1771200900', 'btc-updown-15m-1771201800', 'btc-updown-15m-1771202700', 'btc-updown-15m-1771203600', 'btc-updown-15m-1771205400', 'btc-updown-15m-1771209000', 'btc-updown-15m-1771209900', 'btc-updown-15m-1771210800', 'btc-updown-15m-1771211700', 'btc-updown-15m-1771212600', 'btc-updown-15m-1771214400', 'btc-updown-15m-1771215300', 'btc-updown-15m-1771216200', 'btc-updown-15m-1771217100']
+____________________________ test_is_end_of_market _____________________________
+tests/test_market_tracker.py:69: in test_is_end_of_market
+    assert is_end is False
+E   assert True is False
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:11:37 [info     ] Price-to-beat data loaded      count=265 markets=['btc-updown-15m-1770906600', 'btc-updown-15m-1770907500', 'btc-updown-15m-1770908400', 'btc-updown-15m-1770909300', 'btc-updown-15m-1770910200', 'btc-updown-15m-1770911100', 'btc-updown-15m-1770912000', 'btc-updown-15m-1770912900', 'btc-updown-15m-1770913800', 'btc-updown-15m-1770914700', 'btc-updown-15m-1770915600', 'btc-updown-15m-1770916500', 'btc-updown-15m-1770917400', 'btc-updown-15m-1770918300', 'btc-updown-15m-1770919200', 'btc-updown-15m-1770920100', 'btc-updown-15m-1770921000', 'btc-updown-15m-1770921900', 'btc-updown-15m-1770922800', 'btc-updown-15m-1770923700', 'btc-updown-15m-1770924600', 'btc-updown-15m-1770925500', 'btc-updown-15m-1770926400', 'btc-updown-15m-1770927300', 'btc-updown-15m-1770928200', 'btc-updown-15m-1770929100', 'btc-updown-15m-1770930000', 'btc-updown-15m-1770930900', 'btc-updown-15m-1770931800', 'btc-updown-15m-1770932700', 'btc-updown-15m-1770933600', 'btc-updown-15m-1770934500', 'btc-updown-15m-1770935400', 'btc-updown-15m-1770936300', 'btc-updown-15m-1770937200', 'btc-updown-15m-1770938100', 'btc-updown-15m-1770939000', 'btc-updown-15m-1770939900', 'btc-updown-15m-1770940800', 'btc-updown-15m-1770941700', 'btc-updown-15m-1770942600', 'btc-updown-15m-1770943500', 'btc-updown-15m-1770944400', 'btc-updown-15m-1770945300', 'btc-updown-15m-1770946200', 'btc-updown-15m-1770947100', 'btc-updown-15m-1770948000', 'btc-updown-15m-1770961500', 'btc-updown-15m-1770962400', 'btc-updown-15m-1770963300', 'btc-updown-15m-1770964200', 'btc-updown-15m-1770965100', 'btc-updown-15m-1770966000', 'btc-updown-15m-1770966900', 'btc-updown-15m-1770967800', 'btc-updown-15m-1770968700', 'btc-updown-15m-1770969600', 'btc-updown-15m-1770970500', 'btc-updown-15m-1770971400', 'btc-updown-15m-1770972300', 'btc-updown-15m-1770973200', 'btc-updown-15m-1770974100', 'btc-updown-15m-1770975000', 'btc-updown-15m-1770975900', 'btc-updown-15m-1770976800', 'btc-updown-15m-1770977700', 'btc-updown-15m-1770978600', 'btc-updown-15m-1770979500', 'btc-updown-15m-1770980400', 'btc-updown-15m-1770981300', 'btc-updown-15m-1770982200', 'btc-updown-15m-1770983100', 'btc-updown-15m-1770984000', 'btc-updown-15m-1770984900', 'btc-updown-15m-1770985800', 'btc-updown-15m-1770986700', 'btc-updown-15m-1770987600', 'btc-updown-15m-1770988500', 'btc-updown-15m-1770989400', 'btc-updown-15m-1770990300', 'btc-updown-15m-1770991200', 'btc-updown-15m-1770992100', 'btc-updown-15m-1770993000', 'btc-updown-15m-1770993900', 'btc-updown-15m-1770996600', 'btc-updown-15m-1770997500', 'btc-updown-15m-1770998400', 'btc-updown-15m-1770999300', 'btc-updown-15m-1771000200', 'btc-updown-15m-1771001100', 'btc-updown-15m-1771002000', 'btc-updown-15m-1771002900', 'btc-updown-15m-1771003800', 'btc-updown-15m-1771004700', 'btc-updown-15m-1771005600', 'btc-updown-15m-1771006500', 'btc-updown-15m-1771007400', 'btc-updown-15m-1771008300', 'btc-updown-15m-1771009200', 'btc-updown-15m-1771010100', 'btc-updown-15m-1771011000', 'btc-updown-15m-1771011900', 'btc-updown-15m-1771012800', 'btc-updown-15m-1771013700', 'btc-updown-15m-1771014600', 'btc-updown-15m-1771015500', 'btc-updown-15m-1771016400', 'btc-updown-15m-1771017300', 'btc-updown-15m-1771018200', 'btc-updown-15m-1771019100', 'btc-updown-15m-1771020000', 'btc-updown-15m-1771020900', 'btc-updown-15m-1771021800', 'btc-updown-15m-1771022700', 'btc-updown-15m-1771023600', 'btc-updown-15m-1771024500', 'btc-updown-15m-1771025400', 'btc-updown-15m-1771026300', 'btc-updown-15m-1771027200', 'btc-updown-15m-1771028100', 'btc-updown-15m-1771029000', 'btc-updown-15m-1771029900', 'btc-updown-15m-1771030800', 'btc-updown-15m-1771031700', 'btc-updown-15m-1771032600', 'btc-updown-15m-1771033500', 'btc-updown-15m-1771034400', 'btc-updown-15m-1771035300', 'btc-updown-15m-1771036200', 'btc-updown-15m-1771037100', 'btc-updown-15m-1771038000', 'btc-updown-15m-1771038900', 'btc-updown-15m-1771039800', 'btc-updown-15m-1771040700', 'btc-updown-15m-1771041600', 'btc-updown-15m-1771042500', 'btc-updown-15m-1771043400', 'btc-updown-15m-1771044300', 'btc-updown-15m-1771045200', 'btc-updown-15m-1771046100', 'btc-updown-15m-1771047000', 'btc-updown-15m-1771047900', 'btc-updown-15m-1771048800', 'btc-updown-15m-1771049700', 'btc-updown-15m-1771050600', 'btc-updown-15m-1771051500', 'btc-updown-15m-1771052400', 'btc-updown-15m-1771053300', 'btc-updown-15m-1771054200', 'btc-updown-15m-1771055100', 'btc-updown-15m-1771056000', 'btc-updown-15m-1771056900', 'btc-updown-15m-1771057800', 'btc-updown-15m-1771058700', 'btc-updown-15m-1771059600', 'btc-updown-15m-1771060500', 'btc-updown-15m-1771061400', 'btc-updown-15m-1771062300', 'btc-updown-15m-1771063200', 'btc-updown-15m-1771064100', 'btc-updown-15m-1771065000', 'btc-updown-15m-1771065900', 'btc-updown-15m-1771066800', 'btc-updown-15m-1739203200', 'btc-updown-15m-1771079400', 'btc-updown-15m-1771080300', 'btc-updown-15m-1771081200', 'btc-updown-15m-1771082100', 'btc-updown-15m-1771083000', 'btc-updown-15m-1771083900', 'btc-updown-15m-1771096500', 'btc-updown-15m-1771097400', 'btc-updown-15m-1771098300', 'btc-updown-15m-1771099200', 'btc-updown-15m-1771100100', 'btc-updown-15m-1771101000', 'btc-updown-15m-1771101900', 'btc-updown-15m-1771102800', 'btc-updown-15m-1771103700', 'btc-updown-15m-1771104600', 'btc-updown-15m-1771105500', 'btc-updown-15m-1771106400', 'btc-updown-15m-1771107300', 'btc-updown-15m-1771108200', 'btc-updown-15m-1771109100', 'btc-updown-15m-1771110000', 'btc-updown-15m-1771110900', 'btc-updown-15m-1771111800', 'btc-updown-15m-1771112700', 'btc-updown-15m-1771113600', 'btc-updown-15m-1771114500', 'btc-updown-15m-1771115400', 'btc-updown-15m-1771116300', 'btc-updown-15m-1771117200', 'btc-updown-15m-1771118100', 'btc-updown-15m-1771119000', 'btc-updown-15m-1771119900', 'btc-updown-15m-1771120800', 'btc-updown-15m-1771121700', 'btc-updown-15m-1771122600', 'btc-updown-15m-1771123500', 'btc-updown-15m-1771124400', 'btc-updown-15m-1771125300', 'btc-updown-15m-1771126200', 'btc-updown-15m-1771127100', 'btc-updown-15m-1771128000', 'btc-updown-15m-1771128900', 'btc-updown-15m-1771129800', 'btc-updown-15m-1771130700', 'btc-updown-15m-1771131600', 'btc-updown-15m-1771132500', 'btc-updown-15m-1771133400', 'btc-updown-15m-1771134300', 'btc-updown-15m-1771135200', 'btc-updown-15m-1771136100', 'btc-updown-15m-1771137000', 'btc-updown-15m-1771137900', 'btc-updown-15m-1771138800', 'btc-updown-15m-1771139700', 'btc-updown-15m-1771140600', 'btc-updown-15m-1771141500', 'btc-updown-15m-1771142400', 'btc-updown-15m-1771143300', 'btc-updown-15m-1771144200', 'btc-updown-15m-1771145100', 'btc-updown-15m-1771146000', 'btc-updown-15m-1771146900', 'btc-updown-15m-1771147800', 'btc-updown-15m-1771148700', 'btc-updown-15m-1771149600', 'btc-updown-15m-1771150500', 'btc-updown-15m-1771151400', 'btc-updown-15m-1771152300', 'btc-updown-15m-1771153200', 'btc-updown-15m-1771154100', 'btc-updown-15m-1771155000', 'btc-updown-15m-1771155900', 'btc-updown-15m-1771156800', 'btc-updown-15m-1771157700', 'btc-updown-15m-1771158600', 'btc-updown-15m-1771159500', 'btc-updown-15m-1771168500', 'btc-updown-15m-1771177500', 'btc-updown-15m-1771181100', 'btc-updown-15m-1771184700', 'btc-updown-15m-1771189200', 'btc-updown-15m-1771191000', 'btc-updown-15m-1771191900', 'btc-updown-15m-1771193700', 'btc-updown-15m-1771195500', 'btc-updown-15m-1771196400', 'btc-updown-15m-1771200900', 'btc-updown-15m-1771201800', 'btc-updown-15m-1771202700', 'btc-updown-15m-1771203600', 'btc-updown-15m-1771205400', 'btc-updown-15m-1771209000', 'btc-updown-15m-1771209900', 'btc-updown-15m-1771210800', 'btc-updown-15m-1771211700', 'btc-updown-15m-1771212600', 'btc-updown-15m-1771214400', 'btc-updown-15m-1771215300', 'btc-updown-15m-1771216200', 'btc-updown-15m-1771217100']
+_ TestPositionSizingWithOdds.test_position_sizing_below_minimum_odds_rejected __
+tests/test_risk.py:190: in test_position_sizing_below_minimum_odds_rejected
+    assert not result.approved  # Should be rejected
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert not True
+E    +  where True = ValidationResult(approved=True, reason='All risk checks passed', adjusted_position=Decimal('5.0')).approved
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:06 [info     ] Bet rejected - odds below minimum threshold minimum=0.25 odds=0.2
+______________________________ test_binance_feed _______________________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_____________________________ test_chainlink_feed ______________________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_______________________ test_profit_loss_yes_trade_wins ________________________
+tests/test_settlement_bug_fix.py:136: in test_profit_loss_yes_trade_wins
+    profit_loss, is_win = settler._calculate_profit_loss(
+    ^^^^^^^^^^^^^^^^^^^
+E   ValueError: too many values to unpack (expected 2)
+_______________________ test_profit_loss_no_trade_loses ________________________
+tests/test_settlement_bug_fix.py:161: in test_profit_loss_no_trade_loses
+    profit_loss, is_win = settler._calculate_profit_loss(
+    ^^^^^^^^^^^^^^^^^^^
+E   ValueError: too many values to unpack (expected 2)
+__________________________ test_real_world_trade_228 ___________________________
+tests/test_settlement_bug_fix.py:209: in test_real_world_trade_228
+    profit_loss, is_win = settler._calculate_profit_loss(
+    ^^^^^^^^^^^^^^^^^^^
+E   ValueError: too many values to unpack (expected 2)
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:06 [info     ] Price-to-beat data loaded      count=265 markets=['btc-updown-15m-1770906600', 'btc-updown-15m-1770907500', 'btc-updown-15m-1770908400', 'btc-updown-15m-1770909300', 'btc-updown-15m-1770910200', 'btc-updown-15m-1770911100', 'btc-updown-15m-1770912000', 'btc-updown-15m-1770912900', 'btc-updown-15m-1770913800', 'btc-updown-15m-1770914700', 'btc-updown-15m-1770915600', 'btc-updown-15m-1770916500', 'btc-updown-15m-1770917400', 'btc-updown-15m-1770918300', 'btc-updown-15m-1770919200', 'btc-updown-15m-1770920100', 'btc-updown-15m-1770921000', 'btc-updown-15m-1770921900', 'btc-updown-15m-1770922800', 'btc-updown-15m-1770923700', 'btc-updown-15m-1770924600', 'btc-updown-15m-1770925500', 'btc-updown-15m-1770926400', 'btc-updown-15m-1770927300', 'btc-updown-15m-1770928200', 'btc-updown-15m-1770929100', 'btc-updown-15m-1770930000', 'btc-updown-15m-1770930900', 'btc-updown-15m-1770931800', 'btc-updown-15m-1770932700', 'btc-updown-15m-1770933600', 'btc-updown-15m-1770934500', 'btc-updown-15m-1770935400', 'btc-updown-15m-1770936300', 'btc-updown-15m-1770937200', 'btc-updown-15m-1770938100', 'btc-updown-15m-1770939000', 'btc-updown-15m-1770939900', 'btc-updown-15m-1770940800', 'btc-updown-15m-1770941700', 'btc-updown-15m-1770942600', 'btc-updown-15m-1770943500', 'btc-updown-15m-1770944400', 'btc-updown-15m-1770945300', 'btc-updown-15m-1770946200', 'btc-updown-15m-1770947100', 'btc-updown-15m-1770948000', 'btc-updown-15m-1770961500', 'btc-updown-15m-1770962400', 'btc-updown-15m-1770963300', 'btc-updown-15m-1770964200', 'btc-updown-15m-1770965100', 'btc-updown-15m-1770966000', 'btc-updown-15m-1770966900', 'btc-updown-15m-1770967800', 'btc-updown-15m-1770968700', 'btc-updown-15m-1770969600', 'btc-updown-15m-1770970500', 'btc-updown-15m-1770971400', 'btc-updown-15m-1770972300', 'btc-updown-15m-1770973200', 'btc-updown-15m-1770974100', 'btc-updown-15m-1770975000', 'btc-updown-15m-1770975900', 'btc-updown-15m-1770976800', 'btc-updown-15m-1770977700', 'btc-updown-15m-1770978600', 'btc-updown-15m-1770979500', 'btc-updown-15m-1770980400', 'btc-updown-15m-1770981300', 'btc-updown-15m-1770982200', 'btc-updown-15m-1770983100', 'btc-updown-15m-1770984000', 'btc-updown-15m-1770984900', 'btc-updown-15m-1770985800', 'btc-updown-15m-1770986700', 'btc-updown-15m-1770987600', 'btc-updown-15m-1770988500', 'btc-updown-15m-1770989400', 'btc-updown-15m-1770990300', 'btc-updown-15m-1770991200', 'btc-updown-15m-1770992100', 'btc-updown-15m-1770993000', 'btc-updown-15m-1770993900', 'btc-updown-15m-1770996600', 'btc-updown-15m-1770997500', 'btc-updown-15m-1770998400', 'btc-updown-15m-1770999300', 'btc-updown-15m-1771000200', 'btc-updown-15m-1771001100', 'btc-updown-15m-1771002000', 'btc-updown-15m-1771002900', 'btc-updown-15m-1771003800', 'btc-updown-15m-1771004700', 'btc-updown-15m-1771005600', 'btc-updown-15m-1771006500', 'btc-updown-15m-1771007400', 'btc-updown-15m-1771008300', 'btc-updown-15m-1771009200', 'btc-updown-15m-1771010100', 'btc-updown-15m-1771011000', 'btc-updown-15m-1771011900', 'btc-updown-15m-1771012800', 'btc-updown-15m-1771013700', 'btc-updown-15m-1771014600', 'btc-updown-15m-1771015500', 'btc-updown-15m-1771016400', 'btc-updown-15m-1771017300', 'btc-updown-15m-1771018200', 'btc-updown-15m-1771019100', 'btc-updown-15m-1771020000', 'btc-updown-15m-1771020900', 'btc-updown-15m-1771021800', 'btc-updown-15m-1771022700', 'btc-updown-15m-1771023600', 'btc-updown-15m-1771024500', 'btc-updown-15m-1771025400', 'btc-updown-15m-1771026300', 'btc-updown-15m-1771027200', 'btc-updown-15m-1771028100', 'btc-updown-15m-1771029000', 'btc-updown-15m-1771029900', 'btc-updown-15m-1771030800', 'btc-updown-15m-1771031700', 'btc-updown-15m-1771032600', 'btc-updown-15m-1771033500', 'btc-updown-15m-1771034400', 'btc-updown-15m-1771035300', 'btc-updown-15m-1771036200', 'btc-updown-15m-1771037100', 'btc-updown-15m-1771038000', 'btc-updown-15m-1771038900', 'btc-updown-15m-1771039800', 'btc-updown-15m-1771040700', 'btc-updown-15m-1771041600', 'btc-updown-15m-1771042500', 'btc-updown-15m-1771043400', 'btc-updown-15m-1771044300', 'btc-updown-15m-1771045200', 'btc-updown-15m-1771046100', 'btc-updown-15m-1771047000', 'btc-updown-15m-1771047900', 'btc-updown-15m-1771048800', 'btc-updown-15m-1771049700', 'btc-updown-15m-1771050600', 'btc-updown-15m-1771051500', 'btc-updown-15m-1771052400', 'btc-updown-15m-1771053300', 'btc-updown-15m-1771054200', 'btc-updown-15m-1771055100', 'btc-updown-15m-1771056000', 'btc-updown-15m-1771056900', 'btc-updown-15m-1771057800', 'btc-updown-15m-1771058700', 'btc-updown-15m-1771059600', 'btc-updown-15m-1771060500', 'btc-updown-15m-1771061400', 'btc-updown-15m-1771062300', 'btc-updown-15m-1771063200', 'btc-updown-15m-1771064100', 'btc-updown-15m-1771065000', 'btc-updown-15m-1771065900', 'btc-updown-15m-1771066800', 'btc-updown-15m-1739203200', 'btc-updown-15m-1771079400', 'btc-updown-15m-1771080300', 'btc-updown-15m-1771081200', 'btc-updown-15m-1771082100', 'btc-updown-15m-1771083000', 'btc-updown-15m-1771083900', 'btc-updown-15m-1771096500', 'btc-updown-15m-1771097400', 'btc-updown-15m-1771098300', 'btc-updown-15m-1771099200', 'btc-updown-15m-1771100100', 'btc-updown-15m-1771101000', 'btc-updown-15m-1771101900', 'btc-updown-15m-1771102800', 'btc-updown-15m-1771103700', 'btc-updown-15m-1771104600', 'btc-updown-15m-1771105500', 'btc-updown-15m-1771106400', 'btc-updown-15m-1771107300', 'btc-updown-15m-1771108200', 'btc-updown-15m-1771109100', 'btc-updown-15m-1771110000', 'btc-updown-15m-1771110900', 'btc-updown-15m-1771111800', 'btc-updown-15m-1771112700', 'btc-updown-15m-1771113600', 'btc-updown-15m-1771114500', 'btc-updown-15m-1771115400', 'btc-updown-15m-1771116300', 'btc-updown-15m-1771117200', 'btc-updown-15m-1771118100', 'btc-updown-15m-1771119000', 'btc-updown-15m-1771119900', 'btc-updown-15m-1771120800', 'btc-updown-15m-1771121700', 'btc-updown-15m-1771122600', 'btc-updown-15m-1771123500', 'btc-updown-15m-1771124400', 'btc-updown-15m-1771125300', 'btc-updown-15m-1771126200', 'btc-updown-15m-1771127100', 'btc-updown-15m-1771128000', 'btc-updown-15m-1771128900', 'btc-updown-15m-1771129800', 'btc-updown-15m-1771130700', 'btc-updown-15m-1771131600', 'btc-updown-15m-1771132500', 'btc-updown-15m-1771133400', 'btc-updown-15m-1771134300', 'btc-updown-15m-1771135200', 'btc-updown-15m-1771136100', 'btc-updown-15m-1771137000', 'btc-updown-15m-1771137900', 'btc-updown-15m-1771138800', 'btc-updown-15m-1771139700', 'btc-updown-15m-1771140600', 'btc-updown-15m-1771141500', 'btc-updown-15m-1771142400', 'btc-updown-15m-1771143300', 'btc-updown-15m-1771144200', 'btc-updown-15m-1771145100', 'btc-updown-15m-1771146000', 'btc-updown-15m-1771146900', 'btc-updown-15m-1771147800', 'btc-updown-15m-1771148700', 'btc-updown-15m-1771149600', 'btc-updown-15m-1771150500', 'btc-updown-15m-1771151400', 'btc-updown-15m-1771152300', 'btc-updown-15m-1771153200', 'btc-updown-15m-1771154100', 'btc-updown-15m-1771155000', 'btc-updown-15m-1771155900', 'btc-updown-15m-1771156800', 'btc-updown-15m-1771157700', 'btc-updown-15m-1771158600', 'btc-updown-15m-1771159500', 'btc-updown-15m-1771168500', 'btc-updown-15m-1771177500', 'btc-updown-15m-1771181100', 'btc-updown-15m-1771184700', 'btc-updown-15m-1771189200', 'btc-updown-15m-1771191000', 'btc-updown-15m-1771191900', 'btc-updown-15m-1771193700', 'btc-updown-15m-1771195500', 'btc-updown-15m-1771196400', 'btc-updown-15m-1771200900', 'btc-updown-15m-1771201800', 'btc-updown-15m-1771202700', 'btc-updown-15m-1771203600', 'btc-updown-15m-1771205400', 'btc-updown-15m-1771209000', 'btc-updown-15m-1771209900', 'btc-updown-15m-1771210800', 'btc-updown-15m-1771211700', 'btc-updown-15m-1771212600', 'btc-updown-15m-1771214400', 'btc-updown-15m-1771215300', 'btc-updown-15m-1771216200', 'btc-updown-15m-1771217100']
+_________ TestSettlementIntegration.test_settlement_with_verification __________
+tests/test_settlement_integration.py:74: in test_settlement_with_verification
+    assert stats['settled_count'] == 1
+E   assert 0 == 1
+---------------------------- Captured stdout setup -----------------------------
+2026-02-16 05:12:06 [info     ] Added column: analysis_price
+2026-02-16 05:12:06 [info     ] Added column: price_staleness_seconds
+2026-02-16 05:12:06 [info     ] Added column: price_slippage_pct
+2026-02-16 05:12:06 [info     ] Added column: price_movement_favorable
+2026-02-16 05:12:06 [info     ] Added column: skipped_unfavorable_move
+2026-02-16 05:12:06 [info     ] Added column: execution_status
+2026-02-16 05:12:06 [info     ] Added column: actual_probability
+2026-02-16 05:12:06 [info     ] Added column: arbitrage_edge
+2026-02-16 05:12:06 [info     ] Added column: arbitrage_urgency
+2026-02-16 05:12:06 [info     ] Added column: filled_via
+2026-02-16 05:12:06 [info     ] Added column: limit_order_timeout
+2026-02-16 05:12:06 [info     ] Added column: funding_rate
+2026-02-16 05:12:06 [info     ] Added column: funding_rate_normalized
+2026-02-16 05:12:06 [info     ] Added column: btc_dominance
+2026-02-16 05:12:06 [info     ] Added column: btc_dominance_change_24h
+2026-02-16 05:12:06 [info     ] Added column: whale_activity
+2026-02-16 05:12:06 [info     ] Added column: order_book_imbalance
+2026-02-16 05:12:06 [info     ] Added column: spread_bps
+2026-02-16 05:12:06 [info     ] Added column: order_id
+2026-02-16 05:12:06 [info     ] Added column: volatility
+2026-02-16 05:12:06 [info     ] Database migration: Added timeframe columns
+2026-02-16 05:12:06 [info     ] Added verification column: verified_fill_price
+2026-02-16 05:12:06 [info     ] Added verification column: verified_fill_amount
+2026-02-16 05:12:06 [info     ] Added verification column: transaction_hash
+2026-02-16 05:12:06 [info     ] Added verification column: fill_timestamp
+2026-02-16 05:12:06 [info     ] Added verification column: partial_fill
+2026-02-16 05:12:06 [info     ] Added verification column: verification_status
+2026-02-16 05:12:06 [info     ] Added verification column: verification_timestamp
+2026-02-16 05:12:06 [info     ] Added verification column: price_discrepancy_pct
+2026-02-16 05:12:06 [info     ] Added verification column: amount_discrepancy_pct
+2026-02-16 05:12:06 [info     ] Added verification column: skip_reason
+2026-02-16 05:12:06 [info     ] Added verification column: skip_type
+2026-02-16 05:12:06 [info     ] Order verification migration complete
+2026-02-16 05:12:06 [info     ] Added contrarian column: contrarian_detected
+2026-02-16 05:12:06 [info     ] Added contrarian column: contrarian_type
+2026-02-16 05:12:06 [info     ] Contrarian strategy migration complete
+2026-02-16 05:12:06 [info     ] Performance database initialized db_path=:memory:
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:06 [info     ] Starting settlement cycle with verification pending_trades=1 verifier_enabled=True
+2026-02-16 05:12:06 [debug    ] Transaction hash lookup        order_id=order_123
+2026-02-16 05:12:06 [info     ] Full order verification complete fill_amount=10.0 fill_price=0.66 order_id=order_123 partial_fill=False status=MATCHED verified=True
+2026-02-16 05:12:06 [error    ] Failed to settle trade 1: no such column: fee_paid
+_______ TestSettlementIntegration.test_settlement_with_price_discrepancy _______
+tests/test_settlement_integration.py:135: in test_settlement_with_price_discrepancy
+    assert stats['settled_count'] == 1  # Still settle, just alert
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert 0 == 1
+---------------------------- Captured stdout setup -----------------------------
+2026-02-16 05:12:10 [info     ] Added column: analysis_price
+2026-02-16 05:12:10 [info     ] Added column: price_staleness_seconds
+2026-02-16 05:12:10 [info     ] Added column: price_slippage_pct
+2026-02-16 05:12:10 [info     ] Added column: price_movement_favorable
+2026-02-16 05:12:10 [info     ] Added column: skipped_unfavorable_move
+2026-02-16 05:12:10 [info     ] Added column: execution_status
+2026-02-16 05:12:10 [info     ] Added column: actual_probability
+2026-02-16 05:12:10 [info     ] Added column: arbitrage_edge
+2026-02-16 05:12:10 [info     ] Added column: arbitrage_urgency
+2026-02-16 05:12:10 [info     ] Added column: filled_via
+2026-02-16 05:12:10 [info     ] Added column: limit_order_timeout
+2026-02-16 05:12:10 [info     ] Added column: funding_rate
+2026-02-16 05:12:10 [info     ] Added column: funding_rate_normalized
+2026-02-16 05:12:10 [info     ] Added column: btc_dominance
+2026-02-16 05:12:10 [info     ] Added column: btc_dominance_change_24h
+2026-02-16 05:12:10 [info     ] Added column: whale_activity
+2026-02-16 05:12:10 [info     ] Added column: order_book_imbalance
+2026-02-16 05:12:10 [info     ] Added column: spread_bps
+2026-02-16 05:12:10 [info     ] Added column: order_id
+2026-02-16 05:12:10 [info     ] Added column: volatility
+2026-02-16 05:12:10 [info     ] Database migration: Added timeframe columns
+2026-02-16 05:12:10 [info     ] Added verification column: verified_fill_price
+2026-02-16 05:12:10 [info     ] Added verification column: verified_fill_amount
+2026-02-16 05:12:10 [info     ] Added verification column: transaction_hash
+2026-02-16 05:12:10 [info     ] Added verification column: fill_timestamp
+2026-02-16 05:12:10 [info     ] Added verification column: partial_fill
+2026-02-16 05:12:10 [info     ] Added verification column: verification_status
+2026-02-16 05:12:10 [info     ] Added verification column: verification_timestamp
+2026-02-16 05:12:10 [info     ] Added verification column: price_discrepancy_pct
+2026-02-16 05:12:10 [info     ] Added verification column: amount_discrepancy_pct
+2026-02-16 05:12:10 [info     ] Added verification column: skip_reason
+2026-02-16 05:12:10 [info     ] Added verification column: skip_type
+2026-02-16 05:12:10 [info     ] Order verification migration complete
+2026-02-16 05:12:10 [info     ] Added contrarian column: contrarian_detected
+2026-02-16 05:12:10 [info     ] Added contrarian column: contrarian_type
+2026-02-16 05:12:10 [info     ] Contrarian strategy migration complete
+2026-02-16 05:12:10 [info     ] Performance database initialized db_path=:memory:
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:10 [info     ] Starting settlement cycle with verification pending_trades=1 verifier_enabled=True
+2026-02-16 05:12:10 [debug    ] Transaction hash lookup        order_id=order_123
+2026-02-16 05:12:10 [info     ] Full order verification complete fill_amount=10.0 fill_price=0.72 order_id=order_123 partial_fill=False status=MATCHED verified=True
+2026-02-16 05:12:10 [warning  ] Large price discrepancy detected actual=$0.720 discrepancy=+10.77% estimated=$0.650 trade_id=1
+2026-02-16 05:12:10 [error    ] Failed to settle trade 1: no such column: fee_paid
+_________ TestSettlementIntegration.test_settlement_with_partial_fill __________
+tests/test_settlement_integration.py:164: in test_settlement_with_partial_fill
+    assert stats['settled_count'] == 1
+E   assert 0 == 1
+---------------------------- Captured stdout setup -----------------------------
+2026-02-16 05:12:12 [info     ] Added column: analysis_price
+2026-02-16 05:12:12 [info     ] Added column: price_staleness_seconds
+2026-02-16 05:12:12 [info     ] Added column: price_slippage_pct
+2026-02-16 05:12:12 [info     ] Added column: price_movement_favorable
+2026-02-16 05:12:12 [info     ] Added column: skipped_unfavorable_move
+2026-02-16 05:12:12 [info     ] Added column: execution_status
+2026-02-16 05:12:12 [info     ] Added column: actual_probability
+2026-02-16 05:12:12 [info     ] Added column: arbitrage_edge
+2026-02-16 05:12:12 [info     ] Added column: arbitrage_urgency
+2026-02-16 05:12:12 [info     ] Added column: filled_via
+2026-02-16 05:12:12 [info     ] Added column: limit_order_timeout
+2026-02-16 05:12:12 [info     ] Added column: funding_rate
+2026-02-16 05:12:12 [info     ] Added column: funding_rate_normalized
+2026-02-16 05:12:12 [info     ] Added column: btc_dominance
+2026-02-16 05:12:12 [info     ] Added column: btc_dominance_change_24h
+2026-02-16 05:12:12 [info     ] Added column: whale_activity
+2026-02-16 05:12:12 [info     ] Added column: order_book_imbalance
+2026-02-16 05:12:12 [info     ] Added column: spread_bps
+2026-02-16 05:12:12 [info     ] Added column: order_id
+2026-02-16 05:12:12 [info     ] Added column: volatility
+2026-02-16 05:12:12 [info     ] Database migration: Added timeframe columns
+2026-02-16 05:12:12 [info     ] Added verification column: verified_fill_price
+2026-02-16 05:12:12 [info     ] Added verification column: verified_fill_amount
+2026-02-16 05:12:12 [info     ] Added verification column: transaction_hash
+2026-02-16 05:12:12 [info     ] Added verification column: fill_timestamp
+2026-02-16 05:12:12 [info     ] Added verification column: partial_fill
+2026-02-16 05:12:12 [info     ] Added verification column: verification_status
+2026-02-16 05:12:12 [info     ] Added verification column: verification_timestamp
+2026-02-16 05:12:12 [info     ] Added verification column: price_discrepancy_pct
+2026-02-16 05:12:12 [info     ] Added verification column: amount_discrepancy_pct
+2026-02-16 05:12:12 [info     ] Added verification column: skip_reason
+2026-02-16 05:12:12 [info     ] Added verification column: skip_type
+2026-02-16 05:12:12 [info     ] Order verification migration complete
+2026-02-16 05:12:12 [info     ] Added contrarian column: contrarian_detected
+2026-02-16 05:12:12 [info     ] Added contrarian column: contrarian_type
+2026-02-16 05:12:12 [info     ] Contrarian strategy migration complete
+2026-02-16 05:12:12 [info     ] Performance database initialized db_path=:memory:
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:12 [info     ] Starting settlement cycle with verification pending_trades=1 verifier_enabled=True
+2026-02-16 05:12:12 [debug    ] Transaction hash lookup        order_id=order_123
+2026-02-16 05:12:12 [info     ] Full order verification complete fill_amount=7.0 fill_price=0.65 order_id=order_123 partial_fill=True status=PARTIALLY_MATCHED verified=True
+2026-02-16 05:12:12 [info     ] Partial fill detected          expected=10.0 fill_pct=70.0% filled=7.0 trade_id=1
+2026-02-16 05:12:12 [error    ] Failed to settle trade 1: no such column: fee_paid
+____________ TestTrackerSettlementUpdate.test_update_trade_outcome _____________
+tests/test_tracker_settlement.py:39: in test_update_trade_outcome
+    tracker.update_trade_outcome(
+polymarket/performance/tracker.py:343: in update_trade_outcome
+    cursor.execute("""
+E   sqlite3.OperationalError: no such column: fee_paid
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:39 [info     ] Added column: analysis_price
+2026-02-16 05:12:39 [info     ] Added column: price_staleness_seconds
+2026-02-16 05:12:39 [info     ] Added column: price_slippage_pct
+2026-02-16 05:12:39 [info     ] Added column: price_movement_favorable
+2026-02-16 05:12:39 [info     ] Added column: skipped_unfavorable_move
+2026-02-16 05:12:39 [info     ] Added column: execution_status
+2026-02-16 05:12:39 [info     ] Added column: actual_probability
+2026-02-16 05:12:39 [info     ] Added column: arbitrage_edge
+2026-02-16 05:12:39 [info     ] Added column: arbitrage_urgency
+2026-02-16 05:12:39 [info     ] Added column: filled_via
+2026-02-16 05:12:39 [info     ] Added column: limit_order_timeout
+2026-02-16 05:12:39 [info     ] Added column: funding_rate
+2026-02-16 05:12:39 [info     ] Added column: funding_rate_normalized
+2026-02-16 05:12:39 [info     ] Added column: btc_dominance
+2026-02-16 05:12:39 [info     ] Added column: btc_dominance_change_24h
+2026-02-16 05:12:39 [info     ] Added column: whale_activity
+2026-02-16 05:12:39 [info     ] Added column: order_book_imbalance
+2026-02-16 05:12:39 [info     ] Added column: spread_bps
+2026-02-16 05:12:39 [info     ] Added column: order_id
+2026-02-16 05:12:39 [info     ] Added column: volatility
+2026-02-16 05:12:39 [info     ] Database migration: Added timeframe columns
+2026-02-16 05:12:39 [info     ] Added verification column: verified_fill_price
+2026-02-16 05:12:39 [info     ] Added verification column: verified_fill_amount
+2026-02-16 05:12:39 [info     ] Added verification column: transaction_hash
+2026-02-16 05:12:39 [info     ] Added verification column: fill_timestamp
+2026-02-16 05:12:39 [info     ] Added verification column: partial_fill
+2026-02-16 05:12:39 [info     ] Added verification column: verification_status
+2026-02-16 05:12:39 [info     ] Added verification column: verification_timestamp
+2026-02-16 05:12:39 [info     ] Added verification column: price_discrepancy_pct
+2026-02-16 05:12:39 [info     ] Added verification column: amount_discrepancy_pct
+2026-02-16 05:12:39 [info     ] Added verification column: skip_reason
+2026-02-16 05:12:39 [info     ] Added verification column: skip_type
+2026-02-16 05:12:39 [info     ] Order verification migration complete
+2026-02-16 05:12:39 [info     ] Added contrarian column: contrarian_detected
+2026-02-16 05:12:39 [info     ] Added contrarian column: contrarian_type
+2026-02-16 05:12:39 [info     ] Contrarian strategy migration complete
+2026-02-16 05:12:39 [info     ] Performance database initialized db_path=:memory:
+2026-02-16 05:12:39 [info     ] Performance tracker initialized
+__________ TestTrackerSettlementUpdate.test_update_nonexistent_trade ___________
+tests/test_tracker_settlement.py:59: in test_update_nonexistent_trade
+    tracker.update_trade_outcome(
+polymarket/performance/tracker.py:343: in update_trade_outcome
+    cursor.execute("""
+E   sqlite3.OperationalError: no such column: fee_paid
+----------------------------- Captured stdout call -----------------------------
+2026-02-16 05:12:39 [info     ] Added column: analysis_price
+2026-02-16 05:12:39 [info     ] Added column: price_staleness_seconds
+2026-02-16 05:12:39 [info     ] Added column: price_slippage_pct
+2026-02-16 05:12:39 [info     ] Added column: price_movement_favorable
+2026-02-16 05:12:39 [info     ] Added column: skipped_unfavorable_move
+2026-02-16 05:12:39 [info     ] Added column: execution_status
+2026-02-16 05:12:39 [info     ] Added column: actual_probability
+2026-02-16 05:12:39 [info     ] Added column: arbitrage_edge
+2026-02-16 05:12:39 [info     ] Added column: arbitrage_urgency
+2026-02-16 05:12:39 [info     ] Added column: filled_via
+2026-02-16 05:12:39 [info     ] Added column: limit_order_timeout
+2026-02-16 05:12:39 [info     ] Added column: funding_rate
+2026-02-16 05:12:39 [info     ] Added column: funding_rate_normalized
+2026-02-16 05:12:39 [info     ] Added column: btc_dominance
+2026-02-16 05:12:39 [info     ] Added column: btc_dominance_change_24h
+2026-02-16 05:12:39 [info     ] Added column: whale_activity
+2026-02-16 05:12:39 [info     ] Added column: order_book_imbalance
+2026-02-16 05:12:39 [info     ] Added column: spread_bps
+2026-02-16 05:12:39 [info     ] Added column: order_id
+2026-02-16 05:12:39 [info     ] Added column: volatility
+2026-02-16 05:12:39 [info     ] Database migration: Added timeframe columns
+2026-02-16 05:12:39 [info     ] Added verification column: verified_fill_price
+2026-02-16 05:12:39 [info     ] Added verification column: verified_fill_amount
+2026-02-16 05:12:39 [info     ] Added verification column: transaction_hash
+2026-02-16 05:12:39 [info     ] Added verification column: fill_timestamp
+2026-02-16 05:12:39 [info     ] Added verification column: partial_fill
+2026-02-16 05:12:39 [info     ] Added verification column: verification_status
+2026-02-16 05:12:39 [info     ] Added verification column: verification_timestamp
+2026-02-16 05:12:39 [info     ] Added verification column: price_discrepancy_pct
+2026-02-16 05:12:39 [info     ] Added verification column: amount_discrepancy_pct
+2026-02-16 05:12:39 [info     ] Added verification column: skip_reason
+2026-02-16 05:12:39 [info     ] Added verification column: skip_type
+2026-02-16 05:12:39 [info     ] Order verification migration complete
+2026-02-16 05:12:39 [info     ] Added contrarian column: contrarian_detected
+2026-02-16 05:12:39 [info     ] Added contrarian column: contrarian_type
+2026-02-16 05:12:39 [info     ] Contrarian strategy migration complete
+2026-02-16 05:12:39 [info     ] Performance database initialized db_path=:memory:
+2026-02-16 05:12:39 [info     ] Performance tracker initialized
+=============================== warnings summary ===============================
+tests/integration/test_e2e_self_reflection.py: 10 warnings
+tests/integration/test_load_resilience.py: 1150 warnings
+tests/test_contrarian_integration.py: 2 warnings
+tests/test_performance_archival.py: 45 warnings
+tests/test_performance_cleanup.py: 30 warnings
+tests/test_performance_database.py: 3 warnings
+tests/test_performance_metrics.py: 30 warnings
+tests/test_performance_reflection.py: 2 warnings
+tests/test_performance_tracker.py: 1 warning
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/polymarket/performance/database.py:321: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier1
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier2_approved
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier3_rejected
+tests/test_performance_reflection.py::test_analyze_performance
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/polymarket/performance/reflection.py:165: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier1
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier2_approved
+tests/integration/test_e2e_self_reflection.py::test_complete_workflow_tier3_rejected
+tests/integration/test_load_resilience.py::test_telegram_failure_doesnt_block_trading
+tests/test_performance_adjuster.py::test_apply_tier_1_adjustment
+tests/test_performance_adjuster.py::test_apply_tier_2_with_approval
+tests/test_performance_adjuster.py::test_reject_tier_3_emergency
+tests/test_performance_adjuster.py::test_trigger_emergency_pause
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/polymarket/performance/adjuster.py:292: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/integration/test_load_resilience.py::test_reflection_with_invalid_data
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/integration/test_load_resilience.py:305: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/integration/test_load_resilience.py::test_reflection_with_invalid_data
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/integration/test_load_resilience.py:329: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:220: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:239: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:258: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_query_unsettled_trades
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:276: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+tests/test_settler.py::TestDatabaseQuery::test_batch_size_limit
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:316: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestSettlementOrchestration::test_settle_pending_trades_success
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:359: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_settler.py::TestSettlementOrchestration::test_settle_skips_on_price_fetch_failure
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_settler.py:412: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_trade_outcome
+  /root/polymarket-scripts/.worktrees/contrarian-rsi-strategy/tests/test_tracker_settlement.py:18: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute("""
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/integration/test_resilient_price_fetching.py::test_stale_cache_fallback - Exception: Failed to fetch price history from all sources
+FAILED tests/test_ai_decision.py::test_make_decision_with_arbitrage - AssertionError: assert 0.66875 == 0.92
+ +  where 0.66875 = TradingDecision(action='YES', confidence=0.66875, reasoning='Arbitrage edge', token_id='test', position_size=Decimal('50'), stop_loss_threshold=0.4).confidence
+FAILED tests/test_auto_trade.py::test_full_trading_cycle - AssertionError: assert 0 <= nan
+ +  where nan = TechnicalIndicators(rsi=nan, macd_value=47.20298367297801, macd_signal=36.87382265332981, macd_histogram=10.329161019648197, ema_short=68715.25968774683, ema_long=68666.29493570092, sma_50=68666.29493570092, volume_change=0.0, price_velocity=1.9804456209240016, trend='BULLISH').rsi
+FAILED tests/test_auto_trade_arbitrage_integration.py::test_arbitrage_data_flow - TypeError: AutoTrader._process_market() missing 1 required positional argument: 'contrarian_signal'
+FAILED tests/test_chainlink_rtds.py::test_binance_feed - Failed: async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+FAILED tests/test_chainlink_rtds.py::test_chainlink_feed - Failed: async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+FAILED tests/test_client_limit_orders.py::test_place_limit_order - polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_price - AssertionError: Regex pattern did not match.
+  Expected regex: 'Price must be 0.0-1.0'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_negative_size - AssertionError: Regex pattern did not match.
+  Expected regex: 'Size must be positive'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_side - AssertionError: Regex pattern did not match.
+  Expected regex: 'Side must be BUY or SELL'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_tick_size_zero - AssertionError: Regex pattern did not match.
+  Expected regex: 'tick_size must be'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_tick_size_negative - AssertionError: Regex pattern did not match.
+  Expected regex: 'tick_size must be'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_tick_size_too_large - AssertionError: Regex pattern did not match.
+  Expected regex: 'tick_size must be'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_token_id_empty - AssertionError: Regex pattern did not match.
+  Expected regex: 'Invalid token_id'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_token_id_none - AssertionError: Regex pattern did not match.
+  Expected regex: 'Invalid token_id'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_invalid_token_id_too_short - AssertionError: Regex pattern did not match.
+  Expected regex: 'Invalid token_id'
+  Actual message: 'Limit orders require TRADING mode'
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_api_error - polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_price_rounding - polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_price_clamping_upper - polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+FAILED tests/test_client_limit_orders.py::test_place_limit_order_boundary_prices - polymarket.exceptions.ValidationError: Limit orders require TRADING mode
+FAILED tests/test_end_phase_filter.py::test_filters_end_phase_markets - AssertionError: Market market-1 has only 179.999338s remaining
+assert 179.999338 >= 300
+FAILED tests/test_end_phase_filter.py::test_logs_filtered_count - AssertionError: Market with <5 min should be filtered out
+assert 1 == 0
+ +  where 1 = len([Market(id='market-end-phase', condition_id='condition-1', question='Test market', slug='test-1', description=None, active=True, closed=False, accepting_orders=True, end_date=datetime.datetime(2026, 2, 16, 5, 8, 57, 13957, tzinfo=TzInfo(0)), start_date=None, outcomes=['Up', 'Down'], outcome_prices=None, clob_token_ids='["token-1", "token-2"]', order_price_min_tick_size=None, order_min_size=None, best_bid=None, best_ask=None, last_trade_price=None, volume_num=None, volume24hr=None, liquidity_num=None, category=None)])
+FAILED tests/test_market_tracker.py::test_parse_market_slug - assert datetime.datetime(2025, 2, 10, 15, 45, tzinfo=datetime.timezone.utc) == datetime.datetime(2025, 2, 10, 16, 0, tzinfo=datetime.timezone.utc)
+ +  where datetime.datetime(2025, 2, 10, 16, 0, tzinfo=datetime.timezone.utc) = <built-in method fromtimestamp of type object at 0xa4fd20>(1739203200, tz=datetime.timezone.utc)
+ +    where <built-in method fromtimestamp of type object at 0xa4fd20> = datetime.fromtimestamp
+ +    and   datetime.timezone.utc = timezone.utc
+FAILED tests/test_market_tracker.py::test_calculate_time_remaining - assert 0 == 600
+FAILED tests/test_market_tracker.py::test_is_end_of_market - assert True is False
+FAILED tests/test_risk.py::TestPositionSizingWithOdds::test_position_sizing_below_minimum_odds_rejected - AssertionError: assert not True
+ +  where True = ValidationResult(approved=True, reason='All risk checks passed', adjusted_position=Decimal('5.0')).approved
+FAILED tests/test_rtds_correct.py::test_binance_feed - Failed: async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+FAILED tests/test_rtds_correct.py::test_chainlink_feed - Failed: async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+FAILED tests/test_settlement_bug_fix.py::test_profit_loss_yes_trade_wins - ValueError: too many values to unpack (expected 2)
+FAILED tests/test_settlement_bug_fix.py::test_profit_loss_no_trade_loses - ValueError: too many values to unpack (expected 2)
+FAILED tests/test_settlement_bug_fix.py::test_real_world_trade_228 - ValueError: too many values to unpack (expected 2)
+FAILED tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_verification - assert 0 == 1
+FAILED tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_price_discrepancy - assert 0 == 1
+FAILED tests/test_settlement_integration.py::TestSettlementIntegration::test_settlement_with_partial_fill - assert 0 == 1
+FAILED tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_trade_outcome - sqlite3.OperationalError: no such column: fee_paid
+FAILED tests/test_tracker_settlement.py::TestTrackerSettlementUpdate::test_update_nonexistent_trade - sqlite3.OperationalError: no such column: fee_paid
+ERROR tests/test_rtds_fixed.py::test_feed
+====== 36 failed, 394 passed, 1299 warnings, 1 error in 508.92s (0:08:28) ======

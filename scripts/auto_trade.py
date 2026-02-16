@@ -47,6 +47,7 @@ from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer, TimeframeAn
 from polymarket.trading.signal_lag_detector import detect_signal_lag
 from polymarket.trading.conflict_detector import SignalConflictDetector, ConflictSeverity
 from polymarket.trading.odds_poller import MarketOddsPoller
+from polymarket.trading.contrarian import get_movement_threshold
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
 from polymarket.performance.reflection import ReflectionEngine
@@ -645,7 +646,38 @@ class AutoTrader:
                     trend="NEUTRAL"
                 )
 
-            # Step 3.5: Market Regime Detection
+            # Step 3.5: Contrarian Signal Detection
+            contrarian_signal = None
+            try:
+                from polymarket.trading.contrarian import detect_contrarian_setup
+
+                # Calculate odds from market (use first market as reference)
+                if markets:
+                    reference_market = markets[0]
+                    yes_odds = reference_market.best_bid if reference_market.best_bid else 0.50
+                    no_odds = 1.0 - yes_odds
+
+                    contrarian_signal = detect_contrarian_setup(
+                        rsi=indicators.rsi,
+                        yes_odds=yes_odds,
+                        no_odds=no_odds
+                    )
+
+                    if contrarian_signal:
+                        logger.info(
+                            "Contrarian signal detected",
+                            type=contrarian_signal.type,
+                            rsi=f"{contrarian_signal.rsi:.1f}",
+                            suggested_direction=contrarian_signal.suggested_direction,
+                            crowd_direction=contrarian_signal.crowd_direction,
+                            crowd_confidence=f"{contrarian_signal.crowd_confidence:.0%}",
+                            confidence=f"{contrarian_signal.confidence:.0%}"
+                        )
+            except Exception as e:
+                logger.warning("Contrarian detection failed, continuing without", error=str(e))
+                contrarian_signal = None
+
+            # Step 3.6: Market Regime Detection
             regime = None
             try:
                 # Calculate price changes from historical data
@@ -672,12 +704,13 @@ class AutoTrader:
             except Exception as e:
                 logger.warning("Regime detection failed", error=str(e))
 
-            # Step 4: Aggregate Signals - NEW (includes funding + dominance)
+            # Step 4: Aggregate Signals - NEW (includes funding + dominance + contrarian)
             aggregated_sentiment = self.aggregator.aggregate(
                 social_sentiment,
                 market_signals,
                 funding=funding_signal,
-                dominance=dominance_signal
+                dominance=dominance_signal,
+                contrarian=contrarian_signal
             )
 
             logger.info(
@@ -719,7 +752,8 @@ class AutoTrader:
                     cycle_start_time,  # NEW: pass cycle start time for JIT metrics
                     volume_data,  # NEW: volume data for AI context
                     timeframe_analysis,  # NEW: timeframe analysis for AI context
-                    regime  # NEW: market regime for adaptive strategy
+                    regime,  # NEW: market regime for adaptive strategy
+                    contrarian_signal  # NEW: contrarian signal detection
                 )
 
             # Step 7: Stop-loss check
@@ -843,7 +877,8 @@ class AutoTrader:
         cycle_start_time: datetime,  # NEW: for JIT execution metrics
         volume_data,  # NEW: volume data for breakout confirmation
         timeframe_analysis,  # NEW: multi-timeframe trend analysis
-        regime  # NEW: market regime detection
+        regime,  # NEW: market regime detection
+        contrarian_signal  # NEW: contrarian signal detection
     ) -> None:
         """Process a single market for trading decision."""
         try:
@@ -977,7 +1012,19 @@ class AutoTrader:
                         )
 
                 # Check minimum movement threshold to avoid entering too early
-                MIN_MOVEMENT_THRESHOLD = 100  # $100 minimum BTC movement
+                # contrarian_signal is set by Step 3.5 (Contrarian Signal Detection) above
+
+                # Calculate threshold based on contrarian signal
+                MIN_MOVEMENT_THRESHOLD = get_movement_threshold(contrarian_signal)
+                if contrarian_signal:
+                    logger.info(
+                        "Contrarian setup - reducing movement threshold",
+                        market_id=market.id,
+                        default_threshold="$100",
+                        contrarian_threshold="$50",
+                        reasoning="Reversals start with small movements"
+                    )
+
                 abs_diff = abs(diff)
                 if abs_diff < MIN_MOVEMENT_THRESHOLD:
                     if not self.test_mode.enabled:
@@ -1227,7 +1274,7 @@ class AutoTrader:
                     confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}"
                 )
 
-            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, arbitrage, and market signals
+            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, arbitrage, market signals, and contrarian signal
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
@@ -1240,6 +1287,7 @@ class AutoTrader:
                 regime=regime,  # NEW: market regime detection
                 arbitrage_opportunity=arbitrage_opportunity,  # NEW: arbitrage opportunity
                 market_signals=market_signals,  # NEW: CoinGecko Pro market signals
+                contrarian_signal=contrarian_signal,  # NEW: contrarian mean-reversion signal
                 force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
 
@@ -1358,7 +1406,9 @@ class AutoTrader:
                     arbitrage_edge=arbitrage_opportunity.edge_percentage if arbitrage_opportunity else None,
                     arbitrage_urgency=arbitrage_opportunity.urgency if arbitrage_opportunity else None,
                     is_test_mode=self.test_mode.enabled,
-                    timeframe_analysis=timeframe_analysis
+                    timeframe_analysis=timeframe_analysis,
+                    contrarian_detected=bool(contrarian_signal),
+                    contrarian_type=contrarian_signal.type if contrarian_signal else None
                 )
             except Exception as e:
                 logger.error("Performance logging failed", error=str(e))
@@ -1389,6 +1439,34 @@ class AutoTrader:
                     reasoning=decision.reasoning,
                     position_size=str(decision.position_size)
                 )
+
+            # Log AI's response to contrarian suggestion
+            if contrarian_signal:
+                # Map contrarian direction to action
+                contrarian_action_map = {
+                    "UP": "YES",
+                    "DOWN": "NO"
+                }
+                suggested_action = contrarian_action_map.get(contrarian_signal.suggested_direction, "UNKNOWN")
+
+                if decision.action == suggested_action:
+                    logger.info(
+                        "AI accepted contrarian suggestion",
+                        market_id=market.id,
+                        contrarian_type=contrarian_signal.type,
+                        suggested=contrarian_signal.suggested_direction,
+                        ai_action=decision.action,
+                        ai_confidence=f"{decision.confidence:.2f}"
+                    )
+                else:
+                    logger.info(
+                        "AI rejected contrarian suggestion",
+                        market_id=market.id,
+                        contrarian_type=contrarian_signal.type,
+                        suggested=contrarian_signal.suggested_direction,
+                        ai_action=decision.action,
+                        ai_reasoning=decision.reasoning[:100] if decision.reasoning else "No reasoning provided"
+                    )
 
             # Skip if HOLD decision
             if decision.action == "HOLD" or token_id is None:

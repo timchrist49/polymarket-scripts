@@ -492,3 +492,37 @@ class OddsSnapshot:
     timestamp: datetime
     yes_qualifies: bool
     no_qualifies: bool
+
+
+# === Contrarian Strategy Models ===
+
+@dataclass
+class ContrarianSignal:
+    """Signal indicating extreme RSI divergence from crowd consensus."""
+    type: Literal["OVERSOLD_REVERSAL", "OVERBOUGHT_REVERSAL"]
+    suggested_direction: Literal["UP", "DOWN"]
+    rsi: float
+    crowd_direction: Literal["UP", "DOWN"]
+    crowd_confidence: float  # Crowd's odds (0-1)
+    confidence: float  # Our confidence in reversal (0-1)
+    reasoning: str
+
+    def __post_init__(self):
+        """Validate field values and logical consistency."""
+        # Validate numeric ranges
+        if not 0.0 <= self.rsi <= 100.0:
+            raise ValueError(f"rsi must be in [0.0, 100.0], got {self.rsi}")
+        if not 0.0 <= self.crowd_confidence <= 1.0:
+            raise ValueError(f"crowd_confidence must be in [0.0, 1.0], got {self.crowd_confidence}")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
+
+        # Validate semantic consistency
+        if self.type == "OVERSOLD_REVERSAL" and self.suggested_direction != "UP":
+            raise ValueError("OVERSOLD_REVERSAL must suggest UP direction")
+        if self.type == "OVERBOUGHT_REVERSAL" and self.suggested_direction != "DOWN":
+            raise ValueError("OVERBOUGHT_REVERSAL must suggest DOWN direction")
+
+        # Validate reasoning is not empty
+        if not self.reasoning.strip():
+            raise ValueError("reasoning cannot be empty")

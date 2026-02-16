@@ -338,6 +338,60 @@ python test_dollar_cap.py
 # Shows how much bot would bet at different portfolio sizes
 ```
 
+## Contrarian RSI Strategy
+
+The bot includes a mean-reversion strategy that detects extreme RSI divergences from crowd consensus:
+
+### Detection Criteria
+
+**OVERSOLD_REVERSAL (Bet UP):**
+- RSI < 10 (extremely oversold)
+- DOWN odds > 65% (strong crowd consensus for DOWN)
+- Suggests betting UP (contrarian to crowd)
+
+**OVERBOUGHT_REVERSAL (Bet DOWN):**
+- RSI > 90 (extremely overbought)
+- UP odds > 65% (strong crowd consensus for UP)
+- Suggests betting DOWN (contrarian to crowd)
+
+### Strategy Benefits
+
+1. **Mean Reversion Edge:** Extreme RSI levels often precede reversals
+2. **Crowd Exhaustion:** Heavy consensus suggests move may be exhausted
+3. **Favorable Risk/Reward:** Entry at extremes provides good R:R
+
+### Implementation Details
+
+- **Movement Threshold:** Reduced to $50 (from $100) when contrarian detected
+- **AI Integration:** Both explicit flag and sentiment scoring
+- **Confidence Scaling:** Higher confidence for more extreme RSI (e.g., RSI 5 > RSI 9)
+- **All Filters Active:** Signal lag, volume, regime checks still enforced
+
+### Performance Tracking
+
+Contrarian trades are tracked separately in the database:
+- `contrarian_detected`: Boolean flag
+- `contrarian_type`: OVERSOLD_REVERSAL or OVERBOUGHT_REVERSAL
+
+Query contrarian performance:
+```sql
+SELECT
+    contrarian_type,
+    COUNT(*) as trades,
+    SUM(CASE WHEN outcome = action THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as win_rate
+FROM trades
+WHERE contrarian_detected = 1
+GROUP BY contrarian_type;
+```
+
+### Example Market
+
+**Market:** btc-updown-15m-1771186500
+- RSI: 9.5 (extremely oversold)
+- DOWN odds: 72% (strong consensus)
+- Result: BTC went UP (contrarian signal was correct)
+- This strategy would have detected this opportunity
+
 ## Architecture
 
 ```
