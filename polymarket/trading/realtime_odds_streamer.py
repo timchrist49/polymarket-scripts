@@ -195,9 +195,35 @@ class RealtimeOddsStreamer:
             logger.debug("Reconnecting after delay", delay=delay)
             await asyncio.sleep(delay)
 
+    async def _check_market_transition(self) -> bool:
+        """
+        Check if current market has changed.
+
+        Returns:
+            True if market changed, False if same
+        """
+        try:
+            market = self.client.discover_btc_15min_market()
+
+            if market.id != self._current_market_id:
+                logger.info(
+                    "Market transition detected",
+                    old_market=self._current_market_id,
+                    new_market=market.id
+                )
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error("Failed to check market transition", error=str(e))
+            return False
+
     async def _connect_and_stream(self):
         """
         Connect to WebSocket and stream messages until error or disconnect.
+
+        Checks for market transitions every 60 seconds and resubscribes if needed.
         """
         # Discover current market
         market = self.client.discover_btc_15min_market()
@@ -231,10 +257,25 @@ class RealtimeOddsStreamer:
             await ws.send(json.dumps(subscribe_msg))
             logger.info("Subscribed to market", market_id=market.id, token_ids=token_ids)
 
+            # Track last market check time
+            last_market_check = asyncio.get_event_loop().time()
+            MARKET_CHECK_INTERVAL = 60  # seconds
+
             # Process messages until disconnected
             async for message in ws:
                 if not self._running:
                     break
+
+                # Periodic market transition check
+                now = asyncio.get_event_loop().time()
+                if now - last_market_check > MARKET_CHECK_INTERVAL:
+                    last_market_check = now
+
+                    if await self._check_market_transition():
+                        # Market changed! Close connection to trigger resubscription
+                        logger.info("Closing connection to resubscribe to new market")
+                        await ws.close()
+                        break
 
                 try:
                     data = json.loads(message)
