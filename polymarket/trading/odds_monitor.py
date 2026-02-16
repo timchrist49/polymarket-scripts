@@ -53,3 +53,42 @@ class OddsMonitor:
             sustained_duration_seconds=sustained_duration_seconds,
             cooldown_seconds=cooldown_seconds
         )
+
+    async def start(self) -> None:
+        """Start the odds monitoring loop."""
+        if self._is_running:
+            logger.warning("OddsMonitor already running, ignoring start request")
+            return
+
+        logger.info("Starting OddsMonitor")
+        self._is_running = True
+
+        # Create the monitor task (loop implementation in Task 7)
+        self._monitor_task = asyncio.create_task(self._monitor_loop())
+
+    async def stop(self) -> None:
+        """Stop the odds monitoring loop."""
+        if not self._is_running:
+            logger.warning("OddsMonitor not running, ignoring stop request")
+            return
+
+        logger.info("Stopping OddsMonitor")
+        self._is_running = False
+
+        # Cancel the monitor task
+        if self._monitor_task:
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                logger.debug("Monitor task cancelled successfully")
+
+    async def _monitor_loop(self) -> None:
+        """Monitor loop placeholder (implemented in Task 7)."""
+        try:
+            while self._is_running:
+                # Placeholder: sleep 1 second
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            logger.debug("Monitor loop cancelled")
+            raise
