@@ -903,11 +903,32 @@ class AutoTrader:
                     )
                     return
 
-            # Calculate fresh odds directly from Market object (no stale cache)
-            # market.best_bid = price to buy first outcome token
-            # For UP/DOWN markets: first outcome is UP
-            yes_odds = market.best_bid if market.best_bid else 0.50
-            no_odds = 1.0 - yes_odds
+            # Get real-time odds from WebSocket streamer
+            odds_snapshot = self.realtime_streamer.get_current_odds(market.id)
+
+            if odds_snapshot:
+                # Use real-time odds (zero latency!)
+                yes_odds = odds_snapshot.yes_odds
+                no_odds = odds_snapshot.no_odds
+                from datetime import datetime
+                age_ms = (datetime.now() - odds_snapshot.timestamp).total_seconds() * 1000
+                logger.debug(
+                    "Using real-time odds from WebSocket",
+                    market_id=market.id,
+                    yes_odds=f"{yes_odds:.2%}",
+                    no_odds=f"{no_odds:.2%}",
+                    age_ms=f"{age_ms:.0f}"
+                )
+            else:
+                # Fallback to market odds if WebSocket not ready yet
+                yes_odds = market.best_bid if market.best_bid else 0.50
+                no_odds = 1.0 - yes_odds
+                logger.debug(
+                    "Using market odds (WebSocket not ready)",
+                    market_id=market.id,
+                    yes_odds=f"{yes_odds:.2%}",
+                    no_odds=f"{no_odds:.2%}"
+                )
 
             # Early filtering: skip markets where neither side > 70%
             yes_qualifies = (yes_odds > 0.70)
@@ -915,12 +936,11 @@ class AutoTrader:
 
             if not (yes_qualifies or no_qualifies):
                 logger.info(
-                    "Skipping market - neither side > 70% odds (fresh check)",
+                    "Skipping market - neither side > 70% odds (real-time check)",
                     market_id=market.id,
                     yes_odds=f"{yes_odds:.2%}",
                     no_odds=f"{no_odds:.2%}",
-                    outcomes=market.outcomes,
-                    best_bid=market.best_bid
+                    outcomes=market.outcomes
                 )
                 return  # Skip this market
 

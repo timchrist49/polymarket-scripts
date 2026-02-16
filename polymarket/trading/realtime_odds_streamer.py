@@ -54,7 +54,20 @@ class RealtimeOddsStreamer:
         Returns:
             WebSocketOddsSnapshot if available, None if no data yet
         """
-        return self._current_odds.get(market_id)
+        snapshot = self._current_odds.get(market_id)
+
+        if snapshot:
+            # Check staleness
+            from datetime import datetime, timedelta
+            age = datetime.now() - snapshot.timestamp
+            if age > timedelta(minutes=2):
+                logger.warning(
+                    "⚠️ Using stale odds data (WebSocket may be disconnected)",
+                    market_id=market_id,
+                    age_seconds=int(age.total_seconds())
+                )
+
+        return snapshot
 
     async def _process_book_message(self, payload: dict):
         """
