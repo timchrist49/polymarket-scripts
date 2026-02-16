@@ -1,36 +1,35 @@
 """Tests for MarketValidator."""
 
-import pytest
 from polymarket.trading.market_validator import MarketValidator
 
 
-def test_parse_timestamp_from_slug():
-    """Test parsing Unix timestamp from market slug."""
-    validator = MarketValidator()
-
-    # Valid slug format
-    slug = "btc-updown-15m-1771270200"
-    timestamp = validator.parse_timestamp(slug)
+def test_parse_market_timestamp_valid():
+    """Test parsing Unix timestamp from valid market slugs."""
+    # Standard format
+    timestamp = MarketValidator.parse_market_timestamp("btc-updown-15m-1771270200")
     assert timestamp == 1771270200
 
     # Different timestamp
-    slug2 = "btc-updown-15m-1234567890"
-    timestamp2 = validator.parse_timestamp(slug2)
+    timestamp2 = MarketValidator.parse_market_timestamp("btc-updown-15m-1234567890")
     assert timestamp2 == 1234567890
 
 
-def test_parse_timestamp_invalid_formats():
-    """Test parsing invalid slug formats raises ValueError."""
-    validator = MarketValidator()
+def test_parse_market_timestamp_invalid_format():
+    """Test parsing invalid slug formats returns None."""
+    # Empty string
+    assert MarketValidator.parse_market_timestamp("") is None
+
+    # Wrong asset
+    assert MarketValidator.parse_market_timestamp("eth-updown-15m-1234567890") is None
+
+    # Wrong market type
+    assert MarketValidator.parse_market_timestamp("btc-will-15m-1234567890") is None
+
+    # Missing timestamp
+    assert MarketValidator.parse_market_timestamp("btc-updown-15m") is None
 
     # Non-numeric timestamp
-    with pytest.raises(ValueError, match="Invalid market slug format"):
-        validator.parse_timestamp("btc-updown-15m-abc")
-
-    # Empty string
-    with pytest.raises(ValueError, match="Invalid market slug format"):
-        validator.parse_timestamp("")
+    assert MarketValidator.parse_market_timestamp("btc-updown-15m-abc") is None
 
     # No hyphens
-    with pytest.raises(ValueError, match="Invalid market slug format"):
-        validator.parse_timestamp("invalidslug")
+    assert MarketValidator.parse_market_timestamp("invalidslug") is None
