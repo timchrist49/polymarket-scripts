@@ -48,6 +48,8 @@ from polymarket.trading.signal_lag_detector import detect_signal_lag
 from polymarket.trading.conflict_detector import SignalConflictDetector, ConflictSeverity
 from polymarket.trading.odds_poller import MarketOddsPoller
 from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
+from polymarket.trading.odds_monitor import OddsMonitor
+from polymarket.trading.market_validator import MarketValidator
 from polymarket.trading.contrarian import get_movement_threshold
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
@@ -144,6 +146,22 @@ class AutoTrader:
         # Real-time odds streamer (WebSocket)
         self.realtime_streamer = RealtimeOddsStreamer(self.client)
         logger.info("Real-time odds streamer initialized")
+
+        # Market validator and odds monitor for event-driven cycle triggering
+        self.market_validator = MarketValidator()
+        self.odds_monitor = OddsMonitor(
+            streamer=self.realtime_streamer,
+            bot=self,
+            threshold=0.70,
+            sustained_seconds=5,
+            cooldown_seconds=30
+        )
+        logger.info(
+            "OddsMonitor initialized for event-driven triggering",
+            threshold_percentage=70.0,
+            sustained_duration_seconds=5.0,
+            cooldown_seconds=30.0
+        )
 
         self.telegram_bot = TelegramBot(settings)  # Initialize Telegram bot
         self.cleanup_scheduler = CleanupScheduler(
