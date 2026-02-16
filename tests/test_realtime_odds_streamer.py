@@ -80,17 +80,17 @@ async def test_process_book_message_extracts_odds():
     client = PolymarketClient()
     streamer = RealtimeOddsStreamer(client)
 
-    # Mock book message payload
+    # Mock book message payload (CLOB WebSocket format)
     payload = {
         'market': 'test-market-123',
         'asset_id': 'token-yes',
-        'bids': [
-            ['0.65', '100'],  # Best bid (YES odds)
-            ['0.64', '200']
+        'buys': [
+            {'price': '0.65', 'size': '100'},  # Best buy (YES odds)
+            {'price': '0.64', 'size': '200'}
         ],
-        'asks': [
-            ['0.66', '150'],
-            ['0.67', '100']
+        'sells': [
+            {'price': '0.66', 'size': '150'},
+            {'price': '0.67', 'size': '100'}
         ]
     }
 
@@ -119,8 +119,8 @@ async def test_process_book_message_handles_empty_bids():
     payload = {
         'market': 'test-market-123',
         'asset_id': 'token-yes',
-        'bids': [],  # Empty
-        'asks': [['0.55', '100']]
+        'buys': [],  # Empty
+        'sells': [{'price': '0.55', 'size': '100'}]
     }
 
     await streamer._process_book_message(payload)
@@ -130,3 +130,36 @@ async def test_process_book_message_handles_empty_bids():
     assert odds is not None
     assert odds.yes_odds == 0.50
     assert odds.no_odds == 0.50
+
+
+# === Task 4: WebSocket Connection and Message Loop Tests ===
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_streamer_connects_and_receives_data():
+    """Test streamer connects to real WebSocket and receives book messages."""
+    from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
+    from polymarket.client import PolymarketClient
+
+    client = PolymarketClient()
+    streamer = RealtimeOddsStreamer(client)
+
+    # Start streaming
+    await streamer.start()
+
+    # Wait for connection and first message
+    await asyncio.sleep(5)
+
+    # Should have received some odds
+    assert len(streamer._current_odds) > 0
+
+    # Check data structure
+    for market_id, odds in streamer._current_odds.items():
+        assert isinstance(odds, WebSocketOddsSnapshot)
+        assert 0.0 <= odds.yes_odds <= 1.0
+        assert 0.0 <= odds.no_odds <= 1.0
+        assert abs(odds.yes_odds + odds.no_odds - 1.0) < 0.01
+
+    # Stop streaming
+    await streamer.stop()

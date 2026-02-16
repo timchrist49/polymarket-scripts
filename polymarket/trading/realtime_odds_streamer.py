@@ -1,6 +1,7 @@
 """Real-time odds streamer using Polymarket CLOB WebSocket."""
 
 import asyncio
+import json
 import structlog
 from datetime import datetime
 from typing import Optional
@@ -60,7 +61,7 @@ class RealtimeOddsStreamer:
         Extract odds from book message and update state.
 
         Args:
-            payload: Book message payload with bids/asks
+            payload: Book message with buys/sells arrays
         """
         try:
             market_id = payload.get('market')
@@ -68,9 +69,18 @@ class RealtimeOddsStreamer:
                 logger.warning("Book message missing market_id", payload=payload)
                 return
 
-            # Extract best bid (YES odds)
-            bids = payload.get('bids', [])
-            yes_odds = float(bids[0][0]) if bids else 0.50
+            # Extract best buy price (YES odds)
+            # Format: {"price": "0.45", "size": "100"}
+            buys = payload.get('buys', [])
+            if buys and len(buys) > 0:
+                # Handle both dict format and array format
+                if isinstance(buys[0], dict):
+                    yes_odds = float(buys[0]['price'])
+                else:
+                    yes_odds = float(buys[0][0])
+            else:
+                yes_odds = 0.50
+
             no_odds = 1.0 - yes_odds
 
             # Create snapshot
@@ -96,3 +106,141 @@ class RealtimeOddsStreamer:
 
         except Exception as e:
             logger.error("Failed to process book message", error=str(e), payload=payload)
+
+    async def start(self):
+        """
+        Start streaming (non-blocking).
+
+        Launches background task to connect and stream messages.
+        """
+        if self._running:
+            logger.warning("Streamer already running")
+            return
+
+        self._running = True
+        self._stream_task = asyncio.create_task(self._stream_loop())
+        logger.info("Real-time odds streamer started")
+
+    async def stop(self):
+        """
+        Stop streaming gracefully.
+
+        Closes WebSocket connection and cancels background task.
+        """
+        self._running = False
+
+        if self._ws:
+            try:
+                await self._ws.close()
+            except Exception as e:
+                logger.debug("Error closing WebSocket", error=str(e))
+
+        if self._stream_task:
+            self._stream_task.cancel()
+            try:
+                await self._stream_task
+            except asyncio.CancelledError:
+                pass
+
+        logger.info("Real-time odds streamer stopped")
+
+    async def _stream_loop(self):
+        """
+        Main streaming loop with reconnection logic.
+
+        Connects, subscribes, processes messages until stopped.
+        """
+        backoff_index = 0
+
+        while self._running:
+            try:
+                await self._connect_and_stream()
+
+                # Success! Reset backoff
+                backoff_index = 0
+
+            except asyncio.CancelledError:
+                raise  # Re-raise to properly cancel
+            except websockets.ConnectionClosed:
+                logger.warning("WebSocket closed, reconnecting...")
+            except Exception as e:
+                logger.error("Stream error", error=str(e))
+
+            if not self._running:
+                break
+
+            # Exponential backoff
+            delay = self.BACKOFF_DELAYS[min(backoff_index, len(self.BACKOFF_DELAYS)-1)]
+            backoff_index += 1
+            await asyncio.sleep(delay)
+
+    async def _connect_and_stream(self):
+        """
+        Connect to WebSocket and stream messages until error or disconnect.
+        """
+        # Discover current market
+        market = self.client.discover_btc_15min_market()
+        token_ids = market.get_token_ids()
+
+        if not token_ids:
+            logger.error("No token IDs found for market", market_id=market.id)
+            return
+
+        self._current_market_id = market.id
+        self._current_token_ids = token_ids
+
+        logger.info(
+            "Connecting to CLOB WebSocket",
+            market_id=market.id,
+            token_ids=token_ids
+        )
+
+        async with websockets.connect(
+            self.WS_URL,
+            ping_interval=20,
+            ping_timeout=10
+        ) as ws:
+            self._ws = ws
+
+            # Send subscription message (CLOB format)
+            subscribe_msg = {
+                "assets_ids": token_ids,
+                "type": "market"  # lowercase per CLOB spec
+            }
+            await ws.send(json.dumps(subscribe_msg))
+            logger.info("Subscribed to market", market_id=market.id, token_ids=token_ids)
+
+            # Process messages until disconnected
+            async for message in ws:
+                if not self._running:
+                    break
+
+                try:
+                    data = json.loads(message)
+
+                    # Handle both single message and array of messages
+                    if isinstance(data, list):
+                        # Array of messages - process each
+                        for msg in data:
+                            if isinstance(msg, dict):
+                                await self._handle_single_message(msg)
+                    elif isinstance(data, dict):
+                        # Single message
+                        await self._handle_single_message(data)
+
+                except json.JSONDecodeError:
+                    logger.warning("Invalid JSON message", message=message[:100])
+                except Exception as e:
+                    logger.error("Message processing error", error=str(e))
+
+    async def _handle_single_message(self, data: dict):
+        """Process a single WebSocket message."""
+        event_type = data.get('event_type')
+
+        logger.debug("WebSocket message received", event_type=event_type)
+
+        if event_type == 'book':
+            # For book messages, the data IS the payload
+            await self._process_book_message(data)
+
+        # Ignore other message types (last_trade_price, price_change)
