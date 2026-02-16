@@ -33,4 +33,5 @@ def test_odds_monitor_initialization():
     assert monitor._cooldown_duration == 30.0
     assert monitor._is_running is False
     assert monitor._monitor_task is None
-    assert monitor._last_opportunity_time is None
+    assert monitor._threshold_start_time == {}
+    assert monitor._last_trigger_time == {}

@@ -1,6 +1,6 @@
 """Real-time odds monitoring for event-driven trading cycles."""
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict
 import asyncio
 from datetime import datetime
 import structlog
@@ -43,7 +43,8 @@ class OddsMonitor:
         # Runtime state
         self._is_running = False
         self._monitor_task: Optional[asyncio.Task] = None
-        self._last_opportunity_time: Optional[datetime] = None
+        self._threshold_start_time: Dict[str, datetime] = {}
+        self._last_trigger_time: Dict[str, datetime] = {}
 
         logger.info(
             "OddsMonitor initialized",
