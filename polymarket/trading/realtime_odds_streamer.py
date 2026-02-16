@@ -149,29 +149,50 @@ class RealtimeOddsStreamer:
         Main streaming loop with reconnection logic.
 
         Connects, subscribes, processes messages until stopped.
+        Implements exponential backoff with alerts on extended failures.
         """
         backoff_index = 0
+        consecutive_failures = 0
 
         while self._running:
             try:
                 await self._connect_and_stream()
 
-                # Success! Reset backoff
+                # Success! Reset counters
                 backoff_index = 0
+                consecutive_failures = 0
 
             except asyncio.CancelledError:
                 raise  # Re-raise to properly cancel
             except websockets.ConnectionClosed:
-                logger.warning("WebSocket closed, reconnecting...")
+                consecutive_failures += 1
+                logger.warning(
+                    "WebSocket closed, reconnecting...",
+                    consecutive_failures=consecutive_failures
+                )
             except Exception as e:
-                logger.error("Stream error", error=str(e))
+                consecutive_failures += 1
+                logger.error(
+                    "Stream error",
+                    error=str(e),
+                    consecutive_failures=consecutive_failures
+                )
 
             if not self._running:
                 break
 
+            # Alert on extended failures
+            if consecutive_failures >= 5:
+                logger.error(
+                    "⚠️ Odds streamer disconnected for extended period",
+                    consecutive_failures=consecutive_failures
+                )
+                # TODO: Add Telegram alert in Phase 3
+
             # Exponential backoff
             delay = self.BACKOFF_DELAYS[min(backoff_index, len(self.BACKOFF_DELAYS)-1)]
             backoff_index += 1
+            logger.debug("Reconnecting after delay", delay=delay)
             await asyncio.sleep(delay)
 
     async def _connect_and_stream(self):
