@@ -526,3 +526,24 @@ class ContrarianSignal:
         # Validate reasoning is not empty
         if not self.reasoning.strip():
             raise ValueError("reasoning cannot be empty")
+
+
+# === WebSocket Real-time Odds Models ===
+
+@dataclass
+class WebSocketOddsSnapshot:
+    """Real-time odds snapshot from WebSocket."""
+    market_id: str
+    yes_odds: float
+    no_odds: float
+    timestamp: datetime
+    best_bid: float
+    best_ask: float
+
+    def __post_init__(self):
+        """Validate odds sum to 1.0 (within tolerance)."""
+        total = self.yes_odds + self.no_odds
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(
+                f"YES and NO odds must sum to 1.0, got {total:.3f}"
+            )
