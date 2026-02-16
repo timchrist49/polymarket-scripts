@@ -66,3 +66,67 @@ async def test_get_current_odds_returns_none_initially():
     odds = streamer.get_current_odds("test-market-123")
 
     assert odds is None
+
+
+# === Task 3: Odds Extraction Tests ===
+
+
+@pytest.mark.asyncio
+async def test_process_book_message_extracts_odds():
+    """Test _process_book_message correctly extracts YES/NO odds."""
+    from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
+    from polymarket.client import PolymarketClient
+
+    client = PolymarketClient()
+    streamer = RealtimeOddsStreamer(client)
+
+    # Mock book message payload
+    payload = {
+        'market': 'test-market-123',
+        'asset_id': 'token-yes',
+        'bids': [
+            ['0.65', '100'],  # Best bid (YES odds)
+            ['0.64', '200']
+        ],
+        'asks': [
+            ['0.66', '150'],
+            ['0.67', '100']
+        ]
+    }
+
+    await streamer._process_book_message(payload)
+
+    # Check odds were stored
+    odds = streamer.get_current_odds('test-market-123')
+    assert odds is not None
+    assert odds.market_id == 'test-market-123'
+    assert odds.yes_odds == 0.65
+    assert odds.no_odds == 0.35
+    assert odds.best_bid == 0.65
+    assert odds.best_ask == 0.35
+    assert isinstance(odds.timestamp, datetime)
+
+
+@pytest.mark.asyncio
+async def test_process_book_message_handles_empty_bids():
+    """Test _process_book_message handles empty bids gracefully."""
+    from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
+    from polymarket.client import PolymarketClient
+
+    client = PolymarketClient()
+    streamer = RealtimeOddsStreamer(client)
+
+    payload = {
+        'market': 'test-market-123',
+        'asset_id': 'token-yes',
+        'bids': [],  # Empty
+        'asks': [['0.55', '100']]
+    }
+
+    await streamer._process_book_message(payload)
+
+    # Should default to 0.50
+    odds = streamer.get_current_odds('test-market-123')
+    assert odds is not None
+    assert odds.yes_odds == 0.50
+    assert odds.no_odds == 0.50
