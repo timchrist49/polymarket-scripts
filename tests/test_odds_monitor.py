@@ -5,6 +5,8 @@ from unittest.mock import Mock, AsyncMock
 from polymarket.trading.odds_monitor import OddsMonitor
 from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
 from polymarket.trading.market_validator import MarketValidator
+from polymarket.models import WebSocketOddsSnapshot
+from datetime import datetime
 
 
 def test_odds_monitor_initialization():
@@ -114,3 +116,150 @@ async def test_odds_monitor_double_start_prevented():
 
     # Cleanup
     await monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_check_opportunities_above_threshold():
+    """Test detecting opportunity when odds above threshold."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: YES=0.75 (above 70% threshold)
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.75,
+        no_odds=0.25,
+        timestamp=datetime.now(),
+        best_bid=0.75,
+        best_ask=0.25
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+
+    # Mock market validation: market is active
+    validator.is_market_active = Mock(return_value=True)
+
+    # Initialize monitor with market tracking
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0
+    )
+    # Set the market ID and slug mapping
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # Check for opportunities
+    result = await monitor._check_opportunities()
+
+    # Verify opportunity detected
+    assert result is not None
+    assert result["market_slug"] == "btc-updown-15m-1234567890"
+    assert result["direction"] == "YES"
+    assert result["odds"] == 0.75
+
+
+@pytest.mark.asyncio
+async def test_check_opportunities_below_threshold():
+    """Test no opportunity when odds below threshold."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: YES=0.60 (below 70% threshold)
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.60,
+        no_odds=0.40,
+        timestamp=datetime.now(),
+        best_bid=0.60,
+        best_ask=0.40
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+    validator.is_market_active = Mock(return_value=True)
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # Check for opportunities
+    result = await monitor._check_opportunities()
+
+    # Verify no opportunity
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_opportunities_market_inactive():
+    """Test no opportunity when market is not active."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: YES=0.75 (above threshold but market inactive)
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.75,
+        no_odds=0.25,
+        timestamp=datetime.now(),
+        best_bid=0.75,
+        best_ask=0.25
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+
+    # Mock market validation: market is NOT active
+    validator.is_market_active = Mock(return_value=False)
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # Check for opportunities
+    result = await monitor._check_opportunities()
+
+    # Verify no opportunity (market inactive)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_opportunities_no_odds():
+    """Test no opportunity when streamer returns None (no odds available)."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock streamer: returns None (no current odds)
+    streamer.get_current_odds = Mock(return_value=None)
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # Check for opportunities
+    result = await monitor._check_opportunities()
+
+    # Verify no opportunity
+    assert result is None

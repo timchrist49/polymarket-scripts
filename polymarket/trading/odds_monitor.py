@@ -46,6 +46,10 @@ class OddsMonitor:
         self._threshold_start_time: Dict[str, datetime] = {}
         self._last_trigger_time: Dict[str, datetime] = {}
 
+        # Market tracking (set by AutoTrader during initialization)
+        self._market_id: Optional[str] = None
+        self._market_slug: Optional[str] = None
+
         logger.info(
             "OddsMonitor initialized",
             threshold_percentage=threshold_percentage,
@@ -82,6 +86,79 @@ class OddsMonitor:
                 await self._monitor_task
             except asyncio.CancelledError:
                 logger.debug("Monitor task cancelled successfully")
+
+    async def _check_opportunities(self) -> Optional[dict]:
+        """Check if current odds present an opportunity.
+
+        Returns:
+            Dict with market_slug, direction, odds if opportunity found, else None
+        """
+        try:
+            # Check if market is configured
+            if not self._market_id or not self._market_slug:
+                logger.debug("No market configured for monitoring")
+                return None
+
+            # Get current odds from streamer
+            snapshot = self._streamer.get_current_odds(self._market_id)
+
+            if not snapshot:
+                logger.debug("No current odds available")
+                return None
+
+            # Validate market is active
+            if not self._validator.is_market_active(self._market_slug):
+                logger.debug(
+                    "Market not active, skipping",
+                    market_slug=self._market_slug
+                )
+                return None
+
+            # Check if YES odds exceed threshold
+            if snapshot.yes_odds >= self._threshold:
+                logger.info(
+                    "Opportunity detected: YES",
+                    market_slug=self._market_slug,
+                    odds=snapshot.yes_odds,
+                    threshold=self._threshold
+                )
+                return {
+                    "market_slug": self._market_slug,
+                    "direction": "YES",
+                    "odds": snapshot.yes_odds
+                }
+
+            # Check if NO odds exceed threshold
+            if snapshot.no_odds >= self._threshold:
+                logger.info(
+                    "Opportunity detected: NO",
+                    market_slug=self._market_slug,
+                    odds=snapshot.no_odds,
+                    threshold=self._threshold
+                )
+                return {
+                    "market_slug": self._market_slug,
+                    "direction": "NO",
+                    "odds": snapshot.no_odds
+                }
+
+            # No opportunity found
+            logger.debug(
+                "No opportunity - odds below threshold",
+                market_slug=self._market_slug,
+                yes_odds=snapshot.yes_odds,
+                no_odds=snapshot.no_odds,
+                threshold=self._threshold
+            )
+            return None
+
+        except Exception as e:
+            logger.error(
+                "Error checking opportunities",
+                error=str(e),
+                exc_info=True
+            )
+            return None
 
     async def _monitor_loop(self) -> None:
         """Monitor loop placeholder (implemented in Task 7)."""
