@@ -248,11 +248,27 @@ class OddsMonitor:
             )
 
     async def _monitor_loop(self) -> None:
-        """Monitor loop placeholder (implemented in Task 7)."""
+        """Monitor loop that checks for opportunities every second."""
+        logger.info("Monitor loop started")
+
         try:
             while self._is_running:
-                # Placeholder: sleep 1 second
+                try:
+                    # Check for opportunities and handle sustained/cooldown logic
+                    await self._check_and_handle_opportunity()
+                except Exception as e:
+                    # Log error but continue monitoring
+                    logger.error(
+                        "Error in monitor loop iteration",
+                        error=str(e),
+                        exc_info=True
+                    )
+
+                # Sleep 1 second before next check
                 await asyncio.sleep(1.0)
+
         except asyncio.CancelledError:
-            logger.debug("Monitor loop cancelled")
+            logger.info("Monitor loop cancelled")
             raise
+
+        logger.info("Monitor loop stopped")

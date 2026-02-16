@@ -1,5 +1,6 @@
 """Tests for OddsMonitor."""
 
+import asyncio
 import pytest
 from unittest.mock import Mock, AsyncMock
 from polymarket.trading.odds_monitor import OddsMonitor
@@ -518,3 +519,80 @@ async def test_threshold_broken_resets_timer():
     with freeze_time("2026-02-16 14:30:10"):
         await monitor._check_and_handle_opportunity()
         assert on_opportunity.call_count == 1  # Triggered (5s from reset at 14:30:05)
+
+
+@pytest.mark.asyncio
+async def test_monitor_loop_calls_check_and_handle():
+    """Test monitor loop continuously calls _check_and_handle_opportunity."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock to track calls
+    check_count = 0
+
+    async def mock_check_and_handle():
+        nonlocal check_count
+        check_count += 1
+        if check_count >= 3:
+            # Stop after 3 iterations
+            monitor._is_running = False
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity
+    )
+
+    # Replace method with mock
+    monitor._check_and_handle_opportunity = mock_check_and_handle
+
+    # Start monitor (will stop after 3 iterations)
+    await monitor.start()
+
+    # Give it time to run (3 iterations * ~1 second each + buffer)
+    await asyncio.sleep(3.5)
+
+    # Verify it called check_and_handle multiple times
+    assert check_count == 3
+
+
+@pytest.mark.asyncio
+async def test_monitor_loop_exception_handling():
+    """Test monitor loop continues after exception in check_and_handle."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock that raises exception first time, then succeeds
+    call_count = 0
+
+    async def mock_check_with_error():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise Exception("Test error")
+        if call_count >= 2:
+            monitor._is_running = False
+
+    # Initialize monitor
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity
+    )
+
+    # Replace method with mock
+    monitor._check_and_handle_opportunity = mock_check_with_error
+
+    # Start monitor
+    await monitor.start()
+
+    # Give it time to run
+    await asyncio.sleep(2.5)
+
+    # Verify it continued after exception
+    assert call_count == 2  # Called twice despite first error
