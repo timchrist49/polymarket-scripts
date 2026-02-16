@@ -53,7 +53,6 @@ class AIDecisionService:
         market_data: dict,
         portfolio_value: Decimal = Decimal("1000"),
         orderbook_data: "OrderbookData | None" = None,  # orderbook analysis
-        volume_data: VolumeData | None = None,  # NEW: volume confirmation
         timeframe_analysis: TimeframeAnalysis | None = None,  # NEW: multi-timeframe
         regime: MarketRegime | None = None,  # NEW: market regime
         arbitrage_opportunity: "ArbitrageOpportunity | None" = None,  # NEW: arbitrage detection
@@ -61,7 +60,7 @@ class AIDecisionService:
         contrarian_signal: ContrarianSignal | None = None,  # NEW: contrarian mean-reversion signal
         force_trade: bool = False  # NEW: TEST MODE - force YES/NO decision
     ) -> TradingDecision:
-        """Generate trading decision using AI with regime awareness, volume, timeframe, arbitrage, and market signals."""
+        """Generate trading decision using AI with regime awareness, timeframe, arbitrage, and market signals."""
         try:
             client = self._get_client()
 
@@ -69,7 +68,7 @@ class AIDecisionService:
             prompt = self._build_prompt(
                 btc_price, technical_indicators, aggregated_sentiment,
                 market_data, portfolio_value, orderbook_data,
-                volume_data, timeframe_analysis, regime,
+                timeframe_analysis, regime,
                 arbitrage_opportunity, market_signals, contrarian_signal, force_trade
             )
 
@@ -169,9 +168,6 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
                 price_direction = "UP" if decision.action == "YES" else "DOWN"
                 price_signal_strength = decision.confidence  # AI's base confidence
 
-                # Volume confirmation
-                volume_confirmation = volume_data.is_high_volume if volume_data else False
-
                 # Orderbook bias
                 orderbook_bias = "neutral"
                 if orderbook_data:
@@ -195,7 +191,6 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
                 weighted_confidence = self._calculate_weighted_confidence(
                     price_signal_strength=price_signal_strength,
                     price_direction=price_direction,
-                    volume_confirmation=volume_confirmation,
                     orderbook_bias=orderbook_bias,
                     coingecko_signal_strength=coingecko_signal_strength,
                     coingecko_direction=coingecko_direction,
@@ -209,7 +204,6 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
                     ai_confidence=f"{decision.confidence:.1%}",
                     weighted_confidence=f"{weighted_confidence:.1%}",
                     price_direction=price_direction,
-                    volume_confirmed=volume_confirmation,
                     sentiment_score=f"{sentiment_score:+.2f}"
                 )
 
@@ -245,7 +239,6 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
         market: dict,
         portfolio_value: Decimal,
         orderbook_data: "OrderbookData | None" = None,
-        volume_data: VolumeData | None = None,
         timeframe_analysis: TimeframeAnalysis | None = None,
         regime: MarketRegime | None = None,
         arbitrage_opportunity: "ArbitrageOpportunity | None" = None,
@@ -253,7 +246,7 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
         contrarian_signal: ContrarianSignal | None = None,
         force_trade: bool = False
     ) -> str:
-        """Build the AI prompt with all context including regime, volume, timeframe, orderbook, and market signals."""
+        """Build the AI prompt with all context including regime, timeframe, orderbook, and market signals."""
 
         # NEW: Build force_trade instruction if enabled
         if force_trade:
@@ -402,25 +395,6 @@ MARKET REGIME ANALYSIS:
 """
         else:
             regime_context = "MARKET REGIME: Not available (insufficient data)"
-
-        # NEW: Volume context
-        volume_context = ""
-        if volume_data:
-            volume_context = f"""
-VOLUME CONFIRMATION:
-- 24h Volume: ${volume_data.volume_24h:,.0f}
-- Current Hour Volume: ${volume_data.volume_current_hour:,.0f}
-- Average Hour Volume: ${volume_data.volume_avg_hour:,.0f}
-- Volume Ratio: {volume_data.volume_ratio:.2f}x (current / average)
-- High Volume: {volume_data.is_high_volume}
-
-⚠️ VOLUME RULES:
-- For breakouts ($200+ moves): REQUIRE volume_ratio > 1.5x
-- Without volume = false breakout = HOLD
-- Low volume = reduce confidence by 0.1-0.2
-"""
-        else:
-            volume_context = "VOLUME CONFIRMATION: Not available"
 
         # NEW: Timeframe alignment context
         timeframe_context = ""
@@ -666,8 +640,6 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 
 {regime_context}
 
-{volume_context}
-
 {timeframe_context}
 
 {arbitrage_context}
@@ -904,7 +876,6 @@ ORDERBOOK INTERPRETATION:
     def _calculate_weighted_confidence(
         price_signal_strength: float,
         price_direction: str,
-        volume_confirmation: bool,
         orderbook_bias: str,
         coingecko_signal_strength: float,
         coingecko_direction: str,
@@ -916,7 +887,7 @@ ORDERBOOK INTERPRETATION:
         Calculate weighted confidence using tiered signal prioritization.
 
         Tier 1 (Price Reality): BTC price movements - 50% weight
-        Tier 2 (Market Structure): Volume + orderbook - 25% weight
+        Tier 2 (Market Structure): Orderbook - 25% weight
         Tier 3 (External Signals): CoinGecko Pro - 15% weight
         Tier 4 (Opinion): Sentiment - 10% weight
 
@@ -925,7 +896,6 @@ ORDERBOOK INTERPRETATION:
         Args:
             price_signal_strength: 0.0-1.0, strength of price signal
             price_direction: "UP", "DOWN", or "neutral"
-            volume_confirmation: True if volume supports the move
             orderbook_bias: "bullish", "bearish", or "neutral"
             coingecko_signal_strength: 0.0-1.0, strength of CoinGecko signal
             coingecko_direction: "bullish", "bearish", or "neutral"
@@ -941,15 +911,13 @@ ORDERBOOK INTERPRETATION:
         price_contribution = price_signal_strength * 0.50
 
         # Tier 2: Market Structure (25% weight)
-        # Volume and orderbook provide confirmation
-        volume_score = 1.0 if volume_confirmation else 0.3
+        # Orderbook provides confirmation
         orderbook_score = {
             "bullish": 0.8 if price_direction == "UP" else 0.2,
             "bearish": 0.8 if price_direction == "DOWN" else 0.2,
             "neutral": 0.5
         }.get(orderbook_bias, 0.5)
-        market_structure = (volume_score + orderbook_score) / 2
-        structure_contribution = market_structure * 0.25
+        structure_contribution = orderbook_score * 0.25
 
         # Tier 3: External Signals (15% weight)
         # CoinGecko Pro signals have moderate influence

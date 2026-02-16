@@ -577,13 +577,12 @@ class AutoTrader:
                 )
 
             # Step 2: Data Collection (parallel) - NEW: fetch social + market + funding + dominance + volume
-            btc_data, social_sentiment, market_signals, funding_signal, dominance_signal, volume_data = await asyncio.gather(
+            btc_data, social_sentiment, market_signals, funding_signal, dominance_signal = await asyncio.gather(
                 self.btc_service.get_current_price(),
                 self.social_service.get_social_score(),
                 self.market_service.get_market_score(),
                 self.btc_service.get_funding_rates(),
                 self.btc_service.get_btc_dominance(),
-                self.btc_service.get_volume_data(),  # NEW: Volume confirmation for breakouts
             )
 
             # Calculate actual BTC momentum (last 5 minutes) - ONCE PER LOOP
@@ -760,7 +759,6 @@ class AutoTrader:
                     portfolio_value,
                     btc_momentum,  # NEW: pass momentum calculated once per loop
                     cycle_start_time,  # NEW: pass cycle start time for JIT metrics
-                    volume_data,  # NEW: volume data for AI context
                     timeframe_analysis,  # NEW: timeframe analysis for AI context
                     regime,  # NEW: market regime for adaptive strategy
                     contrarian_signal  # NEW: contrarian signal detection
@@ -885,7 +883,6 @@ class AutoTrader:
         portfolio_value: Decimal,
         btc_momentum: dict | None,  # NEW: momentum calculated once per loop
         cycle_start_time: datetime,  # NEW: for JIT execution metrics
-        volume_data,  # NEW: volume data for breakout confirmation
         timeframe_analysis,  # NEW: multi-timeframe trend analysis
         regime,  # NEW: market regime detection
         contrarian_signal  # NEW: contrarian signal detection
@@ -1075,26 +1072,6 @@ class AutoTrader:
                             bypassed=True
                         )
 
-                # Volume confirmation for large moves (breakout detection)
-                if abs_diff > 200 and volume_data:  # $200+ move = potential breakout
-                    if not volume_data.is_high_volume:
-                        if not self.test_mode.enabled:
-                            logger.info(
-                                "Skipping large move without volume confirmation",
-                                market_id=market.id,
-                                movement=f"${diff:+,.2f}",
-                                volume_ratio=f"{volume_data.volume_ratio:.2f}x",
-                                reason="Breakouts require volume > 1.5x average"
-                            )
-                            return  # Skip low-volume breakouts
-                        else:
-                            logger.info(
-                                "[TEST] Bypassing volume confirmation - data sent to AI",
-                                market_id=market.id,
-                                movement=f"${diff:+,.2f}",
-                                volume_ratio=f"{volume_data.volume_ratio:.2f}x",
-                                bypassed=True
-                            )
 
             # NEW: Enhanced Market Signals from CoinGecko Pro
             # Fetch additional market signals for better edge detection
@@ -1304,7 +1281,7 @@ class AutoTrader:
                     confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}"
                 )
 
-            # Step 1: AI Decision - pass all market context including orderbook, volume, timeframe, regime, arbitrage, market signals, and contrarian signal
+            # Step 1: AI Decision - pass all market context including orderbook, timeframe, regime, arbitrage, market signals, and contrarian signal
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
@@ -1312,7 +1289,6 @@ class AutoTrader:
                 market_data=market_dict,
                 portfolio_value=portfolio_value,
                 orderbook_data=orderbook_analysis,  # orderbook depth analysis
-                volume_data=volume_data,  # NEW: volume confirmation
                 timeframe_analysis=timeframe_analysis,  # NEW: multi-timeframe analysis
                 regime=regime,  # NEW: market regime detection
                 arbitrage_opportunity=arbitrage_opportunity,  # NEW: arbitrage opportunity
