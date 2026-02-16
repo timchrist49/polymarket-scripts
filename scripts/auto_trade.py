@@ -293,6 +293,10 @@ class AutoTrader:
         await self.realtime_streamer.start()
         logger.info("Real-time odds streamer started")
 
+        # Start OddsMonitor for event-driven cycle triggering
+        await self.odds_monitor.start()
+        logger.info("OddsMonitor started for event-driven triggering")
+
         # Start settlement loop
         settlement_task = asyncio.create_task(self._run_settlement_loop())
         logger.info("Settlement loop started")
@@ -592,6 +596,15 @@ class AutoTrader:
                 return
 
             logger.info("Found markets", count=len(markets))
+
+            # Configure market for monitoring
+            self.odds_monitor._market_id = markets[0].id
+            self.odds_monitor._market_slug = markets[0].slug
+            logger.debug(
+                "Market context configured for OddsMonitor",
+                market_id=markets[0].id,
+                market_slug=markets[0].slug
+            )
 
             # Extract condition_id and token_ids from discovered market
             condition_id = getattr(markets[0], 'condition_id', None)
@@ -2280,6 +2293,11 @@ class AutoTrader:
                 pass
         if self.background_tasks:
             logger.info("Background tasks stopped")
+
+        # Stop OddsMonitor
+        if self.odds_monitor:
+            await self.odds_monitor.stop()
+            logger.info("OddsMonitor stopped")
 
         # Stop real-time odds streamer
         await self.realtime_streamer.stop()
