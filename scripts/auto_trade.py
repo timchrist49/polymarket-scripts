@@ -47,6 +47,7 @@ from polymarket.trading.timeframe_analyzer import TimeframeAnalyzer, TimeframeAn
 from polymarket.trading.signal_lag_detector import detect_signal_lag
 from polymarket.trading.conflict_detector import SignalConflictDetector, ConflictSeverity
 from polymarket.trading.odds_poller import MarketOddsPoller
+from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
 from polymarket.trading.contrarian import get_movement_threshold
 from polymarket.performance.tracker import PerformanceTracker
 from polymarket.performance.cleanup import CleanupScheduler
@@ -139,6 +140,11 @@ class AutoTrader:
 
         # Odds polling service
         self.odds_poller = MarketOddsPoller(self.client)
+
+        # Real-time odds streamer (WebSocket)
+        self.realtime_streamer = RealtimeOddsStreamer(self.client)
+        logger.info("Real-time odds streamer initialized")
+
         self.telegram_bot = TelegramBot(settings)  # Initialize Telegram bot
         self.cleanup_scheduler = CleanupScheduler(
             db=self.performance_tracker.db,
@@ -246,6 +252,10 @@ class AutoTrader:
         odds_task = asyncio.create_task(self.odds_poller.start_polling())
         self.background_tasks.append(odds_task)
         logger.info("Odds poller started (background task)")
+
+        # Start real-time odds streamer
+        await self.realtime_streamer.start()
+        logger.info("Real-time odds streamer started")
 
         # Start settlement loop
         settlement_task = asyncio.create_task(self._run_settlement_loop())
@@ -2238,6 +2248,10 @@ class AutoTrader:
                 pass
         if self.background_tasks:
             logger.info("Background tasks stopped")
+
+        # Stop real-time odds streamer
+        await self.realtime_streamer.stop()
+        logger.info("Real-time odds streamer stopped")
 
         await self.btc_service.close()  # Now closes WebSocket
         await self.social_service.close()
