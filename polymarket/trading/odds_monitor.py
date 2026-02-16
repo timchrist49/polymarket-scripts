@@ -2,7 +2,7 @@
 
 from typing import Callable, Optional, Dict
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import structlog
 
 from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
@@ -104,6 +104,17 @@ class OddsMonitor:
 
             if not snapshot:
                 logger.debug("No current odds available")
+                return None
+
+            # Check staleness
+            age = (datetime.now(timezone.utc) - snapshot.timestamp).total_seconds()
+            if age > 120:  # 2 minutes
+                logger.warning(
+                    "Odds data too stale, skipping",
+                    age_seconds=age,
+                    market_id=self._market_id,
+                    market_slug=self._market_slug
+                )
                 return None
 
             # Validate market is active

@@ -6,7 +6,7 @@ from polymarket.trading.odds_monitor import OddsMonitor
 from polymarket.trading.realtime_odds_streamer import RealtimeOddsStreamer
 from polymarket.trading.market_validator import MarketValidator
 from polymarket.models import WebSocketOddsSnapshot
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def test_odds_monitor_initialization():
@@ -131,7 +131,7 @@ async def test_check_opportunities_above_threshold():
         market_id="test-market-123",
         yes_odds=0.75,
         no_odds=0.25,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         best_bid=0.75,
         best_ask=0.25
     )
@@ -174,7 +174,7 @@ async def test_check_opportunities_below_threshold():
         market_id="test-market-123",
         yes_odds=0.60,
         no_odds=0.40,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         best_bid=0.60,
         best_ask=0.40
     )
@@ -211,7 +211,7 @@ async def test_check_opportunities_market_inactive():
         market_id="test-market-123",
         yes_odds=0.75,
         no_odds=0.25,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         best_bid=0.75,
         best_ask=0.25
     )
@@ -263,3 +263,88 @@ async def test_check_opportunities_no_odds():
 
     # Verify no opportunity
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_opportunities_no_direction():
+    """Test detecting NO opportunity when NO odds above threshold."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: NO=0.75 (above 70% threshold)
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.25,  # Below threshold
+        no_odds=0.75,   # Above threshold - this should trigger
+        timestamp=datetime.now(timezone.utc),
+        best_bid=0.25,
+        best_ask=0.75
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+
+    # Mock market validation: market is active
+    validator.is_market_active = Mock(return_value=True)
+
+    # Initialize monitor with market configured
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # Check for opportunities
+    result = await monitor._check_opportunities()
+
+    # Verify NO opportunity detected
+    assert result is not None
+    assert result["direction"] == "NO"
+    assert result["odds"] == 0.75
+
+
+@pytest.mark.asyncio
+async def test_check_opportunities_stale_odds():
+    """Test rejecting stale odds (>120 seconds old)."""
+    # Create mock dependencies
+    streamer = Mock(spec=RealtimeOddsStreamer)
+    validator = Mock(spec=MarketValidator)
+    on_opportunity = Mock()
+
+    # Mock current odds: YES=0.75 (above threshold) but stale (3 minutes old)
+    from datetime import timedelta
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=180)  # 3 minutes ago
+    
+    mock_snapshot = WebSocketOddsSnapshot(
+        market_id="test-market-123",
+        yes_odds=0.75,
+        no_odds=0.25,
+        timestamp=stale_time,  # Stale timestamp
+        best_bid=0.75,
+        best_ask=0.25
+    )
+    streamer.get_current_odds = Mock(return_value=mock_snapshot)
+
+    # Mock market validation: market is active (but should never be checked due to staleness)
+    validator.is_market_active = Mock(return_value=True)
+
+    # Initialize monitor with market configured
+    monitor = OddsMonitor(
+        streamer=streamer,
+        validator=validator,
+        on_opportunity_detected=on_opportunity,
+        threshold_percentage=70.0
+    )
+    monitor._market_id = "test-market-123"
+    monitor._market_slug = "btc-updown-15m-1234567890"
+
+    # Check for opportunities
+    result = await monitor._check_opportunities()
+
+    # Verify no opportunity (stale odds rejected)
+    assert result is None
+    # Verify market validation was never called (staleness check happens first)
+    validator.is_market_active.assert_not_called()
