@@ -1560,7 +1560,7 @@ class AutoTrader:
                 return
 
             # NEW: JIT odds validation (fetch fresh odds before execution)
-            fresh_market = self.client.get_market_by_slug(market.slug)
+            fresh_market = self.client.discover_btc_15min_market()
             if fresh_market:
                 yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
                 no_odds_fresh = 1.0 - yes_odds_fresh
