@@ -295,9 +295,12 @@ class RealtimeOddsStreamer:
 
             subscribe_msg = {
                 "type": "MARKET",  # UPPERCASE per official documentation
-                "assets_ids": hex_token_ids,
-                "custom_feature_enabled": True
+                "assets_ids": hex_token_ids
             }
+
+            # Log the actual subscription being sent
+            logger.info("📤 Sending subscription", message=json.dumps(subscribe_msg, indent=2))
+
             await ws.send(json.dumps(subscribe_msg))
 
             # Enhanced logging for debugging
