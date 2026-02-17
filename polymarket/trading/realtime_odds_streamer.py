@@ -3,7 +3,7 @@
 import asyncio
 import json
 import structlog
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import websockets
 from websockets.asyncio.client import ClientConnection
@@ -59,8 +59,8 @@ class RealtimeOddsStreamer:
 
         if snapshot:
             # Check staleness
-            from datetime import datetime, timedelta
-            age = datetime.now() - snapshot.timestamp
+            from datetime import timedelta
+            age = datetime.now(timezone.utc) - snapshot.timestamp
             if age > timedelta(minutes=2):
                 logger.warning(
                     "⚠️ Using stale odds data (WebSocket may be disconnected)",
@@ -78,9 +78,15 @@ class RealtimeOddsStreamer:
             payload: Book message with buys/sells arrays
         """
         try:
-            market_id = payload.get('market')
-            if not market_id:
-                logger.warning("Book message missing market_id", payload=payload)
+            token_id = payload.get('market')
+            if not token_id:
+                logger.warning("Book message missing token_id", payload=payload)
+                return
+
+            # Use the current market ID (not the token ID from the payload)
+            # Book messages contain token IDs, but we query by market ID
+            if not self._current_market_id:
+                logger.warning("No current market ID set, skipping book message")
                 return
 
             # Extract best buy price (YES odds)
@@ -97,23 +103,25 @@ class RealtimeOddsStreamer:
 
             no_odds = 1.0 - yes_odds
 
-            # Create snapshot
+            # Create snapshot (use market ID, not token ID)
             snapshot = WebSocketOddsSnapshot(
-                market_id=market_id,
+                market_id=self._current_market_id,
                 yes_odds=yes_odds,
                 no_odds=no_odds,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 best_bid=yes_odds,
                 best_ask=no_odds
             )
 
-            # Store (thread-safe)
+            # Store using market ID as key (so OddsMonitor can find it)
             async with self._lock:
-                self._current_odds[market_id] = snapshot
+                self._current_odds[self._current_market_id] = snapshot
 
-            logger.debug(
-                "Odds updated from book",
-                market_id=market_id,
+            logger.info(
+                "📊 Odds updated from book",
+                token_id=token_id[:16] + "...",  # Log abbreviated token ID
+                market_id=self._current_market_id,
+                market_slug=self._current_market_slug,
                 yes_odds=f"{yes_odds:.2f}",
                 no_odds=f"{no_odds:.2f}"
             )
