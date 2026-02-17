@@ -198,59 +198,27 @@ class RealtimeOddsStreamer:
                 logger.warning("No current market ID set, skipping book message")
                 return
 
-            # DEBUG: Log raw book message to understand format
+            # Extract orderbook data
             bids = payload.get('bids', [])
             asks = payload.get('asks', [])
+
             logger.info(
                 "📥 Raw book message",
                 market_id=market_id[:16] + "...",
                 asset_id=asset_id[:16] + "...",
                 bids_count=len(bids),
-                asks_count=len(asks),
-                first_bid=bids[0] if bids else None,
-                first_ask=asks[0] if asks else None
+                asks_count=len(asks)
             )
 
-            # Extract best bid price (YES odds) from bids array
-            # Format: [{"price": "0.45", "size": "100"}, ...]
-            # Bids are buy orders - highest bid is the YES odds
-            if bids and len(bids) > 0:
-                if isinstance(bids[0], dict):
-                    yes_odds = float(bids[0]['price'])
-                else:
-                    # Fallback for array format: [price, size]
-                    yes_odds = float(bids[0][0])
-            else:
-                # Default if no bids
-                yes_odds = 0.50
-
-            no_odds = 1.0 - yes_odds
-
-            # Create snapshot (use market ID, not token ID)
-            snapshot = WebSocketOddsSnapshot(
-                market_id=self._current_market_id,
-                yes_odds=yes_odds,
-                no_odds=no_odds,
-                timestamp=datetime.now(timezone.utc),
-                best_bid=yes_odds,
-                best_ask=no_odds
-            )
-
-            # Store using market ID as key (so OddsMonitor can find it)
-            async with self._lock:
-                self._current_odds[self._current_market_id] = snapshot
-
-            logger.info(
-                "📊 Odds updated from book",
-                asset_id=asset_id[:16] + "...",  # Log abbreviated asset ID
-                market_id=self._current_market_id,
-                market_slug=self._current_market_slug,
-                yes_odds=f"{yes_odds:.2f}",
-                no_odds=f"{no_odds:.2f}"
-            )
+            # Delegate to shared processing method
+            await self._update_odds_from_orderbook(bids, asks, source='WebSocket')
 
         except Exception as e:
-            logger.error("Failed to process book message", error=str(e), payload=payload)
+            logger.error(
+                "Book message processing failed",
+                error=str(e),
+                payload=str(payload)[:200]
+            )
 
     async def start(self):
         """
