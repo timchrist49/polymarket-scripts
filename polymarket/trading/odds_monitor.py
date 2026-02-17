@@ -94,17 +94,22 @@ class OddsMonitor:
             Dict with market_slug, direction, odds if opportunity found, else None
         """
         try:
-            # Check if market is configured
-            if not self._market_id or not self._market_slug:
-                logger.debug("No market configured for monitoring")
+            # Get current market ID from streamer (always up-to-date after transitions)
+            current_market_id = self._streamer._current_market_id
+
+            if not current_market_id:
+                logger.debug("No active market in streamer")
                 return None
 
-            # Get current odds from streamer
-            snapshot = self._streamer.get_current_odds(self._market_id)
+            # Get current odds from streamer (using live market ID)
+            snapshot = self._streamer.get_current_odds(current_market_id)
 
             if not snapshot:
                 logger.debug("No current odds available")
                 return None
+
+            # Get current market slug from streamer
+            current_market_slug = self._streamer._current_market_slug
 
             # Check staleness
             age = (datetime.now(timezone.utc) - snapshot.timestamp).total_seconds()
@@ -112,16 +117,16 @@ class OddsMonitor:
                 logger.warning(
                     "Odds data too stale, skipping",
                     age_seconds=age,
-                    market_id=self._market_id,
-                    market_slug=self._market_slug
+                    market_id=current_market_id,
+                    market_slug=current_market_slug
                 )
                 return None
 
             # Validate market is active
-            if not self._validator.is_market_active(self._market_slug):
+            if current_market_slug and not self._validator.is_market_active(current_market_slug):
                 logger.debug(
                     "Market not active, skipping",
-                    market_slug=self._market_slug
+                    market_slug=current_market_slug
                 )
                 return None
 
@@ -129,12 +134,12 @@ class OddsMonitor:
             if snapshot.yes_odds >= self._threshold:
                 logger.info(
                     "Opportunity detected: YES",
-                    market_slug=self._market_slug,
+                    market_slug=current_market_slug,
                     odds=snapshot.yes_odds,
                     threshold=self._threshold
                 )
                 return {
-                    "market_slug": self._market_slug,
+                    "market_slug": current_market_slug or "unknown",
                     "direction": "YES",
                     "odds": snapshot.yes_odds
                 }
@@ -143,12 +148,12 @@ class OddsMonitor:
             if snapshot.no_odds >= self._threshold:
                 logger.info(
                     "Opportunity detected: NO",
-                    market_slug=self._market_slug,
+                    market_slug=current_market_slug,
                     odds=snapshot.no_odds,
                     threshold=self._threshold
                 )
                 return {
-                    "market_slug": self._market_slug,
+                    "market_slug": current_market_slug or "unknown",
                     "direction": "NO",
                     "odds": snapshot.no_odds
                 }
@@ -156,7 +161,7 @@ class OddsMonitor:
             # No opportunity found
             logger.debug(
                 "No opportunity - odds below threshold",
-                market_slug=self._market_slug,
+                market_slug=current_market_slug,
                 yes_odds=snapshot.yes_odds,
                 no_odds=snapshot.no_odds,
                 threshold=self._threshold
@@ -176,9 +181,11 @@ class OddsMonitor:
         # Check for opportunity
         opportunity = await self._check_opportunities()
 
+        # Get current market ID from streamer
+        market_id = self._streamer._current_market_id
+
         if not opportunity:
             # No opportunity - clear threshold tracking for this market
-            market_id = self._market_id
             if market_id and market_id in self._threshold_start_time:
                 logger.debug(
                     "Opportunity lost, clearing threshold tracking",
@@ -191,7 +198,6 @@ class OddsMonitor:
         market_slug = opportunity["market_slug"]
         direction = opportunity["direction"]
         odds = opportunity["odds"]
-        market_id = self._market_id
 
         # Check cooldown
         if market_id in self._last_trigger_time:

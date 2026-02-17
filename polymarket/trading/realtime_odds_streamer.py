@@ -38,6 +38,7 @@ class RealtimeOddsStreamer:
         self.client = client
         self._current_odds: dict[str, WebSocketOddsSnapshot] = {}
         self._current_market_id: Optional[str] = None
+        self._current_market_slug: Optional[str] = None
         self._current_token_ids: Optional[list[str]] = None
         self._ws: Optional[ClientConnection] = None
         self._stream_task: Optional[asyncio.Task] = None
@@ -247,11 +248,13 @@ class RealtimeOddsStreamer:
             return
 
         self._current_market_id = market.id
+        self._current_market_slug = market.slug
         self._current_token_ids = token_ids
 
         logger.info(
             "Connecting to CLOB WebSocket",
             market_id=market.id,
+            market_slug=market.slug,
             token_ids=token_ids
         )
 
