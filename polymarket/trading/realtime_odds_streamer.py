@@ -241,6 +241,12 @@ class RealtimeOddsStreamer:
                 # Use decimal format directly (REST API expects decimal)
                 token_id_decimal = self._current_token_ids_decimal[0]
 
+                logger.info(
+                    "Querying REST API",
+                    token_id=token_id_decimal[:16] + "..." if len(token_id_decimal) > 16 else token_id_decimal,
+                    market_id=self._current_market_id
+                )
+
                 # Synchronous call in async context (client.get_orderbook is not async)
                 orderbook = await asyncio.to_thread(
                     self.client.get_orderbook,
@@ -445,6 +451,11 @@ class RealtimeOddsStreamer:
             market_id=market.id,
             market_slug=market.slug,
             token_ids=token_ids
+        )
+        logger.info(
+            "Stored token ID formats",
+            decimal_first=decimal_token_ids[0] if decimal_token_ids else None,
+            hex_first=hex_token_ids[0] if hex_token_ids else None
         )
 
         async with websockets.connect(
