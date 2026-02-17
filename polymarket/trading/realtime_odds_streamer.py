@@ -275,7 +275,7 @@ class RealtimeOddsStreamer:
         """
         Start streaming (non-blocking).
 
-        Launches background task to connect and stream messages.
+        Launches background tasks for WebSocket and REST polling.
         """
         if self._running:
             logger.warning("Streamer already running")
@@ -283,7 +283,8 @@ class RealtimeOddsStreamer:
 
         self._running = True
         self._stream_task = asyncio.create_task(self._stream_loop())
-        logger.info("Real-time odds streamer started")
+        self._rest_task = asyncio.create_task(self._rest_polling_loop())
+        logger.info("Real-time odds streamer started (WebSocket + REST polling)")
 
     async def stop(self):
         """
