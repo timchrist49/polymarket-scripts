@@ -82,7 +82,7 @@ class RealtimeOddsStreamer:
 
         Args:
             bids: List of bids as [{"price": str, "size": str}] or [[price, size]]
-            asks: List of asks (not currently used)
+            asks: List of asks as [{"price": str, "size": str}] or [[price, size]]
             source: 'WebSocket' or 'REST' for logging
         """
         if not self._current_market_id:
@@ -92,16 +92,63 @@ class RealtimeOddsStreamer:
             )
             return
 
-        # Extract best bid price (YES odds)
-        if bids and len(bids) > 0:
-            if isinstance(bids[0], dict):
-                yes_odds = float(bids[0]['price'])
+        # Extract best bid price (YES odds) with validation
+        try:
+            if bids and len(bids) > 0:
+                if isinstance(bids[0], dict):
+                    yes_odds = float(bids[0]['price'])
+                else:
+                    # Array format: [price, size]
+                    yes_odds = float(bids[0][0])
             else:
-                # Array format: [price, size]
-                yes_odds = float(bids[0][0])
-        else:
-            # Default if no bids
+                # Default if no bids
+                yes_odds = 0.50
+
+            # Validate range
+            if not (0.0 <= yes_odds <= 1.0):
+                logger.warning(
+                    "Invalid yes_odds value, using default",
+                    value=yes_odds,
+                    source=source
+                )
+                yes_odds = 0.50
+
+        except (ValueError, KeyError, IndexError, TypeError) as e:
+            logger.warning(
+                "Failed to parse best bid, using default",
+                error=str(e),
+                source=source
+            )
             yes_odds = 0.50
+
+        # Extract best ask price with validation
+        try:
+            if asks and len(asks) > 0:
+                if isinstance(asks[0], dict):
+                    best_ask = float(asks[0]['price'])
+                else:
+                    # Array format: [price, size]
+                    best_ask = float(asks[0][0])
+            else:
+                # Default if no asks: use calculated value
+                best_ask = 1.0 - yes_odds
+
+            # Validate range
+            if not (0.0 <= best_ask <= 1.0):
+                logger.warning(
+                    "Invalid best_ask value, using calculated",
+                    value=best_ask,
+                    source=source
+                )
+                best_ask = 1.0 - yes_odds
+
+        except (ValueError, KeyError, IndexError, TypeError) as e:
+            logger.warning(
+                "Failed to parse best ask, using calculated",
+                error=str(e),
+                source=source
+            )
+            best_ask = 1.0 - yes_odds
 
         no_odds = 1.0 - yes_odds
 
@@ -112,7 +159,7 @@ class RealtimeOddsStreamer:
             no_odds=no_odds,
             timestamp=datetime.now(timezone.utc),
             best_bid=yes_odds,
-            best_ask=no_odds
+            best_ask=best_ask
         )
 
         # Store atomically
@@ -125,7 +172,8 @@ class RealtimeOddsStreamer:
             market_id=self._current_market_id,
             market_slug=self._current_market_slug,
             yes_odds=f"{yes_odds:.2f}",
-            no_odds=f"{no_odds:.2f}"
+            no_odds=f"{no_odds:.2f}",
+            best_ask=f"{best_ask:.2f}"
         )
 
     async def _process_book_message(self, payload: dict):
@@ -194,7 +242,7 @@ class RealtimeOddsStreamer:
 
             logger.info(
                 "📊 Odds updated from book",
-                token_id=token_id[:16] + "...",  # Log abbreviated token ID
+                asset_id=asset_id[:16] + "...",  # Log abbreviated asset ID
                 market_id=self._current_market_id,
                 market_slug=self._current_market_slug,
                 yes_odds=f"{yes_odds:.2f}",
