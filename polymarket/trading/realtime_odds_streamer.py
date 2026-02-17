@@ -42,6 +42,7 @@ class RealtimeOddsStreamer:
         self._current_token_ids: Optional[list[str]] = None
         self._ws: Optional[ClientConnection] = None
         self._stream_task: Optional[asyncio.Task] = None
+        self._rest_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
         self._running = False
 
