@@ -39,7 +39,8 @@ class RealtimeOddsStreamer:
         self._current_odds: dict[str, WebSocketOddsSnapshot] = {}
         self._current_market_id: Optional[str] = None
         self._current_market_slug: Optional[str] = None
-        self._current_token_ids: Optional[list[str]] = None
+        self._current_token_ids_decimal: Optional[list[str]] = None
+        self._current_token_ids_hex: Optional[list[str]] = None
         self._ws: Optional[ClientConnection] = None
         self._stream_task: Optional[asyncio.Task] = None
         self._rest_task: Optional[asyncio.Task] = None
@@ -232,13 +233,13 @@ class RealtimeOddsStreamer:
         while self._running:
             try:
                 # Wait for market to be set
-                if not self._current_token_ids or not self._current_market_id:
+                if not self._current_token_ids_decimal or not self._current_market_id:
                     await asyncio.sleep(5)
                     continue
 
                 # Query orderbook for first token (YES token)
-                # Remove '0x' prefix if present (REST API expects decimal or no prefix)
-                token_id_decimal = self._current_token_ids[0].replace('0x', '')
+                # Use decimal format directly (REST API expects decimal)
+                token_id_decimal = self._current_token_ids_decimal[0]
 
                 # Synchronous call in async context (client.get_orderbook is not async)
                 orderbook = await asyncio.to_thread(
@@ -427,13 +428,17 @@ class RealtimeOddsStreamer:
             return
 
         # Store market state atomically
-        # Convert token IDs to hex format for comparison with book messages
+        # Store BOTH decimal and hex formats:
+        # - decimal: for REST API queries (expects decimal token IDs)
+        # - hex: for WebSocket message filtering (book messages use hex)
+        decimal_token_ids = token_ids  # Already in decimal format
         hex_token_ids = [hex(int(tid)) for tid in token_ids]
 
         async with self._lock:
             self._current_market_id = market.id
             self._current_market_slug = market.slug
-            self._current_token_ids = hex_token_ids
+            self._current_token_ids_decimal = decimal_token_ids
+            self._current_token_ids_hex = hex_token_ids
 
         logger.info(
             "Connecting to CLOB WebSocket",
@@ -551,12 +556,12 @@ class RealtimeOddsStreamer:
             token_id = data.get('asset_id')  # hex string
 
             # Only process messages for subscribed tokens
-            if token_id and self._current_token_ids:
-                if token_id not in self._current_token_ids:
+            if token_id and self._current_token_ids_hex:
+                if token_id not in self._current_token_ids_hex:
                     logger.debug(
                         "Ignoring book message for unsubscribed token",
                         token_id=token_id[:16] + "...",
-                        subscribed_tokens=[t[:16] + "..." for t in self._current_token_ids]
+                        subscribed_tokens=[t[:16] + "..." for t in self._current_token_ids_hex]
                     )
                     return
 
