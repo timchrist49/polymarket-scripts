@@ -89,9 +89,20 @@ class RealtimeOddsStreamer:
                 logger.warning("No current market ID set, skipping book message")
                 return
 
+            # DEBUG: Log raw book message to understand format
+            buys = payload.get('buys', [])
+            sells = payload.get('sells', [])
+            logger.info(
+                "📥 Raw book message",
+                token_id=token_id[:16] + "...",
+                buys_count=len(buys),
+                sells_count=len(sells),
+                first_buy=buys[0] if buys else None,
+                first_sell=sells[0] if sells else None
+            )
+
             # Extract best buy price (YES odds)
             # Format: {"price": "0.45", "size": "100"}
-            buys = payload.get('buys', [])
             if buys and len(buys) > 0:
                 # Handle both dict format and array format
                 if isinstance(buys[0], dict):
@@ -326,7 +337,18 @@ class RealtimeOddsStreamer:
         logger.debug("WebSocket message received", event_type=event_type)
 
         if event_type == 'book':
-            # For book messages, the data IS the payload
+            token_id = data.get('market')  # hex string
+
+            # CRITICAL FIX: Only process messages for subscribed tokens
+            if token_id and self._current_token_ids:
+                if token_id not in self._current_token_ids:
+                    logger.debug(
+                        "Ignoring book message for unsubscribed token",
+                        token_id=token_id[:16] + "...",
+                        subscribed_tokens=[t[:16] + "..." for t in self._current_token_ids]
+                    )
+                    return
+
             await self._process_book_message(data)
 
         # Ignore other message types (last_trade_price, price_change)
