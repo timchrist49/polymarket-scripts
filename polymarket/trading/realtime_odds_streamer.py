@@ -252,6 +252,27 @@ class RealtimeOddsStreamer:
             logger.error("Failed to check market transition", error=str(e))
             return False
 
+    async def _monitor_market_transitions(self, ws):
+        """
+        Independently monitor for market transitions.
+
+        Runs concurrently with message reception loop.
+        Closes WebSocket when market changes to trigger resubscription.
+
+        Args:
+            ws: WebSocket connection to close if transition detected
+        """
+        while self._running:
+            await asyncio.sleep(60)  # Check every minute
+
+            try:
+                if await self._check_market_transition():
+                    logger.info("Market transition detected by monitor, closing WebSocket")
+                    await ws.close()
+                    break
+            except Exception as e:
+                logger.error("Market transition check failed in monitor", error=str(e))
+
     async def _connect_and_stream(self):
         """
         Connect to WebSocket and stream messages until error or disconnect.
@@ -325,7 +346,11 @@ class RealtimeOddsStreamer:
             # Process messages until disconnected
             async for message in ws:
                 # DEBUG: Log every raw message received
-                logger.info(f"📨 RAW WebSocket message received (length: {len(message)})")
+                logger.info(
+                    "📨 RAW WebSocket message received",
+                    length=len(message),
+                    content=message[:200] if len(message) <= 200 else message[:200] + "..."
+                )
 
                 if not self._running:
                     break
@@ -344,14 +369,23 @@ class RealtimeOddsStreamer:
                 try:
                     data = json.loads(message)
 
+                    # DEBUG: Log parsed data structure
+                    logger.info(
+                        "📦 Parsed WebSocket data",
+                        data_type=type(data).__name__,
+                        data_preview=str(data)[:200]
+                    )
+
                     # Handle both single message and array of messages
                     if isinstance(data, list):
                         # Array of messages - process each
+                        logger.info(f"Processing array of {len(data)} messages")
                         for msg in data:
                             if isinstance(msg, dict):
                                 await self._handle_single_message(msg)
                     elif isinstance(data, dict):
                         # Single message
+                        logger.info("Processing single dict message")
                         await self._handle_single_message(data)
 
                 except json.JSONDecodeError:
@@ -359,11 +393,18 @@ class RealtimeOddsStreamer:
                 except Exception as e:
                     logger.error("Message processing error", error=str(e))
 
+            # Loop exited - log why
+            logger.warning(
+                "WebSocket message loop exited",
+                running=self._running,
+                market_id=self._current_market_id
+            )
+
     async def _handle_single_message(self, data: dict):
         """Process a single WebSocket message."""
         event_type = data.get('event_type')
 
-        logger.debug("WebSocket message received", event_type=event_type)
+        logger.info("🔍 WebSocket message received", event_type=event_type)
 
         if event_type == 'book':
             token_id = data.get('market')  # hex string
