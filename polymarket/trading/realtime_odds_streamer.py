@@ -267,10 +267,13 @@ class RealtimeOddsStreamer:
             return
 
         # Store market state atomically
+        # Convert token IDs to hex format for comparison with book messages
+        hex_token_ids = [hex(int(tid)) for tid in token_ids]
+
         async with self._lock:
             self._current_market_id = market.id
             self._current_market_slug = market.slug
-            self._current_token_ids = token_ids
+            self._current_token_ids = hex_token_ids
 
         logger.info(
             "Connecting to CLOB WebSocket",
@@ -287,9 +290,12 @@ class RealtimeOddsStreamer:
             self._ws = ws
 
             # Send subscription message (CLOB format)
+            # Convert decimal token IDs to hex format (book messages use hex)
+            hex_token_ids = [hex(int(tid)) for tid in token_ids]
+
             subscribe_msg = {
                 "type": "MARKET",  # UPPERCASE per official documentation
-                "assets_ids": token_ids,
+                "assets_ids": hex_token_ids,
                 "custom_feature_enabled": True
             }
             await ws.send(json.dumps(subscribe_msg))
