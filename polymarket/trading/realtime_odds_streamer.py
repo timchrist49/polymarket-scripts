@@ -339,51 +339,67 @@ class RealtimeOddsStreamer:
                 token_ids=[t[:16] + "..." for t in token_ids]
             )
 
-            # Process messages until disconnected
-            async for message in ws:
-                # DEBUG: Log every raw message received
-                logger.info(
-                    "📨 RAW WebSocket message received",
-                    length=len(message),
-                    content=message[:200] if len(message) <= 200 else message[:200] + "..."
-                )
+            # Launch independent market transition monitor
+            monitor_task = asyncio.create_task(
+                self._monitor_market_transitions(ws)
+            )
+            logger.info("Market transition monitor started")
 
-                if not self._running:
-                    break
-
-                try:
-                    data = json.loads(message)
-
-                    # DEBUG: Log parsed data structure
+            try:
+                # Process messages until disconnected
+                async for message in ws:
+                    # DEBUG: Log every raw message received
                     logger.info(
-                        "📦 Parsed WebSocket data",
-                        data_type=type(data).__name__,
-                        data_preview=str(data)[:200]
+                        "📨 RAW WebSocket message received",
+                        length=len(message),
+                        content=message[:200] if len(message) <= 200 else message[:200] + "..."
                     )
 
-                    # Handle both single message and array of messages
-                    if isinstance(data, list):
-                        # Array of messages - process each
-                        logger.info(f"Processing array of {len(data)} messages")
-                        for msg in data:
-                            if isinstance(msg, dict):
-                                await self._handle_single_message(msg)
-                    elif isinstance(data, dict):
-                        # Single message
-                        logger.info("Processing single dict message")
-                        await self._handle_single_message(data)
+                    if not self._running:
+                        break
 
-                except json.JSONDecodeError:
-                    logger.warning("Invalid JSON message", message=message[:100])
-                except Exception as e:
-                    logger.error("Message processing error", error=str(e))
+                    try:
+                        data = json.loads(message)
 
-            # Loop exited - log why
-            logger.warning(
-                "WebSocket message loop exited",
-                running=self._running,
-                market_id=self._current_market_id
-            )
+                        # DEBUG: Log parsed data structure
+                        logger.info(
+                            "📦 Parsed WebSocket data",
+                            data_type=type(data).__name__,
+                            data_preview=str(data)[:200]
+                        )
+
+                        # Handle both single message and array of messages
+                        if isinstance(data, list):
+                            # Array of messages - process each
+                            logger.info(f"Processing array of {len(data)} messages")
+                            for msg in data:
+                                if isinstance(msg, dict):
+                                    await self._handle_single_message(msg)
+                        elif isinstance(data, dict):
+                            # Single message
+                            logger.info("Processing single dict message")
+                            await self._handle_single_message(data)
+
+                    except json.JSONDecodeError:
+                        logger.warning("Invalid JSON message", message=message[:100])
+                    except Exception as e:
+                        logger.error("Message processing error", error=str(e))
+
+                # Loop exited - log why
+                logger.warning(
+                    "WebSocket message loop exited",
+                    running=self._running,
+                    market_id=self._current_market_id
+                )
+
+            finally:
+                # Clean up monitor task
+                logger.info("Cancelling market transition monitor")
+                monitor_task.cancel()
+                try:
+                    await monitor_task
+                except asyncio.CancelledError:
+                    logger.info("Market transition monitor cancelled successfully")
 
     async def _handle_single_message(self, data: dict):
         """Process a single WebSocket message."""
