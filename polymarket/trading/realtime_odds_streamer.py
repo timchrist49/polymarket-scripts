@@ -220,6 +220,57 @@ class RealtimeOddsStreamer:
                 payload=str(payload)[:200]
             )
 
+    async def _rest_polling_loop(self):
+        """
+        Poll REST API every 5 seconds for orderbook data.
+
+        Provides fallback when WebSocket messages aren't arriving.
+        Runs continuously alongside WebSocket connection.
+        """
+        logger.info("REST polling loop started (5s interval)")
+
+        while self._running:
+            try:
+                # Wait for market to be set
+                if not self._current_token_ids or not self._current_market_id:
+                    await asyncio.sleep(5)
+                    continue
+
+                # Query orderbook for first token (YES token)
+                # Remove '0x' prefix if present (REST API expects decimal or no prefix)
+                token_id_decimal = self._current_token_ids[0].replace('0x', '')
+
+                # Synchronous call in async context (client.get_orderbook is not async)
+                orderbook = await asyncio.to_thread(
+                    self.client.get_orderbook,
+                    token_id_decimal,
+                    depth=1
+                )
+
+                if orderbook and orderbook.get('bids') and orderbook.get('asks'):
+                    await self._update_odds_from_orderbook(
+                        bids=orderbook['bids'],
+                        asks=orderbook['asks'],
+                        source='REST'
+                    )
+                    logger.debug("📊 Updated odds from REST API")
+                else:
+                    logger.warning(
+                        "REST API returned empty orderbook",
+                        market_id=self._current_market_id
+                    )
+
+            except Exception as e:
+                logger.error(
+                    "REST polling failed",
+                    error=str(e),
+                    market_id=self._current_market_id
+                )
+
+            await asyncio.sleep(5)
+
+        logger.info("REST polling loop stopped")
+
     async def start(self):
         """
         Start streaming (non-blocking).
