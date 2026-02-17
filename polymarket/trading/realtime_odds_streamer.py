@@ -289,19 +289,25 @@ class RealtimeOddsStreamer:
         ) as ws:
             self._ws = ws
 
-            # Send subscription message (CLOB format)
+            # Step 1: Send initial handshake (empty subscription)
+            # This is required per the working implementation
+            handshake_msg = {
+                "assets_ids": [],
+                "type": "market"  # lowercase per working implementation
+            }
+            await ws.send(json.dumps(handshake_msg))
+            logger.info("📤 Sent handshake", message=json.dumps(handshake_msg))
+
+            # Step 2: Send actual subscription with operation field
             # Convert decimal token IDs to hex format (book messages use hex)
             hex_token_ids = [hex(int(tid)) for tid in token_ids]
 
             subscribe_msg = {
-                "type": "MARKET",  # UPPERCASE per official documentation
+                "operation": "subscribe",
                 "assets_ids": hex_token_ids
             }
-
-            # Log the actual subscription being sent
-            logger.info("📤 Sending subscription", message=json.dumps(subscribe_msg, indent=2))
-
             await ws.send(json.dumps(subscribe_msg))
+            logger.info("📤 Sent subscription", message=json.dumps(subscribe_msg, indent=2))
 
             # Enhanced logging for debugging
             logger.info(
