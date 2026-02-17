@@ -288,8 +288,9 @@ class RealtimeOddsStreamer:
 
             # Send subscription message (CLOB format)
             subscribe_msg = {
+                "type": "MARKET",  # UPPERCASE per official documentation
                 "assets_ids": token_ids,
-                "type": "market"  # lowercase per CLOB spec
+                "custom_feature_enabled": True
             }
             await ws.send(json.dumps(subscribe_msg))
 
