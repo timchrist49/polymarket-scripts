@@ -339,10 +339,6 @@ class RealtimeOddsStreamer:
                 token_ids=[t[:16] + "..." for t in token_ids]
             )
 
-            # Track last market check time
-            last_market_check = asyncio.get_event_loop().time()
-            MARKET_CHECK_INTERVAL = 60  # seconds
-
             # Process messages until disconnected
             async for message in ws:
                 # DEBUG: Log every raw message received
@@ -354,17 +350,6 @@ class RealtimeOddsStreamer:
 
                 if not self._running:
                     break
-
-                # Periodic market transition check
-                now = asyncio.get_event_loop().time()
-                if now - last_market_check > MARKET_CHECK_INTERVAL:
-                    last_market_check = now
-
-                    if await self._check_market_transition():
-                        # Market changed! Close connection to trigger resubscription
-                        logger.info("Closing connection to resubscribe to new market")
-                        await ws.close()
-                        break
 
                 try:
                     data = json.loads(message)
