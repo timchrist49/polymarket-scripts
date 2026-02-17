@@ -75,41 +75,47 @@ class RealtimeOddsStreamer:
         Extract odds from book message and update state.
 
         Args:
-            payload: Book message with buys/sells arrays
+            payload: Book message with bids/asks arrays
         """
         try:
-            token_id = payload.get('market')
-            if not token_id:
-                logger.warning("Book message missing token_id", payload=payload)
+            # Book messages contain both market (condition ID) and asset_id (token ID)
+            # We use market ID for validation and asset_id identifies the specific token
+            market_id = payload.get('market')
+            asset_id = payload.get('asset_id')
+
+            if not market_id or not asset_id:
+                logger.warning("Book message missing IDs", market_id=market_id, asset_id=asset_id)
                 return
 
-            # Use the current market ID (not the token ID from the payload)
-            # Book messages contain token IDs, but we query by market ID
+            # Verify we have a current market being tracked
             if not self._current_market_id:
                 logger.warning("No current market ID set, skipping book message")
                 return
 
             # DEBUG: Log raw book message to understand format
-            buys = payload.get('buys', [])
-            sells = payload.get('sells', [])
+            bids = payload.get('bids', [])
+            asks = payload.get('asks', [])
             logger.info(
                 "📥 Raw book message",
-                token_id=token_id[:16] + "...",
-                buys_count=len(buys),
-                sells_count=len(sells),
-                first_buy=buys[0] if buys else None,
-                first_sell=sells[0] if sells else None
+                market_id=market_id[:16] + "...",
+                asset_id=asset_id[:16] + "...",
+                bids_count=len(bids),
+                asks_count=len(asks),
+                first_bid=bids[0] if bids else None,
+                first_ask=asks[0] if asks else None
             )
 
-            # Extract best buy price (YES odds)
-            # Format: {"price": "0.45", "size": "100"}
-            if buys and len(buys) > 0:
-                # Handle both dict format and array format
-                if isinstance(buys[0], dict):
-                    yes_odds = float(buys[0]['price'])
+            # Extract best bid price (YES odds) from bids array
+            # Format: [{"price": "0.45", "size": "100"}, ...]
+            # Bids are buy orders - highest bid is the YES odds
+            if bids and len(bids) > 0:
+                if isinstance(bids[0], dict):
+                    yes_odds = float(bids[0]['price'])
                 else:
-                    yes_odds = float(buys[0][0])
+                    # Fallback for array format: [price, size]
+                    yes_odds = float(bids[0][0])
             else:
+                # Default if no bids
                 yes_odds = 0.50
 
             no_odds = 1.0 - yes_odds
@@ -408,9 +414,10 @@ class RealtimeOddsStreamer:
         logger.info("🔍 WebSocket message received", event_type=event_type)
 
         if event_type == 'book':
-            token_id = data.get('market')  # hex string
+            # CRITICAL FIX: Use 'asset_id' (token ID), not 'market' (condition ID)
+            token_id = data.get('asset_id')  # hex string
 
-            # CRITICAL FIX: Only process messages for subscribed tokens
+            # Only process messages for subscribed tokens
             if token_id and self._current_token_ids:
                 if token_id not in self._current_token_ids:
                     logger.debug(
