@@ -266,9 +266,11 @@ class RealtimeOddsStreamer:
             logger.error("No token IDs found for market", market_id=market.id)
             return
 
-        self._current_market_id = market.id
-        self._current_market_slug = market.slug
-        self._current_token_ids = token_ids
+        # Store market state atomically
+        async with self._lock:
+            self._current_market_id = market.id
+            self._current_market_slug = market.slug
+            self._current_token_ids = token_ids
 
         logger.info(
             "Connecting to CLOB WebSocket",
