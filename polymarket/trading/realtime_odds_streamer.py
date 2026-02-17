@@ -290,7 +290,15 @@ class RealtimeOddsStreamer:
                 "type": "market"  # lowercase per CLOB spec
             }
             await ws.send(json.dumps(subscribe_msg))
-            logger.info("Subscribed to market", market_id=market.id, token_ids=token_ids)
+
+            # Enhanced logging for debugging
+            logger.info(
+                "🔔 Subscription sent",
+                market_id=market.id,
+                market_slug=market.slug,
+                token_count=len(token_ids),
+                token_ids=[t[:16] + "..." for t in token_ids]
+            )
 
             # Track last market check time
             last_market_check = asyncio.get_event_loop().time()
