@@ -71,6 +71,63 @@ class RealtimeOddsStreamer:
 
         return snapshot
 
+    async def _update_odds_from_orderbook(
+        self,
+        bids: list,
+        asks: list,
+        source: str
+    ) -> None:
+        """
+        Update odds from orderbook data (WebSocket or REST).
+
+        Args:
+            bids: List of bids as [{"price": str, "size": str}] or [[price, size]]
+            asks: List of asks (not currently used)
+            source: 'WebSocket' or 'REST' for logging
+        """
+        if not self._current_market_id:
+            logger.warning(
+                "No current market ID set, skipping odds update",
+                source=source
+            )
+            return
+
+        # Extract best bid price (YES odds)
+        if bids and len(bids) > 0:
+            if isinstance(bids[0], dict):
+                yes_odds = float(bids[0]['price'])
+            else:
+                # Array format: [price, size]
+                yes_odds = float(bids[0][0])
+        else:
+            # Default if no bids
+            yes_odds = 0.50
+
+        no_odds = 1.0 - yes_odds
+
+        # Create snapshot
+        snapshot = WebSocketOddsSnapshot(
+            market_id=self._current_market_id,
+            yes_odds=yes_odds,
+            no_odds=no_odds,
+            timestamp=datetime.now(timezone.utc),
+            best_bid=yes_odds,
+            best_ask=no_odds
+        )
+
+        # Store atomically
+        async with self._lock:
+            self._current_odds[self._current_market_id] = snapshot
+
+        logger.debug(
+            "📊 Odds updated",
+            source=source,
+            market_id=self._current_market_id,
+            market_slug=self._current_market_slug,
+            yes_odds=f"{yes_odds:.2f}",
+            no_odds=f"{no_odds:.2f}"
+        )
+
     async def _process_book_message(self, payload: dict):
         """
         Extract odds from book message and update state.
