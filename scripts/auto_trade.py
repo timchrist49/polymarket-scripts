@@ -584,7 +584,7 @@ class AutoTrader:
     async def run_cycle(self) -> None:
         """Execute one trading cycle."""
         self.cycle_count += 1
-        cycle_start_time = datetime.now()
+        cycle_start_time = datetime.now(timezone.utc)
         logger.info(
             "Starting trading cycle",
             cycle=self.cycle_count,
@@ -966,8 +966,8 @@ class AutoTrader:
                 # Use real-time odds (zero latency!)
                 yes_odds = odds_snapshot.yes_odds
                 no_odds = odds_snapshot.no_odds
-                from datetime import datetime
-                age_ms = (datetime.now() - odds_snapshot.timestamp).total_seconds() * 1000
+                from datetime import datetime, timezone
+                age_ms = (datetime.now(timezone.utc) - odds_snapshot.timestamp).total_seconds() * 1000
                 logger.debug(
                     "Using real-time odds from WebSocket",
                     market_id=market.id,
@@ -1887,7 +1887,7 @@ class AutoTrader:
                         trade_id=trade_id,
                         analysis_price=analysis_price,
                         execution_price=None,
-                        price_staleness_seconds=int((datetime.now() - cycle_start_time).total_seconds()),
+                        price_staleness_seconds=int((datetime.now(timezone.utc) - cycle_start_time).total_seconds()),
                         price_movement_favorable=None,
                         skipped_unfavorable_move=True
                     )
@@ -1900,7 +1900,7 @@ class AutoTrader:
                 execution_price = 1 - (fresh_market.best_bid if fresh_market.best_bid else 0.50)
 
             # Calculate price staleness
-            execution_time = datetime.now()
+            execution_time = datetime.now(timezone.utc)
             price_staleness_seconds = int((execution_time - cycle_start_time).total_seconds())
 
             # Run adaptive safety check
@@ -2092,7 +2092,7 @@ class AutoTrader:
                 "side": decision.action,
                 "amount": float(amount),
                 "entry_odds": 0.50,  # Approximate entry
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
 
             # Update execution metrics in performance tracker
