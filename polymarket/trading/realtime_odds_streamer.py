@@ -290,7 +290,7 @@ class RealtimeOddsStreamer:
         """
         Stop streaming gracefully.
 
-        Closes WebSocket connection and cancels background task.
+        Closes WebSocket connection and cancels background tasks.
         """
         self._running = False
 
@@ -304,6 +304,13 @@ class RealtimeOddsStreamer:
             self._stream_task.cancel()
             try:
                 await self._stream_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._rest_task:
+            self._rest_task.cancel()
+            try:
+                await self._rest_task
             except asyncio.CancelledError:
                 pass
 
