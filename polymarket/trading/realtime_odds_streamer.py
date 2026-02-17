@@ -325,7 +325,7 @@ class RealtimeOddsStreamer:
             # Process messages until disconnected
             async for message in ws:
                 # DEBUG: Log every raw message received
-                logger.debug(f"📨 RAW WebSocket message received (length: {len(message)})")
+                logger.info(f"📨 RAW WebSocket message received (length: {len(message)})")
 
                 if not self._running:
                     break
