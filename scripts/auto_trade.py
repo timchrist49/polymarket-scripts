@@ -239,6 +239,12 @@ class AutoTrader:
         # its order. This lock prevents the AI call from even starting for a duplicate.
         self._markets_with_active_cycle_analysis: set[str] = set()
 
+        # Timed strategy state: AI decisions stored at T=10min for entry in last 5 min.
+        # _timed_decisions holds the full execution context keyed by market_id.
+        # _analysis_triggered tracks markets where the 10min analysis has been fired.
+        self._timed_decisions: dict[str, dict] = {}
+        self._analysis_triggered: set[str] = set()
+
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
 
@@ -288,14 +294,14 @@ class AutoTrader:
             )
             return
 
-        logger.info(
-            "Opportunity detected, triggering cycle",
+        # NEW: Timed strategy — cycles are triggered by _market_timing_watcher at T=10min.
+        # OddsMonitor is kept running for WebSocket connectivity but no longer fires cycles.
+        logger.debug(
+            "OddsMonitor opportunity noted (timed strategy: analysis triggered at T=10min)",
             market_slug=market_slug,
             direction=direction,
             odds=odds
         )
-        # Create async task to run cycle (non-blocking)
-        asyncio.create_task(self.run_cycle())
 
     async def initialize(self) -> None:
         """Initialize async resources before trading cycles."""
@@ -358,6 +364,24 @@ class AutoTrader:
         logger.info(
             "Stop-loss watcher started",
             interval_seconds=self.STOP_LOSS_WATCHER_INTERVAL_SECONDS
+        )
+
+        # Timed strategy: timing watcher fires AI analysis at T=10min of each 15-min market
+        timing_watcher_task = asyncio.create_task(self._market_timing_watcher())
+        self.background_tasks.append(timing_watcher_task)
+        logger.info(
+            "Market timing watcher started (AI analysis triggered at T=10min)",
+            analysis_trigger_at="600s elapsed",
+            entry_window="last 5 minutes (<=300s remaining)"
+        )
+
+        # Timed strategy: entry monitor executes stored decisions when odds reach 70%
+        timed_entry_task = asyncio.create_task(self._timed_entry_monitor())
+        self.background_tasks.append(timed_entry_task)
+        logger.info(
+            "Timed entry monitor started",
+            entry_odds_threshold="70%",
+            check_interval_seconds=10
         )
 
     async def _trigger_reflection(self, trigger_type: str) -> None:
@@ -1068,10 +1092,13 @@ class AutoTrader:
                 )
 
             # Early filtering: skip markets where neither side > 60%
+            # EXCEPTION: timed strategy always runs analysis at T=10min regardless of odds
+            # (AI will return HOLD if direction is unclear; entry requires 70% anyway)
+            is_timed_analysis = market.id in self._analysis_triggered
             yes_qualifies = (yes_odds > 0.60)
             no_qualifies = (no_odds > 0.60)
 
-            if not (yes_qualifies or no_qualifies):
+            if not is_timed_analysis and not (yes_qualifies or no_qualifies):
                 logger.info(
                     "Skipping market - neither side > 60% odds (real-time check)",
                     market_id=market.id,
@@ -1744,47 +1771,65 @@ class AutoTrader:
                     yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
                     no_odds_fresh = 1.0 - yes_odds_fresh
 
-                # Check if AI's chosen side still qualifies (60% lower bound, 80% upper bound)
-                if decision.action == "YES" and yes_odds_fresh <= 0.60:
+                # Timed strategy entry gates: 70% minimum, 80% maximum (near settlement).
+                # Ceiling check: always reject - above 80% means near settlement, minimal upside.
+                if decision.action == "YES" and yes_odds_fresh >= 0.80:
                     logger.info(
-                        "Skipping trade - YES odds below threshold at execution time",
-                        market_id=market.id,
-                        odds=f"{yes_odds_fresh:.2%}",
-                        threshold="60%"
-                    )
-                    return
-                elif decision.action == "YES" and yes_odds_fresh >= 0.80:
-                    logger.info(
-                        "Skipping trade - YES odds above max ceiling at execution time (near settlement)",
+                        "Skipping trade - YES odds above max ceiling (near settlement)",
                         market_id=market.id,
                         odds=f"{yes_odds_fresh:.2%}",
                         ceiling="80%"
                     )
                     return
-                elif decision.action == "NO" and no_odds_fresh <= 0.60:
-                    logger.info(
-                        "Skipping trade - NO odds below threshold at execution time",
-                        market_id=market.id,
-                        odds=f"{no_odds_fresh:.2%}",
-                        threshold="60%"
-                    )
-                    return
                 elif decision.action == "NO" and no_odds_fresh >= 0.80:
                     logger.info(
-                        "Skipping trade - NO odds above max ceiling at execution time (near settlement)",
+                        "Skipping trade - NO odds above max ceiling (near settlement)",
                         market_id=market.id,
                         odds=f"{no_odds_fresh:.2%}",
                         ceiling="80%"
                     )
                     return
 
+                # Floor check: entry requires 70%+ odds (timed strategy).
+                # If odds not yet there, store context and let _timed_entry_monitor execute later.
+                entry_odds_met = (
+                    (decision.action == "YES" and yes_odds_fresh >= 0.70) or
+                    (decision.action == "NO" and no_odds_fresh >= 0.70)
+                )
+                if not entry_odds_met and not self.test_mode.enabled:
+                    current_side_odds = yes_odds_fresh if decision.action == "YES" else no_odds_fresh
+                    logger.info(
+                        "Decision stored - odds below 70% entry threshold, monitoring for entry",
+                        market_id=market.id,
+                        action=decision.action,
+                        current_odds=f"{current_side_odds:.2%}",
+                        entry_threshold="70%",
+                        time_remaining=time_remaining
+                    )
+                    # Store full execution context for _timed_entry_monitor
+                    self._timed_decisions[market.id] = {
+                        'action': decision.action,
+                        'market': market,
+                        'decision': decision,
+                        'amount': validation.adjusted_position,
+                        'token_id': token_id,
+                        'token_name': token_name,
+                        'trade_id': trade_id,
+                        'btc_data': btc_data,
+                        'btc_current': float(btc_data.price),
+                        'btc_price_to_beat': float(price_to_beat) if price_to_beat else None,
+                        'arbitrage_opportunity': arbitrage_opportunity,
+                        'conflict_analysis': conflict_analysis,
+                        'signal_lag_detected': signal_lag_detected,
+                        'signal_lag_reason': signal_lag_reason,
+                        'stored_at': datetime.now(timezone.utc),
+                    }
+                    return  # _timed_entry_monitor will execute when odds reach 70%
+
                 # Store odds for paper trade logging
                 odds_yes = yes_odds_fresh
                 odds_no = no_odds_fresh
-                odds_qualified = (
-                    (decision.action == "YES" and yes_odds_fresh > 0.60) or
-                    (decision.action == "NO" and no_odds_fresh > 0.60)
-                )
+                odds_qualified = entry_odds_met
             else:
                 # If we can't fetch fresh odds, use cached
                 if cached_odds:
@@ -2518,6 +2563,277 @@ class AutoTrader:
                 logger.error("Stop-loss watcher error", error=str(e))
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Timed strategy: 10-min analysis trigger + entry monitor
+    # ─────────────────────────────────────────────────────────────────────────
+
+    TIMING_WATCHER_INTERVAL_SECONDS = 10
+    ANALYSIS_TRIGGER_ELAPSED_SECONDS = 600   # T=10min into the 15-min market
+    ANALYSIS_TRIGGER_WINDOW_SECONDS = 60     # 60s window to fire (600–660s elapsed)
+    TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter
+    TIMED_ENTRY_ODDS_MAX = 0.80              # Maximum CLOB odds (above = near settlement)
+    TIMED_ENTRY_WINDOW_SECONDS = 300         # Only enter in last 5 minutes (<=300s remaining)
+
+    async def _market_timing_watcher(self) -> None:
+        """Background task: trigger AI analysis at the 10-minute mark of each 15-min market.
+
+        This replaces the OddsMonitor as the primary cycle trigger. At T=10min
+        (600s elapsed, 300s remaining), fires run_cycle() once per market for
+        full AI analysis + data collection. The _timed_entry_monitor then watches
+        for 70%+ odds in the remaining 5 minutes to execute the order.
+
+        State managed here:
+          _analysis_triggered — set when the cycle is fired (prevents re-firing)
+          _timed_decisions    — populated by _process_market when odds < 70% at analysis time
+        """
+        logger.info(
+            "Market timing watcher started",
+            analysis_trigger_at=f"T+{self.ANALYSIS_TRIGGER_ELAPSED_SECONDS}s (10-min mark)",
+            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (5 min)",
+            entry_odds_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}"
+        )
+
+        while self.running:
+            try:
+                await asyncio.sleep(self.TIMING_WATCHER_INTERVAL_SECONDS)
+
+                # Get current active market from streamer
+                market_id = self.realtime_streamer._current_market_id
+                market_slug = self.realtime_streamer._current_market_slug
+
+                if not market_id or not market_slug:
+                    continue
+
+                # Parse market start time from slug
+                start_time = self.market_tracker.parse_market_start(market_slug)
+                if not start_time:
+                    continue
+
+                now = datetime.now(timezone.utc)
+                elapsed = (now - start_time).total_seconds()
+                time_remaining = max(0, 900 - elapsed)
+
+                # Clean up expired market state
+                if time_remaining == 0:
+                    self._analysis_triggered.discard(market_id)
+                    self._timed_decisions.pop(market_id, None)
+                    continue
+
+                # Skip if already traded for this market
+                if market_id in self._traded_markets:
+                    continue
+
+                # Skip if analysis already triggered for this market in this epoch
+                if market_id in self._analysis_triggered:
+                    continue
+
+                # Trigger analysis when 600–660s have elapsed (T=10min window)
+                trigger_end = self.ANALYSIS_TRIGGER_ELAPSED_SECONDS + self.ANALYSIS_TRIGGER_WINDOW_SECONDS
+                if self.ANALYSIS_TRIGGER_ELAPSED_SECONDS <= elapsed < trigger_end:
+                    logger.info(
+                        "T=10min mark reached — triggering AI analysis",
+                        market_id=market_id,
+                        market_slug=market_slug,
+                        elapsed_seconds=int(elapsed),
+                        time_remaining_seconds=int(time_remaining)
+                    )
+                    self._analysis_triggered.add(market_id)
+                    asyncio.create_task(self.run_cycle())
+
+            except Exception as e:
+                logger.error("Market timing watcher error", error=str(e))
+
+    async def _timed_entry_monitor(self) -> None:
+        """Background task: execute stored decisions when 70%+ odds appear in last 5 minutes.
+
+        After _market_timing_watcher fires run_cycle() at T=10min, _process_market
+        may store a decision in _timed_decisions if the odds aren't yet at 70%.
+        This monitor checks every 10s. When:
+          - Time remaining <= 5 min (300s)
+          - Stored decision exists for the active market
+          - CLOB odds for the decided direction >= 70% AND < 80%
+        it fires _execute_timed_entry() to place the order.
+        """
+        logger.info(
+            "Timed entry monitor started",
+            entry_odds_threshold=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}",
+            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s",
+            check_interval_seconds=self.TIMING_WATCHER_INTERVAL_SECONDS
+        )
+
+        while self.running:
+            try:
+                await asyncio.sleep(self.TIMING_WATCHER_INTERVAL_SECONDS)
+
+                if not self._timed_decisions:
+                    continue
+
+                for market_id in list(self._timed_decisions.keys()):
+                    stored = self._timed_decisions.get(market_id)
+                    if not stored:
+                        continue
+
+                    # Skip if market was already traded or has a pending order
+                    if market_id in self._traded_markets or market_id in self._markets_with_pending_orders:
+                        logger.info(
+                            "Timed entry: market already traded/pending — removing stored decision",
+                            market_id=market_id
+                        )
+                        self._timed_decisions.pop(market_id, None)
+                        continue
+
+                    # Check time remaining
+                    market = stored['market']
+                    start_time = self.market_tracker.parse_market_start(market.slug or "")
+                    if not start_time:
+                        continue
+
+                    time_remaining = self.market_tracker.calculate_time_remaining(start_time)
+
+                    if time_remaining == 0:
+                        logger.info(
+                            "Timed entry: market expired — removing stored decision",
+                            market_id=market_id
+                        )
+                        self._timed_decisions.pop(market_id, None)
+                        self._analysis_triggered.discard(market_id)
+                        continue
+
+                    if time_remaining > self.TIMED_ENTRY_WINDOW_SECONDS:
+                        logger.debug(
+                            "Timed entry: not yet in last-5-min window",
+                            market_id=market_id,
+                            time_remaining=time_remaining
+                        )
+                        continue
+
+                    # Check current CLOB odds
+                    odds_snapshot = self.realtime_streamer.get_current_odds(market_id)
+                    if not odds_snapshot:
+                        continue
+
+                    action = stored['action']
+                    current_odds = odds_snapshot.yes_odds if action == "YES" else odds_snapshot.no_odds
+
+                    logger.debug(
+                        "Timed entry check",
+                        market_id=market_id,
+                        action=action,
+                        current_odds=f"{current_odds:.2%}",
+                        entry_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}",
+                        time_remaining=time_remaining
+                    )
+
+                    if current_odds >= self.TIMED_ENTRY_ODDS_MAX:
+                        logger.info(
+                            "Timed entry: odds too high (>=80%), abandoning decision",
+                            market_id=market_id,
+                            action=action,
+                            current_odds=f"{current_odds:.2%}"
+                        )
+                        self._timed_decisions.pop(market_id, None)
+                        continue
+
+                    if self.TIMED_ENTRY_ODDS_MIN <= current_odds < self.TIMED_ENTRY_ODDS_MAX:
+                        logger.info(
+                            "Timed entry condition met — executing stored decision",
+                            market_id=market_id,
+                            action=action,
+                            current_odds=f"{current_odds:.2%}",
+                            time_remaining=time_remaining
+                        )
+                        # Remove from dict BEFORE creating task to prevent double-execution
+                        entry_context = self._timed_decisions.pop(market_id)
+                        asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds))
+
+            except Exception as e:
+                logger.error("Timed entry monitor error", error=str(e))
+
+    async def _execute_timed_entry(self, market_id: str, stored: dict, trigger_odds: float) -> None:
+        """Execute a stored timed decision when entry conditions are met.
+
+        Called by _timed_entry_monitor when 70%+ odds are detected. Performs a
+        final JIT check at execution time before calling _execute_trade().
+        """
+        try:
+            if market_id in self._traded_markets or market_id in self._markets_with_pending_orders:
+                logger.info(
+                    "Timed entry aborted — already traded/pending between monitor check and execution",
+                    market_id=market_id
+                )
+                return
+
+            market = stored['market']
+            decision = stored['decision']
+
+            # Get fresh CLOB odds for execution price
+            _rt_odds = self.realtime_streamer.get_current_odds(market_id)
+            if decision.action == "YES":
+                market_price = _rt_odds.yes_odds if _rt_odds else trigger_odds
+                odds_yes = market_price
+                odds_no = 1.0 - market_price
+            else:
+                market_price = _rt_odds.no_odds if _rt_odds else trigger_odds
+                odds_no = market_price
+                odds_yes = 1.0 - market_price
+
+            # Final JIT guard: re-validate bounds at actual execution time
+            if market_price >= self.TIMED_ENTRY_ODDS_MAX:
+                logger.info(
+                    "Timed entry blocked — odds rose above 80% ceiling at execution",
+                    market_id=market_id,
+                    action=decision.action,
+                    odds=f"{market_price:.2%}"
+                )
+                return
+            if market_price < self.TIMED_ENTRY_ODDS_MIN:
+                logger.info(
+                    "Timed entry blocked — odds fell below 70% between monitor check and execution",
+                    market_id=market_id,
+                    action=decision.action,
+                    odds=f"{market_price:.2%}"
+                )
+                return
+
+            logger.info(
+                "Executing timed entry",
+                market_id=market_id,
+                action=decision.action,
+                odds=f"{market_price:.2%}",
+                amount=str(stored['amount']),
+                stored_at=stored['stored_at'].isoformat()
+            )
+
+            await self._execute_trade(
+                market=market,
+                decision=decision,
+                amount=stored['amount'],
+                token_id=stored['token_id'],
+                token_name=stored['token_name'],
+                market_price=market_price,
+                trade_id=stored['trade_id'],
+                cycle_start_time=stored['stored_at'],
+                btc_data=stored['btc_data'],
+                btc_current=stored['btc_current'],
+                btc_price_to_beat=stored['btc_price_to_beat'],
+                arbitrage_opportunity=stored['arbitrage_opportunity'],
+                conflict_analysis=stored['conflict_analysis'],
+                signal_lag_detected=stored['signal_lag_detected'],
+                signal_lag_reason=stored['signal_lag_reason'],
+                odds_yes=odds_yes,
+                odds_no=odds_no,
+                odds_qualified=True
+            )
+
+            # Track for reflection triggers
+            self.total_trades += 1
+            if self.total_trades % 10 == 0:
+                asyncio.create_task(self._trigger_reflection("10_trades"))
+            await self._check_consecutive_losses()
+
+        except Exception as e:
+            logger.error("Timed entry execution failed", market_id=market_id, error=str(e))
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Background watcher: price movement trigger (Enhancement 4)
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -2563,33 +2879,16 @@ class AutoTrader:
                     movement = abs(float(current_price - price_to_beat))
 
                     if movement >= self.PRICE_WATCHER_TRIGGER_USD:
-                        # Skip markets already in flight or already traded
-                        if market.id in self._markets_with_pending_orders:
-                            continue
-                        if market.id in self._traded_markets:
-                            continue
-                        # Skip if the watcher already has a live analysis task for this market.
-                        # This is the primary duplicate-prevention guard: _process_market takes
-                        # 30-60s (AI call), so without this the 10s loop would queue 3-6 tasks
-                        # before _markets_with_pending_orders is ever set.
-                        if market.id in self._markets_with_active_watcher_analysis:
-                            logger.debug(
-                                "Price watcher skipping — analysis already in progress",
-                                market_id=market.id
-                            )
-                            continue
-
-                        direction = "UP" if current_price > price_to_beat else "DOWN"
-                        logger.info(
-                            "Price movement trigger fired",
+                        # NEW: Timed strategy — analysis is triggered by _market_timing_watcher
+                        # at T=10min. Price watcher is disabled to prevent early entries.
+                        logger.debug(
+                            "Price watcher movement detected (timed strategy: skipping early trigger)",
                             market_id=market.id,
                             movement=f"${movement:.2f}",
                             threshold=f"${self.PRICE_WATCHER_TRIGGER_USD}",
-                            direction=direction
+                            note="_market_timing_watcher handles analysis at T=10min"
                         )
-                        # Lock BEFORE creating the task so the next 10s tick sees it immediately
-                        self._markets_with_active_watcher_analysis.add(market.id)
-                        asyncio.create_task(self._trigger_market_analysis(market, btc_price_data))
+                        continue
 
             except Exception as e:
                 logger.error("Price watcher error", error=str(e))
