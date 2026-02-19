@@ -50,7 +50,8 @@ class SmartOrderExecutor:
         current_best_ask: float,
         current_best_bid: float,
         tick_size: float = 0.001,
-        timeout_override: int | None = None
+        timeout_override: int | None = None,
+        max_fallback_price: float | None = None
     ) -> dict:
         """
         Execute order using limit order with urgency-based strategy.
@@ -65,6 +66,7 @@ class SmartOrderExecutor:
             current_best_bid: Current best bid price
             tick_size: Price tick size (default 0.001)
             timeout_override: Override default timeout (for testing)
+            max_fallback_price: Max acceptable fill price for market order fallback (slippage cap)
 
         Returns:
             Execution result with status, order_id, filled_via
@@ -142,7 +144,7 @@ class SmartOrderExecutor:
             try:
                 final_status = await client.check_order_status(order_id)
                 if final_status.get("status") in ["MATCHED", "PARTIALLY_MATCHED"]:
-                    fill_amount = final_status.get("fillAmount", "0")
+                    fill_amount = final_status.get("size_matched", final_status.get("fillAmount", "0"))
                     if float(fill_amount) > 0:
                         logger.info("Order filled just before cancel", order_id=order_id)
                         return {
@@ -164,10 +166,16 @@ class SmartOrderExecutor:
                 # Use create_order() with market order type
                 from polymarket.models import OrderRequest
 
+                # Cap fill price to max_fallback_price to prevent slippage
+                # (e.g., limit was placed at $0.58 but market moved to $0.98 during timeout)
+                fallback_price = max_fallback_price if max_fallback_price is not None else (
+                    current_best_ask if side == "BUY" else current_best_bid
+                )
+
                 market_request = OrderRequest(
                     token_id=token_id,
                     side=side,
-                    price=current_best_ask if side == "BUY" else current_best_bid,
+                    price=min(fallback_price, 0.999),
                     size=amount,
                     order_type="market"
                 )
@@ -277,7 +285,7 @@ class SmartOrderExecutor:
 
                 # Check if filled
                 if status.get("status") in ["MATCHED", "PARTIALLY_MATCHED"]:
-                    fill_amount = status.get("fillAmount", "0")
+                    fill_amount = status.get("size_matched", status.get("fillAmount", "0"))
                     if float(fill_amount) > 0:
                         return {"filled": True, "fill_amount": fill_amount}
 

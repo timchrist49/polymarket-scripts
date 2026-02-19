@@ -37,7 +37,7 @@ class SignalAggregator:
     SOCIAL_WEIGHT = 0.20  # Social sentiment (fear/greed, trending, votes)
     FUNDING_WEIGHT = 0.20  # Funding rates (perpetual futures sentiment)
     DOMINANCE_WEIGHT = 0.15  # BTC dominance (capital flow)
-    CONTRARIAN_WEIGHT = 2.0  # High weight for extreme contrarian signals
+    CONTRARIAN_WEIGHT = 1.5  # was 2.0 — still highest single signal but overridable by consensus
     # Note: Order book is already part of MARKET_WEIGHT (5% internally)
 
     # Agreement boost/penalty limits

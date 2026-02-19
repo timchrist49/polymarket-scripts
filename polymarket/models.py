@@ -541,9 +541,16 @@ class WebSocketOddsSnapshot:
     best_ask: float
 
     def __post_init__(self):
-        """Validate odds sum to 1.0 (within tolerance)."""
+        """
+        Validate odds are reasonable.
+
+        Note: yes_odds (ASK) + no_odds (1-BID) can sum to ~2.0 for markets with
+        large bid/ask spreads. This is expected for entry prices (what you PAY
+        to enter a position), not implied probabilities.
+        """
         total = self.yes_odds + self.no_odds
-        if abs(total - 1.0) > 0.01:
+        if total < 0.99 or total > 2.01:
             raise ValueError(
-                f"YES and NO odds must sum to 1.0, got {total:.3f}"
+                f"YES and NO odds sum is unreasonable: {total:.3f} "
+                f"(expected between 0.99 and 2.01 for valid bid/ask spread)"
             )

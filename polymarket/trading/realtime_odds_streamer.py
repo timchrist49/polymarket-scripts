@@ -3,13 +3,14 @@
 import asyncio
 import json
 import structlog
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 import websockets
 from websockets.asyncio.client import ClientConnection
 
 from polymarket.client import PolymarketClient
 from polymarket.models import WebSocketOddsSnapshot
+from polymarket.trading.market_validator import MarketValidator
 
 logger = structlog.get_logger()
 
@@ -36,6 +37,7 @@ class RealtimeOddsStreamer:
             client: Polymarket client for market discovery
         """
         self.client = client
+        self._validator = MarketValidator()
         self._current_odds: dict[str, WebSocketOddsSnapshot] = {}
         self._current_market_id: Optional[str] = None
         self._current_market_slug: Optional[str] = None
@@ -93,26 +95,26 @@ class RealtimeOddsStreamer:
             )
             return
 
-        # Extract best bid price (YES odds) with validation
+        # Extract best bid price (for NO odds calculation) with validation
         try:
             if bids and len(bids) > 0:
                 if isinstance(bids[0], dict):
-                    yes_odds = float(bids[0]['price'])
+                    best_bid = float(bids[0]['price'])
                 else:
                     # Array format: [price, size]
-                    yes_odds = float(bids[0][0])
+                    best_bid = float(bids[0][0])
             else:
                 # Default if no bids
-                yes_odds = 0.50
+                best_bid = 0.50
 
             # Validate range
-            if not (0.0 <= yes_odds <= 1.0):
+            if not (0.0 <= best_bid <= 1.0):
                 logger.warning(
-                    "Invalid yes_odds value, using default",
-                    value=yes_odds,
+                    "Invalid best_bid value, using default",
+                    value=best_bid,
                     source=source
                 )
-                yes_odds = 0.50
+                best_bid = 0.50
 
         except (ValueError, KeyError, IndexError, TypeError) as e:
             logger.warning(
@@ -120,9 +122,9 @@ class RealtimeOddsStreamer:
                 error=str(e),
                 source=source
             )
-            yes_odds = 0.50
+            best_bid = 0.50
 
-        # Extract best ask price with validation
+        # Extract best ask price (for YES odds calculation) with validation
         try:
             if asks and len(asks) > 0:
                 if isinstance(asks[0], dict):
@@ -132,7 +134,7 @@ class RealtimeOddsStreamer:
                     best_ask = float(asks[0][0])
             else:
                 # Default if no asks: use calculated value
-                best_ask = 1.0 - yes_odds
+                best_ask = 1.0 - best_bid
 
             # Validate range
             if not (0.0 <= best_ask <= 1.0):
@@ -141,7 +143,7 @@ class RealtimeOddsStreamer:
                     value=best_ask,
                     source=source
                 )
-                best_ask = 1.0 - yes_odds
+                best_ask = 1.0 - best_bid
 
         except (ValueError, KeyError, IndexError, TypeError) as e:
             logger.warning(
@@ -149,9 +151,14 @@ class RealtimeOddsStreamer:
                 error=str(e),
                 source=source
             )
-            best_ask = 1.0 - yes_odds
+            best_ask = 1.0 - best_bid
 
-        no_odds = 1.0 - yes_odds
+        # Calculate market odds using midpoint for opportunity detection
+        # Midpoint represents fair market value between bid and ask
+        # This prevents both YES and NO from showing high "odds" due to wide spread
+        midpoint = (best_bid + best_ask) / 2.0
+        yes_odds = midpoint
+        no_odds = 1.0 - midpoint
 
         # Create snapshot
         snapshot = WebSocketOddsSnapshot(
@@ -159,7 +166,7 @@ class RealtimeOddsStreamer:
             yes_odds=yes_odds,
             no_odds=no_odds,
             timestamp=datetime.now(timezone.utc),
-            best_bid=yes_odds,
+            best_bid=best_bid,
             best_ask=best_ask
         )
 
@@ -167,13 +174,55 @@ class RealtimeOddsStreamer:
         async with self._lock:
             self._current_odds[self._current_market_id] = snapshot
 
-        logger.debug(
+        logger.info(
             "📊 Odds updated",
             source=source,
             market_id=self._current_market_id,
             market_slug=self._current_market_slug,
             yes_odds=f"{yes_odds:.2f}",
             no_odds=f"{no_odds:.2f}",
+            best_bid=f"{best_bid:.2f}",
+            best_ask=f"{best_ask:.2f}"
+        )
+
+    async def _update_odds_from_gamma(
+        self,
+        yes_odds: float,
+        no_odds: float,
+        best_bid: float,
+        best_ask: float
+    ):
+        """
+        Update odds from Gamma API market data.
+
+        Args:
+            yes_odds: Calculated YES odds (midpoint)
+            no_odds: Calculated NO odds (1 - midpoint)
+            best_bid: Best bid from Gamma API
+            best_ask: Best ask from Gamma API
+        """
+        # Create snapshot
+        snapshot = WebSocketOddsSnapshot(
+            market_id=self._current_market_id,
+            yes_odds=yes_odds,
+            no_odds=no_odds,
+            timestamp=datetime.now(timezone.utc),
+            best_bid=best_bid,
+            best_ask=best_ask
+        )
+
+        # Store atomically
+        async with self._lock:
+            self._current_odds[self._current_market_id] = snapshot
+
+        logger.info(
+            "📊 Odds updated",
+            source="Gamma API",
+            market_id=self._current_market_id,
+            market_slug=self._current_market_slug,
+            yes_odds=f"{yes_odds:.2f}",
+            no_odds=f"{no_odds:.2f}",
+            best_bid=f"{best_bid:.2f}",
             best_ask=f"{best_ask:.2f}"
         )
 
@@ -223,60 +272,88 @@ class RealtimeOddsStreamer:
 
     async def _rest_polling_loop(self):
         """
-        Poll REST API every 5 seconds for orderbook data.
+        Poll CLOB last-trade-price every 5 seconds for real-time odds.
 
-        Provides fallback when WebSocket messages aren't arriving.
-        Runs continuously alongside WebSocket connection.
+        Uses CLOB last-trade-price endpoint which is accurate for CTF/AMM markets.
+        Gamma API is severely lagged (30+ minutes behind) for BTC 15-min markets
+        because it aggregates from on-chain data rather than CLOB trades.
+
+        Token convention: token_ids[0] = YES, token_ids[1] = NO
         """
-        logger.info("REST polling loop started (5s interval)")
+        logger.info("CLOB last-trade-price polling loop started (5s interval)")
 
         while self._running:
             try:
-                # Wait for market to be set
-                if not self._current_token_ids_decimal or not self._current_market_id:
+                # Wait for market and token IDs to be set
+                if (not self._current_market_id or
+                        not self._current_token_ids_decimal or
+                        len(self._current_token_ids_decimal) < 2):
                     await asyncio.sleep(5)
                     continue
 
-                # Query orderbook for first token (YES token)
-                # Use decimal format directly (REST API expects decimal)
-                token_id_decimal = self._current_token_ids_decimal[0]
+                token_ids = self._current_token_ids_decimal
+                yes_token_id = token_ids[0]  # Polymarket convention: [YES, NO]
+                no_token_id = token_ids[1]
+
+                # Fetch last trade prices from CLOB (real-time, accurate)
+                clob = self.client._get_clob_client()
+
+                yes_data = await asyncio.to_thread(
+                    clob.get_last_trade_price, yes_token_id
+                )
+                no_data = await asyncio.to_thread(
+                    clob.get_last_trade_price, no_token_id
+                )
+
+                yes_price = float(yes_data.get("price", 0.5))
+                no_price = float(no_data.get("price", 0.5))
+
+                # Validate ranges
+                if not (0.001 <= yes_price <= 0.999):
+                    yes_price = 0.5
+                if not (0.001 <= no_price <= 0.999):
+                    no_price = 0.5
+
+                # Normalize if sum < 0.99: last-trade-prices are independent and
+                # may not sum exactly to 1.0 (spread between trades is normal).
+                # WebSocketOddsSnapshot requires sum >= 0.99.
+                total = yes_price + no_price
+                if total < 0.99:
+                    yes_price = yes_price / total
+                    no_price = no_price / total
+
+                # Create snapshot - last trade price IS the odds for CTF tokens
+                snapshot = WebSocketOddsSnapshot(
+                    market_id=self._current_market_id,
+                    yes_odds=yes_price,
+                    no_odds=no_price,
+                    timestamp=datetime.now(timezone.utc),
+                    best_bid=yes_price,
+                    best_ask=yes_price
+                )
+
+                # Store atomically
+                async with self._lock:
+                    self._current_odds[self._current_market_id] = snapshot
 
                 logger.info(
-                    "Querying REST API",
-                    token_id=token_id_decimal[:16] + "..." if len(token_id_decimal) > 16 else token_id_decimal,
-                    market_id=self._current_market_id
+                    "📊 Odds updated from CLOB last-trade-price",
+                    market_id=self._current_market_id,
+                    market_slug=self._current_market_slug,
+                    yes_odds=f"{yes_price:.3f}",
+                    no_odds=f"{no_price:.3f}"
                 )
-
-                # Synchronous call in async context (client.get_orderbook is not async)
-                orderbook = await asyncio.to_thread(
-                    self.client.get_orderbook,
-                    token_id_decimal,
-                    depth=1
-                )
-
-                if orderbook and orderbook.get('bids') and orderbook.get('asks'):
-                    await self._update_odds_from_orderbook(
-                        bids=orderbook['bids'],
-                        asks=orderbook['asks'],
-                        source='REST'
-                    )
-                    logger.debug("📊 Updated odds from REST API")
-                else:
-                    logger.warning(
-                        "REST API returned empty orderbook",
-                        market_id=self._current_market_id
-                    )
 
             except Exception as e:
                 logger.error(
-                    "REST polling failed",
+                    "CLOB last-trade-price polling failed",
                     error=str(e),
                     market_id=self._current_market_id
                 )
 
             await asyncio.sleep(5)
 
-        logger.info("REST polling loop stopped")
+        logger.info("CLOB last-trade-price polling loop stopped")
 
     async def start(self):
         """
@@ -378,15 +455,32 @@ class RealtimeOddsStreamer:
         """
         Check if current market has changed.
 
+        Uses multiple detection methods:
+        1. Time-based: Current market past its active window (fallback for API lag)
+        2. API-based: API returns different market ID (primary)
+
         Returns:
             True if market changed, False if same
         """
         try:
+            # Fallback: Check if current market is no longer active (time-based)
+            # Use 30-second tolerance for aggressive transition detection
+            if self._current_market_slug and not self._validator.is_market_active(
+                self._current_market_slug,
+                tolerance_minutes=0.5  # 30 seconds
+            ):
+                logger.info(
+                    "Market transition detected via time-based check (market inactive)",
+                    current_market_slug=self._current_market_slug
+                )
+                return True
+
+            # Primary: Check if API returns different market
             market = self.client.discover_btc_15min_market()
 
             if market.id != self._current_market_id:
                 logger.info(
-                    "Market transition detected",
+                    "Market transition detected via API response",
                     old_market=self._current_market_id,
                     new_market=market.id
                 )
@@ -405,11 +499,51 @@ class RealtimeOddsStreamer:
         Runs concurrently with message reception loop.
         Closes WebSocket when market changes to trigger resubscription.
 
+        Proactively checks at market end time for instant transitions.
+
         Args:
             ws: WebSocket connection to close if transition detected
         """
         while self._running:
-            await asyncio.sleep(60)  # Check every minute
+            # Calculate time until current market ends
+            if self._current_market_slug:
+                market_start_timestamp = self._validator.parse_market_timestamp(self._current_market_slug)
+
+                if market_start_timestamp:
+                    current_time = datetime.now(timezone.utc)
+                    market_start_time = datetime.fromtimestamp(market_start_timestamp, timezone.utc)
+                    # BTC 15-minute markets run for 15 minutes
+                    market_end_time = market_start_time + timedelta(minutes=15)
+                    seconds_until_end = (market_end_time - current_time).total_seconds()
+
+                    if seconds_until_end > 30:
+                        # Market end is far away, sleep until 30 seconds before
+                        sleep_duration = seconds_until_end - 30
+                        logger.info(
+                            "Market transition monitor: sleeping until near market end",
+                            market_end_time=market_end_time.isoformat(),
+                            sleep_seconds=sleep_duration
+                        )
+                        await asyncio.sleep(sleep_duration)
+                    elif seconds_until_end > 0:
+                        # Market ending in <30 seconds, check right at end time
+                        logger.info(
+                            "Market transition monitor: sleeping until market end time",
+                            seconds_until_end=seconds_until_end
+                        )
+                        await asyncio.sleep(seconds_until_end + 2)  # +2 for API propagation
+                    else:
+                        # Market already ended, check immediately then wait 10s
+                        logger.info(
+                            "Market transition monitor: past end time, checking immediately"
+                        )
+                        await asyncio.sleep(10)
+                else:
+                    # Couldn't parse timestamp, fall back to 60s interval
+                    await asyncio.sleep(60)
+            else:
+                # No current market slug, fall back to 60s interval
+                await asyncio.sleep(60)
 
             try:
                 if await self._check_market_transition():
@@ -425,8 +559,38 @@ class RealtimeOddsStreamer:
 
         Checks for market transitions every 60 seconds and resubscribes if needed.
         """
-        # Discover current market
-        market = self.client.discover_btc_15min_market()
+        # Discover current market (with retry if API is lagged after transition)
+        old_market_id = self._current_market_id
+
+        # If we transitioned due to time-based detection, the API might be lagged
+        # Retry up to 6 times (30 seconds) until we get a NEW market
+        max_retries = 6
+        retry_delay = 5
+
+        for attempt in range(max_retries):
+            market = self.client.discover_btc_15min_market()
+
+            # If this is a new market (or first connection), proceed
+            if old_market_id is None or market.id != old_market_id:
+                break
+
+            # API still returning old market after time-based transition
+            if attempt < max_retries - 1:
+                logger.warning(
+                    "API still returning old market, retrying...",
+                    attempt=attempt + 1,
+                    old_market_id=old_market_id,
+                    returned_market_id=market.id,
+                    retry_in_seconds=retry_delay
+                )
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(
+                    "API still lagged after retries, proceeding with old market",
+                    old_market_id=old_market_id,
+                    returned_market_id=market.id
+                )
+
         token_ids = market.get_token_ids()
 
         if not token_ids:
@@ -578,4 +742,49 @@ class RealtimeOddsStreamer:
 
             await self._process_book_message(data)
 
-        # Ignore other message types (last_trade_price, price_change)
+        elif event_type == 'last_trade_price':
+            # Real-time trade price update - process immediately for zero-latency odds
+            token_id = data.get('asset_id')  # hex format
+            price_str = data.get('price')
+
+            if (token_id and price_str and
+                    self._current_token_ids_hex and
+                    self._current_token_ids_decimal and
+                    self._current_market_id):
+
+                if token_id in self._current_token_ids_hex:
+                    idx = self._current_token_ids_hex.index(token_id)
+                    price = float(price_str)
+
+                    # Get existing snapshot for the other token's price
+                    current = self._current_odds.get(self._current_market_id)
+
+                    if idx == 0:  # YES token traded
+                        yes_odds = price
+                        no_odds = current.no_odds if current else (1.0 - price)
+                    else:  # NO token traded
+                        no_odds = price
+                        yes_odds = current.yes_odds if current else (1.0 - price)
+
+                    snapshot = WebSocketOddsSnapshot(
+                        market_id=self._current_market_id,
+                        yes_odds=yes_odds,
+                        no_odds=no_odds,
+                        timestamp=datetime.now(timezone.utc),
+                        best_bid=yes_odds,
+                        best_ask=yes_odds
+                    )
+
+                    # Store atomically
+                    async with self._lock:
+                        self._current_odds[self._current_market_id] = snapshot
+
+                    logger.info(
+                        "⚡ Odds updated from WS last_trade_price",
+                        yes_odds=f"{yes_odds:.3f}",
+                        no_odds=f"{no_odds:.3f}",
+                        traded_token="YES" if idx == 0 else "NO",
+                        price=price_str
+                    )
+
+        # Ignore price_change and other message types

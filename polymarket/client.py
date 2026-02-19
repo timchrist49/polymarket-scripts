@@ -434,10 +434,12 @@ class PolymarketClient:
                 logger.info(f"Placing FOK market order: side={request.side}, size={size}")
 
                 # Create market order arguments
+                # price > 0 acts as a worst-acceptable-price cap (slippage protection)
                 market_order_args = MarketOrderArgs(
                     token_id=request.token_id,
                     amount=float(size),  # Amount in USDC
                     side=request.side,
+                    price=request.price if request.price > 0 else 0,
                 )
 
                 # Sign the market order
@@ -765,17 +767,23 @@ class PolymarketClient:
             unrealized_pl = positions_value - purchase_value
             total_value = usdc_balance + positions_value
 
+            # Free cash = CLOB collateral balance minus value locked in token positions.
+            # Polymarket's CTF converts USDC into conditional tokens when you open a position,
+            # so get_balance_allowance(COLLATERAL) returns the inflated total.
+            # We subtract positions_value to get only the truly spendable USDC.
+            free_cash = max(usdc_balance - positions_value, 0.0)
+
             return PortfolioSummary(
                 open_orders=open_orders,
                 total_notional=total_notional,
                 positions=positions,
                 total_exposure=total_notional,
                 trades=trades,  # Include raw trades for detailed display
-                usdc_balance=usdc_balance,
+                usdc_balance=free_cash,          # ← free cash only (was: inflated CLOB balance)
                 positions_value=positions_value,
-                total_value=total_value,
-                purchase_value=purchase_value,  # NEW
-                unrealized_pl=unrealized_pl,    # NEW
+                total_value=total_value,         # kept accurate for display
+                purchase_value=purchase_value,
+                unrealized_pl=unrealized_pl,
             )
 
         except Exception as e:

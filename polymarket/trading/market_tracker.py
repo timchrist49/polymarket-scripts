@@ -35,8 +35,8 @@ class MarketTracker:
         Slug format: btc-updown-15m-{epoch_timestamp}
         Example: btc-updown-15m-1739203200
 
-        IMPORTANT: The timestamp in the slug is the market CLOSE time.
-        We subtract 15 minutes (900 seconds) to get the actual START time.
+        IMPORTANT: The timestamp in the slug IS the market START time.
+        BTC 15-minute markets run FOR 15 minutes from this start timestamp.
         """
         try:
             parts = slug.split("-")
@@ -44,11 +44,8 @@ class MarketTracker:
                 logger.warning("Invalid market slug format", slug=slug)
                 return None
 
-            timestamp_str = parts[-1]  # Last part is close timestamp
-            close_timestamp = int(timestamp_str)
-
-            # Calculate START time: close - 15 minutes (900 seconds)
-            start_timestamp = close_timestamp - 900
+            timestamp_str = parts[-1]  # Last part is START timestamp
+            start_timestamp = int(timestamp_str)
 
             return datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
         except (ValueError, IndexError) as e:

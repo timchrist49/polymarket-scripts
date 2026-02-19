@@ -49,7 +49,7 @@ class CryptoPriceStream:
             )
 
     async def start(self):
-        """Start WebSocket connection and price stream."""
+        """Start WebSocket connection and price stream with auto-reconnect."""
         self._running = True
 
         # Load historical price data if buffer is enabled
@@ -60,33 +60,49 @@ class CryptoPriceStream:
             except Exception as e:
                 logger.warning(f"Could not load price history: {e}")
 
-        try:
-            async with websockets.connect(self.WS_URL, ping_interval=5) as ws:  # ← Add ping_interval
-                self._ws = ws
-                self._connected = True
+        backoff = 1  # seconds, doubles each failed attempt up to max
+        max_backoff = 30
 
-                # Subscribe to appropriate feed
-                await self._subscribe_to_feed(ws)  # ← NEW method
+        while self._running:
+            try:
+                async with websockets.connect(self.WS_URL, ping_interval=5) as ws:
+                    self._ws = ws
+                    self._connected = True
+                    backoff = 1  # reset on successful connect
 
-                # Listen for price updates
-                while self._running:
-                    try:
-                        message = await asyncio.wait_for(ws.recv(), timeout=30.0)
-                        await self._handle_message(message)
-                    except asyncio.TimeoutError:
-                        logger.debug("WebSocket recv timeout, continuing...")
-                        continue
-                    except websockets.exceptions.ConnectionClosed:
-                        logger.warning("WebSocket connection closed")
-                        self._connected = False
-                        break
+                    # Subscribe to appropriate feed
+                    await self._subscribe_to_feed(ws)
 
-        except Exception as e:
-            logger.error("WebSocket connection error", error=str(e))
-            self._connected = False
-        finally:
-            self._ws = None
-            self._connected = False
+                    # Listen for price updates
+                    while self._running:
+                        try:
+                            message = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                            await self._handle_message(message)
+                        except asyncio.TimeoutError:
+                            logger.debug("WebSocket recv timeout, continuing...")
+                            continue
+                        except websockets.exceptions.ConnectionClosed:
+                            logger.warning("WebSocket connection closed, will reconnect")
+                            self._connected = False
+                            break
+
+            except Exception as e:
+                logger.warning(
+                    "WebSocket connection error, reconnecting",
+                    error=str(e),
+                    backoff_seconds=backoff
+                )
+                self._connected = False
+            finally:
+                self._ws = None
+                self._connected = False
+
+            if not self._running:
+                break
+
+            logger.info("Reconnecting WebSocket", backoff_seconds=backoff)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)
 
     async def _subscribe_to_feed(self, ws):  # ← NEW method
         """Subscribe to Chainlink or Binance feed based on configuration."""

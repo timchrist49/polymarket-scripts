@@ -84,5 +84,5 @@ def get_movement_threshold(contrarian_signal: Optional[ContrarianSignal]) -> int
         trades require larger movements ($100) for directional confirmation.
     """
     if contrarian_signal:
-        return 50  # Reduced threshold for reversals
-    return 100  # Normal threshold
+        return 30  # Reduced threshold for reversals
+    return 30  # Normal threshold

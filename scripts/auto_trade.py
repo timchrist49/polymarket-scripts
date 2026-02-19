@@ -153,16 +153,19 @@ class AutoTrader:
             streamer=self.realtime_streamer,
             validator=self.market_validator,
             on_opportunity_detected=self._handle_opportunity_detected,
-            threshold_percentage=70.0,
+            threshold_percentage=60.0,  # Lowered from 70% to account for REST API lag
             sustained_duration_seconds=5.0,
             cooldown_seconds=30.0
         )
         logger.info(
             "OddsMonitor initialized for event-driven triggering",
-            threshold_percentage=70.0,
+            threshold_percentage=60.0,  # Match actual value above
             sustained_duration_seconds=5.0,
             cooldown_seconds=30.0
         )
+
+        # Track traded markets for production mode (one order per market per session)
+        self._traded_markets: set[str] = set()
 
         self.telegram_bot = TelegramBot(settings)  # Initialize Telegram bot
         self.cleanup_scheduler = CleanupScheduler(
@@ -214,6 +217,14 @@ class AutoTrader:
 
         # Track open positions for stop-loss
         self.open_positions: list[dict] = []
+
+        # Per-market pending-order lock: prevents duplicate orders while a limit
+        # order is awaiting fill/timeout (before it's added to open_positions)
+        self._markets_with_pending_orders: set[str] = set()
+
+        # Cached data from the last completed trading cycle, used by the price watcher
+        # to avoid re-fetching indicators/sentiment on every 10s price-movement check.
+        self._last_cycle_data: dict | None = None
 
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
@@ -318,6 +329,23 @@ class AutoTrader:
             cleaner_task = asyncio.create_task(price_history_cleaner(buffer, interval=3600))
             self.background_tasks.extend([saver_task, cleaner_task])
             logger.info("Price buffer background tasks started (save: 5min, cleanup: 1hr)")
+
+        # Enhancement 4: Price movement watcher — fires analysis when BTC moves >$25
+        price_watcher_task = asyncio.create_task(self._price_movement_watcher())
+        self.background_tasks.append(price_watcher_task)
+        logger.info(
+            "Price movement watcher started",
+            trigger_usd=self.PRICE_WATCHER_TRIGGER_USD,
+            interval_seconds=self.PRICE_WATCHER_INTERVAL_SECONDS
+        )
+
+        # Enhancement 5: Stop-loss watcher — checks open positions every 30s
+        stop_loss_task = asyncio.create_task(self._stop_loss_watcher())
+        self.background_tasks.append(stop_loss_task)
+        logger.info(
+            "Stop-loss watcher started",
+            interval_seconds=self.STOP_LOSS_WATCHER_INTERVAL_SECONDS
+        )
 
     async def _trigger_reflection(self, trigger_type: str) -> None:
         """
@@ -801,7 +829,7 @@ class AutoTrader:
                     positions_value=f"${portfolio.positions_value:.2f}",
                     purchase_value=f"${portfolio.purchase_value:.2f}",  # NEW
                     unrealized_pl=f"${portfolio.unrealized_pl:+.2f}",  # NEW
-                    using_balance=f"${portfolio_value:.2f}"
+                    using_balance=f"${portfolio_value:.2f} (free USDC only, excl. ${portfolio.positions_value:.2f} in tokens)"
                 )
                 if portfolio_value == 0:
                     logger.warning("Portfolio value is 0, using default $1000")
@@ -822,6 +850,20 @@ class AutoTrader:
                     regime,  # NEW: market regime for adaptive strategy
                     contrarian_signal  # NEW: contrarian signal detection
                 )
+
+            # Cache cycle data for the price-movement watcher (Enhancement 4).
+            # Watcher runs every 10s and re-uses these cached values so it doesn't
+            # need to re-fetch indicators/sentiment on every check.
+            self._last_cycle_data = {
+                'indicators': indicators,
+                'sentiment': aggregated_sentiment,
+                'portfolio_value': portfolio_value,
+                'btc_momentum': btc_momentum,
+                'timeframe_analysis': timeframe_analysis,
+                'regime': regime,
+                'contrarian_signal': contrarian_signal,
+                'timestamp': datetime.now(timezone.utc),
+            }
 
             # Step 7: Stop-loss check
             await self._check_stop_loss()
@@ -959,6 +1001,17 @@ class AutoTrader:
                     )
                     return
 
+            # In production mode, skip if we've already placed an order for this market
+            if not self.test_mode.enabled:
+                if market.id in self._traded_markets:
+                    logger.info(
+                        "Skipping market - already traded in this session",
+                        market_id=market.id,
+                        market_question=market.question[:80] if market.question else "",
+                        traded_count=len(self._traded_markets)
+                    )
+                    return
+
             # Get real-time odds from WebSocket streamer
             odds_snapshot = self.realtime_streamer.get_current_odds(market.id)
 
@@ -986,13 +1039,13 @@ class AutoTrader:
                     no_odds=f"{no_odds:.2%}"
                 )
 
-            # Early filtering: skip markets where neither side > 70%
-            yes_qualifies = (yes_odds > 0.70)
-            no_qualifies = (no_odds > 0.70)
+            # Early filtering: skip markets where neither side > 60%
+            yes_qualifies = (yes_odds > 0.60)
+            no_qualifies = (no_odds > 0.60)
 
             if not (yes_qualifies or no_qualifies):
                 logger.info(
-                    "Skipping market - neither side > 70% odds (real-time check)",
+                    "Skipping market - neither side > 60% odds (real-time check)",
                     market_id=market.id,
                     yes_odds=f"{yes_odds:.2%}",
                     no_odds=f"{no_odds:.2%}",
@@ -1026,6 +1079,15 @@ class AutoTrader:
                     time_remaining=f"{time_remaining//60}m {time_remaining%60}s",
                     is_end_phase=is_end_of_market
                 )
+
+                # Skip if market has already closed (no time to execute)
+                if time_remaining == 0:
+                    logger.info(
+                        "Skipping cycle - market already expired",
+                        market_id=market.id,
+                        market_slug=market_slug
+                    )
+                    return
 
             # Get or set price-to-beat (only if we have a valid slug)
             price_to_beat = self.market_tracker.get_price_to_beat(market_slug) if market_slug else None
@@ -1069,27 +1131,51 @@ class AutoTrader:
                     percentage=f"{diff_pct:+.2f}%"
                 )
 
-                # NEW: Signal lag detection
+                # Signal lag detection: fires when CLOB market odds lag behind BTC price reality
+                # e.g. BTC moved UP but CLOB still shows NO > YES (market hasn't caught up)
+                # Uses CLOB direction (yes_odds vs no_odds) — NOT macro sentiment
+                # Macro sentiment is passed to AI for decision-making, not for lag detection
                 signal_lag_detected = False
                 signal_lag_reason = None
 
                 btc_direction = "UP" if btc_data.price > price_to_beat else "DOWN"
-                sentiment_direction = "BULLISH" if aggregated_sentiment.final_score > 0 else "BEARISH"
+                # CLOB direction: which side is the market currently pricing higher?
+                clob_direction = "BULLISH" if yes_odds >= no_odds else "BEARISH"
 
                 signal_lag_detected, signal_lag_reason = detect_signal_lag(
                     btc_direction,
-                    sentiment_direction,
-                    aggregated_sentiment.final_confidence
+                    clob_direction,
+                    0.9  # High confidence since CLOB direction is directly observed
                 )
 
                 if signal_lag_detected:
-                    if not self.test_mode.enabled:
+                    # Bypass signal lag when BTC has moved far enough that the CLOB lag
+                    # IS the arbitrage opportunity. A BTC move of ≥10% from price_to_beat
+                    # means the market simply hasn't repriced yet — that's exactly what we trade.
+                    # Below 10%, the contradiction could be genuine noise → still block.
+                    btc_movement_pct = (
+                        abs(float(diff) / float(price_to_beat)) * 100
+                        if price_to_beat and price_to_beat != 0 else 0
+                    )
+                    ARBITRAGE_BYPASS_THRESHOLD_PCT = 10.0  # 10% BTC move bypasses signal lag
+
+                    if btc_movement_pct >= ARBITRAGE_BYPASS_THRESHOLD_PCT:
+                        logger.info(
+                            "Signal lag detected but bypassed — large BTC move vs CLOB lag = arbitrage",
+                            market_id=market.id,
+                            btc_movement_pct=f"{btc_movement_pct:.1f}%",
+                            bypass_threshold=f"{ARBITRAGE_BYPASS_THRESHOLD_PCT:.0f}%",
+                            reason="CLOB has not repriced — this IS the edge"
+                        )
+                        # Fall through to analysis — do NOT return
+                    elif not self.test_mode.enabled:
                         logger.warning(
                             "Skipping trade due to signal lag",
                             market_id=market.id,
-                            reason=signal_lag_reason
+                            reason=signal_lag_reason,
+                            btc_movement_pct=f"{btc_movement_pct:.1f}%"
                         )
-                        return  # HOLD - don't trade contradictions
+                        return  # HOLD - contradiction below bypass threshold
                     else:
                         logger.info(
                             "[TEST] Signal lag detected - data sent to AI anyway",
@@ -1106,8 +1192,8 @@ class AutoTrader:
                     logger.info(
                         "Contrarian setup - reducing movement threshold",
                         market_id=market.id,
-                        default_threshold="$100",
-                        contrarian_threshold="$50",
+                        default_threshold="$30",
+                        contrarian_threshold="$30",
                         reasoning="Reversals start with small movements"
                     )
 
@@ -1236,7 +1322,9 @@ class AutoTrader:
 
                 if orderbook_analysis:
                     # Skip if spread too wide (poor execution quality)
-                    if orderbook_analysis.spread_bps > 500:  # 5% spread
+                    # Note: CTF/AMM markets always show ~9900 bps spread (full range AMM liquidity,
+                    # not a real bid-ask spread). Only block real CLOB markets with wide spreads.
+                    if 500 < orderbook_analysis.spread_bps < 9000:  # 5-90% = real CLOB wide spread
                         if not self.test_mode.enabled:
                             logger.info(
                                 "Skipping trade - spread too wide",
@@ -1443,7 +1531,7 @@ class AutoTrader:
                 diff, _ = self.market_tracker.calculate_price_difference(
                     btc_data.price, price_to_beat
                 )
-                MIN_YES_MOVEMENT = 200  # $200 minimum for YES trades (higher threshold)
+                MIN_YES_MOVEMENT = 30  # $30 minimum for YES trades
 
                 if diff < MIN_YES_MOVEMENT:
                     logger.info(
@@ -1542,6 +1630,16 @@ class AutoTrader:
                 )
                 return
 
+            # Guard: skip if a limit order is already pending for this market
+            # (open_positions is only updated AFTER order verification, leaving a
+            # gap where the OddsMonitor can retrigger a second/third order)
+            if market.id in self._markets_with_pending_orders:
+                logger.info(
+                    "Skipping cycle - pending order already exists for market",
+                    market_id=market.id
+                )
+                return
+
             # Step 2: Risk Validation
             validation = await self.risk_manager.validate_decision(
                 decision=decision,
@@ -1562,24 +1660,30 @@ class AutoTrader:
             # NEW: JIT odds validation (fetch fresh odds before execution)
             fresh_market = self.client.discover_btc_15min_market()
             if fresh_market:
-                yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
-                no_odds_fresh = 1.0 - yes_odds_fresh
+                # Use CLOB realtime odds for JIT check (avoids stale Gamma prices)
+                _jit_odds = self.realtime_streamer.get_current_odds(market.id)
+                if _jit_odds:
+                    yes_odds_fresh = _jit_odds.yes_odds
+                    no_odds_fresh = _jit_odds.no_odds
+                else:
+                    yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
+                    no_odds_fresh = 1.0 - yes_odds_fresh
 
-                # Check if AI's chosen side still qualifies (70% threshold)
-                if decision.action == "YES" and yes_odds_fresh <= 0.70:
+                # Check if AI's chosen side still qualifies (60% threshold)
+                if decision.action == "YES" and yes_odds_fresh <= 0.60:
                     logger.info(
                         "Skipping trade - YES odds below threshold at execution time",
                         market_id=market.id,
                         odds=f"{yes_odds_fresh:.2%}",
-                        threshold="70%"
+                        threshold="60%"
                     )
                     return
-                elif decision.action == "NO" and no_odds_fresh <= 0.70:
+                elif decision.action == "NO" and no_odds_fresh <= 0.60:
                     logger.info(
                         "Skipping trade - NO odds below threshold at execution time",
                         market_id=market.id,
                         odds=f"{no_odds_fresh:.2%}",
-                        threshold="70%"
+                        threshold="60%"
                     )
                     return
 
@@ -1587,8 +1691,8 @@ class AutoTrader:
                 odds_yes = yes_odds_fresh
                 odds_no = no_odds_fresh
                 odds_qualified = (
-                    (decision.action == "YES" and yes_odds_fresh > 0.70) or
-                    (decision.action == "NO" and no_odds_fresh > 0.70)
+                    (decision.action == "YES" and yes_odds_fresh > 0.60) or
+                    (decision.action == "NO" and no_odds_fresh > 0.60)
                 )
             else:
                 # If we can't fetch fresh odds, use cached
@@ -1608,13 +1712,12 @@ class AutoTrader:
 
             # Step 3: Execute Trade
             if self.settings.mode == "trading":
-                # Determine market price based on which token we're buying
-                # UP/YES token: use ask price from market
-                # DOWN/NO token: use complement (1 - UP bid)
+                # Use CLOB realtime odds for analysis price (avoids stale Gamma prices)
+                _rt_odds = self.realtime_streamer.get_current_odds(market.id)
                 if decision.action == "YES":
-                    market_price = market.best_ask if market.best_ask else 0.50  # UP ask
+                    market_price = _rt_odds.yes_odds if _rt_odds else (market.best_ask if market.best_ask else 0.50)
                 else:  # NO
-                    market_price = 1 - (market.best_bid if market.best_bid else 0.50)  # DOWN = 1 - UP
+                    market_price = _rt_odds.no_odds if _rt_odds else (1 - (market.best_bid if market.best_bid else 0.50))
 
                 await self._execute_trade(
                     market, decision, validation.adjusted_position,
@@ -1893,11 +1996,13 @@ class AutoTrader:
                     )
                 return
 
-            # Calculate fresh execution price from fresh market
+            # Calculate fresh execution price using CLOB realtime odds
+            # Falls back to Gamma fresh_market if realtime streamer has no data
+            _exec_odds = self.realtime_streamer.get_current_odds(market.id)
             if decision.action == "YES":
-                execution_price = fresh_market.best_ask if fresh_market.best_ask else 0.50
+                execution_price = _exec_odds.yes_odds if _exec_odds else (fresh_market.best_ask if fresh_market.best_ask else 0.50)
             else:  # NO
-                execution_price = 1 - (fresh_market.best_bid if fresh_market.best_bid else 0.50)
+                execution_price = _exec_odds.no_odds if _exec_odds else (1 - (fresh_market.best_bid if fresh_market.best_bid else 0.50))
 
             # Calculate price staleness
             execution_time = datetime.now(timezone.utc)
@@ -1963,15 +2068,31 @@ class AutoTrader:
             # Determine urgency from arbitrage opportunity
             urgency = arbitrage_opportunity.urgency if arbitrage_opportunity else "MEDIUM"
 
+            # Use CLOB realtime odds for the correct token's price.
+            # fresh_market.best_bid/ask are YES/UP token prices from Gamma (stale).
+            # For NO/DOWN token, we need the NO token's CLOB price, not the YES price.
+            _smart_odds = self.realtime_streamer.get_current_odds(market.id)
+            if _smart_odds:
+                _token_price = _smart_odds.yes_odds if decision.action == "YES" else _smart_odds.no_odds
+                smart_best_bid = _token_price         # last CLOB trade price = bid reference
+                smart_best_ask = _token_price + 0.02  # reasonable ask spread
+            else:
+                smart_best_bid = fresh_market.best_bid if fresh_market.best_bid else execution_price - 0.01
+                smart_best_ask = fresh_market.best_ask if fresh_market.best_ask else execution_price
+
+            # Lock this market to prevent duplicate orders while limit order is in-flight
+            self._markets_with_pending_orders.add(market.id)
+
             execution_result = await smart_executor.execute_smart_order(
                 client=self.client,
                 token_id=token_id,
                 side="BUY",
                 amount=float(amount),
                 urgency=urgency,
-                current_best_ask=fresh_market.best_ask if fresh_market.best_ask else execution_price,
-                current_best_bid=fresh_market.best_bid if fresh_market.best_bid else execution_price - 0.01,
-                tick_size=0.001
+                current_best_ask=smart_best_ask,
+                current_best_bid=smart_best_bid,
+                tick_size=0.001,
+                max_fallback_price=smart_best_ask * 1.20  # Cap fallback at 20% slippage from decision price
             )
 
             # Check execution result
@@ -1993,6 +2114,7 @@ class AutoTrader:
                         price_movement_favorable=price_movement_favorable,
                         skipped_unfavorable_move=True
                     )
+                self._markets_with_pending_orders.discard(market.id)
                 return  # Skip this trade
 
             order_id = execution_result["order_id"]
@@ -2028,6 +2150,7 @@ class AutoTrader:
                         execution_status='failed',
                         skip_reason=f"Order failed: {quick_status['raw_status']}"
                     )
+                self._markets_with_pending_orders.discard(market.id)
                 return  # Don't count this as a successful trade
 
             elif quick_status['needs_alert']:
@@ -2070,6 +2193,18 @@ class AutoTrader:
                     market_id=market.id,
                     total_traded_markets=len(self.test_mode.traded_markets)
                 )
+
+            # Mark market as traded in production mode (prevent double-betting)
+            if not self.test_mode.enabled:
+                self._traded_markets.add(market.id)
+                logger.info(
+                    "Market marked as traded - will not re-enter this market",
+                    market_id=market.id,
+                    total_traded_markets=len(self._traded_markets)
+                )
+
+            # Release pending-order lock now that _traded_markets guards re-entry
+            self._markets_with_pending_orders.discard(market.id)
 
             # Send Telegram notification
             try:
@@ -2116,6 +2251,7 @@ class AutoTrader:
             self.trades_today += 1
 
         except Exception as e:
+            self._markets_with_pending_orders.discard(market.id)
             logger.error(
                 "Trade execution failed",
                 market_id=market.id,
@@ -2244,6 +2380,124 @@ class AutoTrader:
 
         except Exception as e:
             logger.error("Stop-loss check error", error=str(e))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Background watcher: stop-loss (Enhancement 5)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    STOP_LOSS_WATCHER_INTERVAL_SECONDS = 30
+
+    async def _stop_loss_watcher(self) -> None:
+        """Background task: evaluate stop-loss every 30s instead of every 3 minutes.
+
+        Delegates to the existing _check_stop_loss() — no new logic here.
+        Runs independently of the main cycle so a sharp reversal triggers exit
+        within ~30s rather than waiting up to 180s for the next cycle.
+        """
+        logger.info(
+            "Stop-loss watcher started",
+            interval_seconds=self.STOP_LOSS_WATCHER_INTERVAL_SECONDS
+        )
+        while self.running:
+            await asyncio.sleep(self.STOP_LOSS_WATCHER_INTERVAL_SECONDS)
+            try:
+                if self.open_positions:  # Skip if nothing to protect
+                    await self._check_stop_loss()
+            except Exception as e:
+                logger.error("Stop-loss watcher error", error=str(e))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Background watcher: price movement trigger (Enhancement 4)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    PRICE_WATCHER_INTERVAL_SECONDS = 10
+    PRICE_WATCHER_TRIGGER_USD = 25.0  # Trigger analysis if BTC moves >$25 from price_to_beat
+
+    async def _price_movement_watcher(self) -> None:
+        """Background task: fire immediate market analysis on significant BTC price moves.
+
+        Runs every 10s. Complements the OddsMonitor (CLOB odds changes) and the
+        3-minute timer cycle by detecting raw BTC price movement.
+        When |BTC_current - price_to_beat| >= $25 and no pending order for that
+        market, re-uses the last cycle's cached indicators/sentiment to trigger
+        _process_market() immediately without waiting for the next 3-min cycle.
+        """
+        logger.info(
+            "Price movement watcher started",
+            interval_seconds=self.PRICE_WATCHER_INTERVAL_SECONDS,
+            trigger_usd=self.PRICE_WATCHER_TRIGGER_USD
+        )
+        while self.running:
+            try:
+                await asyncio.sleep(self.PRICE_WATCHER_INTERVAL_SECONDS)
+
+                # Nothing to do until the first full cycle has populated the cache
+                if not self._last_cycle_data:
+                    continue
+
+                btc_price_data = await self.btc_service.get_current_price()
+                if not btc_price_data:
+                    continue
+
+                current_price = btc_price_data.price
+
+                # Check each active market's price-to-beat
+                markets = await self._discover_markets()
+                for market in markets:
+                    slug_str = market.slug or ""
+                    price_to_beat = self.market_tracker.get_price_to_beat(slug_str)
+                    if not price_to_beat:
+                        continue
+
+                    movement = abs(float(current_price - price_to_beat))
+
+                    if movement >= self.PRICE_WATCHER_TRIGGER_USD:
+                        # Skip markets already in flight or already traded
+                        if market.id in self._markets_with_pending_orders:
+                            continue
+                        if market.id in self._traded_markets:
+                            continue
+
+                        direction = "UP" if current_price > price_to_beat else "DOWN"
+                        logger.info(
+                            "Price movement trigger fired",
+                            market_id=market.id,
+                            movement=f"${movement:.2f}",
+                            threshold=f"${self.PRICE_WATCHER_TRIGGER_USD}",
+                            direction=direction
+                        )
+                        # Fire-and-forget — errors don't stop the watcher
+                        asyncio.create_task(self._trigger_market_analysis(market, btc_price_data))
+
+            except Exception as e:
+                logger.error("Price watcher error", error=str(e))
+
+    async def _trigger_market_analysis(self, market, btc_price_data) -> None:
+        """Trigger a single-market analysis using the most recent cached cycle data.
+
+        Called by _price_movement_watcher. Uses self._last_cycle_data so we don't
+        re-fetch indicators/sentiment on every 10s tick — the cached values are
+        fresh enough for a spot-price-triggered decision.
+        """
+        try:
+            cache = self._last_cycle_data
+            if not cache:
+                return
+
+            await self._process_market(
+                market,
+                btc_price_data,                  # fresh BTC spot price
+                cache['indicators'],
+                cache['sentiment'],
+                cache['portfolio_value'],
+                cache['btc_momentum'],
+                datetime.now(timezone.utc),      # fresh cycle time
+                cache['timeframe_analysis'],
+                cache['regime'],
+                cache['contrarian_signal'],
+            )
+        except Exception as e:
+            logger.error("Price trigger analysis failed", market_id=market.id, error=str(e))
 
     async def _close_position(self, close: dict) -> None:
         """Close a position via stop-loss."""

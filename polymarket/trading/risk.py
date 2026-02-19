@@ -78,7 +78,17 @@ class RiskManager:
         if not test_mode and suggested_size == Decimal("0"):
             return ValidationResult(
                 approved=False,
-                reason=f"Odds {float(odds):.2f} below minimum threshold 0.25",
+                reason=f"Odds {float(odds):.2f} below minimum threshold 0.10",
+                adjusted_position=None
+            )
+
+        # Check 3b: Reject if odds above maximum threshold (market already priced in, minimal upside)
+        # At >90% odds you pay $0.90+ for a $1 payout — fees eat all profit. Hard block.
+        MAX_ODDS = Decimal("0.90")
+        if not test_mode and odds > MAX_ODDS:
+            return ValidationResult(
+                approved=False,
+                reason=f"Odds {float(odds):.2f} above maximum threshold {float(MAX_ODDS):.2f} (low expected value)",
                 adjusted_position=None
             )
 
@@ -145,14 +155,16 @@ class RiskManager:
         # Scale by confidence
         confidence = decision.confidence
 
-        if 0.75 <= confidence < 0.80:
-            multiplier = Decimal("0.5")
-        elif 0.80 <= confidence < 0.90:
-            multiplier = Decimal("0.75")
-        elif confidence >= 0.90:
-            multiplier = Decimal("1.0")
+        if confidence >= 0.90:
+            multiplier = Decimal("1.0")    # 100% — very high conviction
+        elif confidence >= 0.85:
+            multiplier = Decimal("0.85")   # 85% — high conviction
+        elif confidence >= 0.80:
+            multiplier = Decimal("0.70")   # 70% — solid conviction
+        elif confidence >= 0.75:
+            multiplier = Decimal("0.55")   # 55% — minimum trade (was 0.50)
         else:
-            multiplier = Decimal("0.0")
+            multiplier = Decimal("0.0")    # No trade below threshold
 
         calculated = base_size * multiplier
 
@@ -165,12 +177,7 @@ class RiskManager:
         calculated = min(calculated, dollar_cap)
         max_position = min(max_position, dollar_cap)
 
-        # Use AI-suggested size if provided and reasonable
-        if decision.position_size > 0:
-            ai_size = min(decision.position_size, max_position)
-            final_size = min(ai_size, calculated)
-        else:
-            final_size = min(calculated, max_position)
+        final_size = min(calculated, max_position)
 
         # Enforce Polymarket minimum bet size ($5.00) AFTER all multipliers
         POLYMARKET_MIN_BET = Decimal("5.0")
@@ -201,14 +208,14 @@ class RiskManager:
         Returns:
             Decimal: Multiplier between 0.0 (reject) and 1.0 (no scaling)
         """
-        MINIMUM_ODDS = Decimal("0.25")
+        MINIMUM_ODDS = Decimal("0.10")
         SCALE_THRESHOLD = Decimal("0.50")
 
         if odds < MINIMUM_ODDS:
             logger.info(
                 "Bet rejected - odds below minimum threshold",
                 odds=float(odds),
-                minimum=0.25
+                minimum=0.10
             )
             return Decimal("0")
 

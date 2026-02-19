@@ -662,18 +662,18 @@ class MarketMicrostructureService:
             MarketSignals with score, confidence, and detailed metrics.
         """
         try:
-            # Collect data for 2 minutes
-            # Use token_ids method if available (correct CLOB format)
+            # Collect data for 10 seconds (reduced from 20s to cut cycle time ~10s)
+            # 10s still gives sufficient trades/volume data for momentum analysis
             if self.token_ids:
                 data = await self.collect_market_data_with_token_ids(
                     self.token_ids,
-                    duration_seconds=120
+                    duration_seconds=10
                 )
             else:
                 # Fallback to old method (will fail with 404, but gracefully)
                 data = await self.collect_market_data(
                     self.condition_id,
-                    duration_seconds=120
+                    duration_seconds=10
                 )
 
             # Calculate individual scores

@@ -370,14 +370,12 @@ class BTCPriceService:
                 logger.warning("Buffer query failed, falling back to CoinGecko", error=str(e))
 
         # Fallback to external APIs if buffer doesn't have enough data
-        # Use CoinGecko as primary (Binance blocked in Indonesia)
-        async def fetch_primary():
-            return await self._fetch_coingecko_history(minutes)
-
+        # Use Kraken as primary: gives 1-min candles (CoinGecko only ~1 per 5 min)
+        # 1-min granularity is needed for RSI-14 and regime detection
         result = await fetch_with_fallbacks(
-            lambda: fetch_with_retry(fetch_primary, "CoinGecko", self._retry_config),
+            lambda: fetch_with_retry(lambda: self._fetch_kraken_history(minutes), "Kraken", self._retry_config),
             [
-                ("Kraken", lambda: self._fetch_kraken_history(minutes)),
+                ("CoinGecko", lambda: self._fetch_coingecko_history(minutes)),
                 ("Binance", lambda: self._fetch_binance_history(minutes))
             ]
         )

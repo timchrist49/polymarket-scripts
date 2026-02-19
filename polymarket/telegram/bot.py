@@ -69,6 +69,9 @@ Current BTC: ${btc_current:,.2f}
 Movement: {direction} {price_diff_pct:+.2f}% (${price_diff:+,.2f})
 """
 
+        # Sanitize AI-generated text to avoid breaking Telegram Markdown parser
+        safe_reasoning = self._escape_markdown(reasoning)
+
         message = f"""🎯 **Trade Executed**
 
 Market: `{market_slug}`
@@ -76,15 +79,36 @@ Action: **{action}** ({"UP" if action == "YES" else "DOWN"})
 Confidence: {confidence*100:.0f}%
 Position: ${position_size:.2f} @ {price:.2f}
 {btc_context}
-Reasoning: {reasoning}
+Reasoning: {safe_reasoning}
 
 Expected profit: ~${position_size * (1/price - 1):.2f} if correct
 """
 
         await self._send_message(message)
 
+    @staticmethod
+    def _escape_markdown(text: str) -> str:
+        """Escape characters that break Telegram's legacy Markdown parser.
+
+        Telegram Markdown v1 treats _, *, `, [ as special. AI-generated text
+        (reasoning, insights) can contain any of these and cause 400 errors.
+        """
+        # Only escape inside non-formatting spans — simplest approach: escape all
+        # occurrences that aren't part of our own **bold** / `code` markup.
+        # Since we control our own formatting, the safest fix is to strip these
+        # from dynamic/user-supplied fields before insertion (done at call site),
+        # then rely on this fallback for anything we missed.
+        for ch in ['_', '[', ']']:
+            text = text.replace(ch, f'\\{ch}')
+        return text
+
     async def _send_message(self, text: str):
-        """Send message to configured chat."""
+        """Send message to configured chat, with plain-text fallback.
+
+        Attempts Markdown first. If Telegram returns 400 (e.g. unescaped
+        special chars from AI-generated text), retries as plain text so the
+        alert always gets delivered.
+        """
         try:
             await self._bot.send_message(
                 chat_id=self.settings.telegram_chat_id,
@@ -93,7 +117,24 @@ Expected profit: ~${position_size * (1/price - 1):.2f} if correct
             )
             logger.debug("Telegram message sent")
         except Exception as e:
-            logger.error("Failed to send Telegram message", error=str(e))
+            error_str = str(e)
+            logger.warning(
+                "Telegram Markdown send failed, retrying as plain text",
+                error=error_str
+            )
+            # Strip markdown formatting characters for plain-text fallback
+            plain = text
+            for ch in ['*', '`', '\\']:
+                plain = plain.replace(ch, '')
+            try:
+                await self._bot.send_message(
+                    chat_id=self.settings.telegram_chat_id,
+                    text=plain
+                    # no parse_mode = plain text
+                )
+                logger.debug("Telegram message sent (plain text fallback)")
+            except Exception as e2:
+                logger.error("Failed to send Telegram message", error=str(e2))
 
     async def request_approval(
         self,
@@ -273,13 +314,15 @@ To resume:
             "end_of_day": "End of Day Review"
         }.get(trigger_type, trigger_type)
 
+        safe_insights = self._escape_markdown(insights_text)
+
         message = f"""🤖 **Self-Reflection Analysis**
 
 **Trigger:** {trigger_display}
 **Trades Analyzed:** {trades_analyzed}
 
 **Key Insights:**
-{insights_text}
+{safe_insights}
 
 The bot will now process recommendations and adjust parameters according to the tiered autonomy system.
 """
@@ -394,6 +437,8 @@ Next report after 20 more trades."""
             for conflict in conflicts_list:
                 conflicts_text += f"\n   - {conflict}"
 
+        safe_ai_reasoning = self._escape_markdown(ai_reasoning)
+
         message = f"""🧪 PAPER TRADE SIGNAL
 ━━━━━━━━━━━━━━━━━━━━
 📊 Market: {market_slug}
@@ -409,7 +454,7 @@ Next report after 20 more trades."""
 {lag_text}
 
 🤖 AI REASONING:
-"{ai_reasoning}"
+"{safe_ai_reasoning}"
 
 📊 CONFIDENCE: {confidence:.2f}
 {conflicts_text}

@@ -142,7 +142,7 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
                     max_completion_tokens=8000,  # Increased for reasoning tokens (medium effort ~2k-4k reasoning + 1k output)
                     response_format={"type": "json_object"}
                 ),
-                timeout=60.0  # Increased timeout for reasoning (gpt-5-nano with medium effort needs ~40s)
+                timeout=120.0  # Increased timeout for reasoning (gpt-5-nano with medium effort can take 60s+)
             )
 
             # Parse response (handle GPT-5-Nano reasoning format)

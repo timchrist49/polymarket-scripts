@@ -1,7 +1,7 @@
 """Market validation for real-time odds monitoring."""
 
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -62,7 +62,7 @@ class MarketValidator:
         Returns:
             True if market is active (within tolerance), False otherwise
         """
-        # Parse timestamp from slug
+        # Parse timestamp from slug (this is the START time)
         market_timestamp = MarketValidator.parse_market_timestamp(slug)
         if not market_timestamp:
             logger.error("Cannot validate market with invalid slug", slug=slug)
@@ -70,21 +70,26 @@ class MarketValidator:
 
         # Get current time
         current_time = datetime.now(timezone.utc)
-        market_time = datetime.fromtimestamp(market_timestamp, timezone.utc)
+        market_start = datetime.fromtimestamp(market_timestamp, timezone.utc)
 
-        # Calculate time difference in seconds
-        time_diff_seconds = abs((current_time - market_time).total_seconds())
+        # BTC 15-minute markets run from start to start+15min
+        market_duration_seconds = 15 * 60  # 15 minutes
         tolerance_seconds = tolerance_minutes * 60
 
-        is_active = time_diff_seconds <= tolerance_seconds
+        # Calculate market window: [start - tolerance, end + tolerance]
+        window_start = market_start - timedelta(seconds=tolerance_seconds)
+        window_end = market_start + timedelta(seconds=market_duration_seconds + tolerance_seconds)
+
+        is_active = window_start <= current_time <= window_end
 
         logger.debug(
             "Checked market activity",
             slug=slug,
-            market_time=market_time.isoformat(),
+            market_start=market_start.isoformat(),
+            market_end=window_end.isoformat(),
             current_time=current_time.isoformat(),
-            time_diff_seconds=time_diff_seconds,
-            tolerance_seconds=tolerance_seconds,
+            window_start=window_start.isoformat(),
+            window_end=window_end.isoformat(),
             is_active=is_active
         )
 

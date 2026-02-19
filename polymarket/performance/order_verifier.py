@@ -68,7 +68,8 @@ class OrderVerifier:
                 status = 'unknown'
                 needs_alert = True
 
-            fill_amount = order_status.get('fillAmount')
+            # Polymarket API returns 'size_matched' not 'fillAmount'
+            fill_amount = order_status.get('size_matched', order_status.get('fillAmount'))
 
             logger.info(
                 "Quick order check complete",
@@ -140,17 +141,19 @@ class OrderVerifier:
             order_status = await self.client.check_order_status(order_id)
 
             status = order_status.get('status', 'UNKNOWN')
-            fill_amount = float(order_status.get('fillAmount', 0))
-            order_size = float(order_status.get('size', 0))
+            # Polymarket API returns 'size_matched' not 'fillAmount'
+            fill_amount = float(order_status.get('size_matched', order_status.get('fillAmount', 0)))
+            order_size = float(order_status.get('original_size', order_status.get('size', 0)))
             price = float(order_status.get('price', 0))
-            timestamp = order_status.get('timestamp')
+            timestamp = order_status.get('created_at', order_status.get('timestamp'))
+            associate_trades = order_status.get('associate_trades', [])
 
             # Determine if order was filled
             verified = status in ['MATCHED', 'FILLED', 'PARTIALLY_MATCHED']
             partial_fill = (fill_amount < order_size) if order_size > 0 else False
 
             # Try to get transaction hash from trade history
-            transaction_hash = await self._get_transaction_hash(order_id, timestamp)
+            transaction_hash = await self._get_transaction_hash(order_id, timestamp, associate_trades)
 
             logger.info(
                 "Full order verification complete",
@@ -190,40 +193,48 @@ class OrderVerifier:
                 'original_size': 0.0
             }
 
-    async def _get_transaction_hash(self, order_id: str, timestamp: Optional[int]) -> Optional[str]:
+    async def _get_transaction_hash(
+        self,
+        order_id: str,
+        timestamp: Optional[int],
+        associate_trades: Optional[List[str]] = None
+    ) -> Optional[str]:
         """
-        Extract transaction hash from trade history.
+        Extract transaction hash via associate_trades on the order.
 
-        Strategy:
-        1. Call client.get_trades() to get trade history
-        2. Filter by timestamp (±60 seconds) to find matching trade
-        3. Extract transaction_hash from trade record
+        The Polymarket CLOB order response includes 'associate_trades' (list of trade UUIDs).
+        We match these against the trade history to find the blockchain transaction hash.
 
         Args:
-            order_id: Order ID to find
-            timestamp: Order timestamp for filtering (Unix timestamp)
+            order_id: Order ID for logging
+            timestamp: Order timestamp (unused, kept for API compatibility)
+            associate_trades: List of trade UUIDs from the order response
 
         Returns:
             Transaction hash string or None if not found
         """
+        if not associate_trades:
+            return None
+
         try:
-            # Get recent trade history
-            # Note: py_clob_client may not directly support order_id filter
-            # So we'll need to filter by timestamp
-            portfolio = self.client.get_portfolio_summary()
-
-            # portfolio should have trade history
-            # This is a placeholder - actual implementation depends on API structure
-            # May need to parse from portfolio.trades or similar
-
-            logger.debug(
-                "Transaction hash lookup",
-                order_id=order_id,
-                timestamp=timestamp
+            # Get recent trade history synchronously via the CLOB client
+            # This runs in the settlement loop (every 5 min) so blocking briefly is acceptable
+            loop = asyncio.get_event_loop()
+            all_trades = await loop.run_in_executor(
+                None, self.client._get_clob_client().get_trades
             )
 
-            # TODO: Implement actual trade history lookup
-            # For now, return None (non-blocking)
+            for trade in all_trades:
+                if trade.get('id') in associate_trades:
+                    tx_hash = trade.get('transaction_hash')
+                    if tx_hash:
+                        logger.debug(
+                            "Found transaction hash",
+                            order_id=order_id,
+                            tx_hash=tx_hash[:16]
+                        )
+                        return tx_hash
+
             return None
 
         except Exception as e:

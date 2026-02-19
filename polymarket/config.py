@@ -112,7 +112,7 @@ class Settings:
     )
     # === OpenAI GPT-5-Nano Configuration ===
     openai_reasoning_effort: str = field(
-        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "low")  # low=faster for 15-min markets
+        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "medium")  # medium=better signal integration
     )
 
     # === Tavily Configuration ===
@@ -139,10 +139,10 @@ class Settings:
         default_factory=lambda: float(os.getenv("BOT_CONFIDENCE_THRESHOLD", "0.75"))
     )
     bot_max_position_percent: float = field(
-        default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_PERCENT", "0.10"))
+        default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_PERCENT", "0.20"))  # was 0.10
     )
     bot_max_position_dollars: float = field(
-        default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_DOLLARS", "10.0"))
+        default_factory=lambda: float(os.getenv("BOT_MAX_POSITION_DOLLARS", "20.0"))  # was 10.0
     )
     bot_max_exposure_percent: float = field(
         default_factory=lambda: float(os.getenv("BOT_MAX_EXPOSURE_PERCENT", "0.50"))
