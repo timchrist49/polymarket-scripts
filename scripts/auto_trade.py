@@ -1771,21 +1771,38 @@ class AutoTrader:
                     yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
                     no_odds_fresh = 1.0 - yes_odds_fresh
 
+                # Timed strategy: ALWAYS defer to _timed_entry_monitor if we are not yet in
+                # the last-5-min entry window, regardless of current odds. This enforces the
+                # "MUST be within last 5 minutes" constraint even if odds happen to be 70%+
+                # during the T=5min AI analysis phase.
+                not_in_entry_window = (
+                    time_remaining is not None and
+                    time_remaining > self.TIMED_ENTRY_WINDOW_SECONDS
+                )
+
                 # Floor check: entry requires 70%+ odds (timed strategy). No upper ceiling.
-                # If odds not yet there, store context and let _timed_entry_monitor execute later.
                 entry_odds_met = (
                     (decision.action == "YES" and yes_odds_fresh >= 0.70) or
                     (decision.action == "NO" and no_odds_fresh >= 0.70)
                 )
-                if not entry_odds_met and not self.test_mode.enabled:
+
+                # Defer: either too early (not in last 5 min) or odds not yet there
+                should_defer = not self.test_mode.enabled and (not_in_entry_window or not entry_odds_met)
+
+                if should_defer:
                     current_side_odds = yes_odds_fresh if decision.action == "YES" else no_odds_fresh
+                    defer_reason = (
+                        f"not in last-5-min window ({time_remaining}s remaining)"
+                        if not_in_entry_window
+                        else f"odds below 70% threshold ({current_side_odds:.2%})"
+                    )
                     logger.info(
-                        "Decision stored - odds below 70% entry threshold, monitoring for entry",
+                        "Decision stored — deferring to timed entry monitor",
                         market_id=market.id,
                         action=decision.action,
                         current_odds=f"{current_side_odds:.2%}",
-                        entry_threshold="70%",
-                        time_remaining=time_remaining
+                        time_remaining=time_remaining,
+                        reason=defer_reason
                     )
                     # Store full execution context for _timed_entry_monitor
                     self._timed_decisions[market.id] = {
@@ -1799,14 +1816,15 @@ class AutoTrader:
                         'btc_data': btc_data,
                         'btc_current': float(btc_data.price),
                         'btc_price_to_beat': float(price_to_beat) if price_to_beat else None,
-                        'indicators': indicators,  # Stored for fast non-AI entry check
+                        'indicators': indicators,        # For fast non-AI entry check (RSI/MACD/trend)
+                        'btc_momentum': btc_momentum,    # For fast non-AI entry check (volume)
                         'arbitrage_opportunity': arbitrage_opportunity,
                         'conflict_analysis': conflict_analysis,
                         'signal_lag_detected': signal_lag_detected,
                         'signal_lag_reason': signal_lag_reason,
                         'stored_at': datetime.now(timezone.utc),
                     }
-                    return  # _timed_entry_monitor will execute when odds reach 70%
+                    return  # _timed_entry_monitor will execute when in last 5 min AND odds >= 70%
 
                 # Store odds for paper trade logging
                 odds_yes = yes_odds_fresh
@@ -2549,8 +2567,8 @@ class AutoTrader:
     # ─────────────────────────────────────────────────────────────────────────
 
     TIMING_WATCHER_INTERVAL_SECONDS = 10
-    ANALYSIS_TRIGGER_ELAPSED_SECONDS = 600   # T=10min into the 15-min market
-    ANALYSIS_TRIGGER_WINDOW_SECONDS = 60     # 60s window to fire (600–660s elapsed)
+    ANALYSIS_TRIGGER_ELAPSED_SECONDS = 300   # T=5min into the 15-min market (first 5-min mark)
+    ANALYSIS_TRIGGER_WINDOW_SECONDS = 60     # 60s window to fire (300–360s elapsed)
     TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter (no upper ceiling)
     TIMED_ENTRY_WINDOW_SECONDS = 300         # Only enter in last 5 minutes (<=300s remaining)
 
@@ -2568,8 +2586,8 @@ class AutoTrader:
         """
         logger.info(
             "Market timing watcher started",
-            analysis_trigger_at=f"T+{self.ANALYSIS_TRIGGER_ELAPSED_SECONDS}s (10-min mark)",
-            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (5 min)",
+            analysis_trigger_at=f"T+{self.ANALYSIS_TRIGGER_ELAPSED_SECONDS}s (5-min mark)",
+            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (final 5 min)",
             entry_odds_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}"
         )
 
@@ -2611,7 +2629,7 @@ class AutoTrader:
                 trigger_end = self.ANALYSIS_TRIGGER_ELAPSED_SECONDS + self.ANALYSIS_TRIGGER_WINDOW_SECONDS
                 if self.ANALYSIS_TRIGGER_ELAPSED_SECONDS <= elapsed < trigger_end:
                     logger.info(
-                        "T=10min mark reached — triggering AI analysis",
+                        "T=5min mark reached — triggering AI analysis",
                         market_id=market_id,
                         market_slug=market_slug,
                         elapsed_seconds=int(elapsed),
@@ -2750,6 +2768,7 @@ class AutoTrader:
             (False, reason) if entry should be skipped this cycle
         """
         indicators = stored.get('indicators')
+        btc_momentum = stored.get('btc_momentum')
         btc_current = stored.get('btc_current')
         btc_price_to_beat = stored.get('btc_price_to_beat')
 
@@ -2777,7 +2796,20 @@ class AutoTrader:
             if action == "NO" and trend == "BULLISH":
                 return False, f"Technical trend BULLISH contradicts NO entry"
 
-        # Check 4: BTC price far on wrong side of price-to-beat at analysis time
+        # Check 4: Volume alignment — is volume flow supporting the direction?
+        # btc_momentum.momentum_direction is "UP"/"DOWN"/"FLAT" based on price velocity + volume
+        # btc_momentum.volume_ratio is current_hour_volume / avg_hourly_volume
+        if btc_momentum:
+            vol_ratio = getattr(btc_momentum, 'volume_ratio', None)
+            mom_direction = getattr(btc_momentum, 'momentum_direction', None)
+            # If volume is significantly elevated AND momentum contradicts our direction, skip
+            if vol_ratio is not None and mom_direction is not None and vol_ratio > 1.5:
+                if action == "YES" and mom_direction == "DOWN":
+                    return False, f"High-volume ({vol_ratio:.1f}x) momentum DOWN contradicts YES entry"
+                if action == "NO" and mom_direction == "UP":
+                    return False, f"High-volume ({vol_ratio:.1f}x) momentum UP contradicts NO entry"
+
+        # Check 5: BTC price far on wrong side of price-to-beat at analysis time
         if btc_current is not None and btc_price_to_beat is not None:
             diff = btc_current - btc_price_to_beat
             if action == "YES" and diff < -150:
