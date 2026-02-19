@@ -1799,6 +1799,7 @@ class AutoTrader:
                         'btc_data': btc_data,
                         'btc_current': float(btc_data.price),
                         'btc_price_to_beat': float(price_to_beat) if price_to_beat else None,
+                        'indicators': indicators,  # Stored for fast non-AI entry check
                         'arbitrage_opportunity': arbitrage_opportunity,
                         'conflict_analysis': conflict_analysis,
                         'signal_lag_detected': signal_lag_detected,
@@ -2550,8 +2551,7 @@ class AutoTrader:
     TIMING_WATCHER_INTERVAL_SECONDS = 10
     ANALYSIS_TRIGGER_ELAPSED_SECONDS = 600   # T=10min into the 15-min market
     ANALYSIS_TRIGGER_WINDOW_SECONDS = 60     # 60s window to fire (600–660s elapsed)
-    TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter
-    TIMED_ENTRY_ODDS_MAX = 0.80              # Maximum CLOB odds (above = near settlement)
+    TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter (no upper ceiling)
     TIMED_ENTRY_WINDOW_SECONDS = 300         # Only enter in last 5 minutes (<=300s remaining)
 
     async def _market_timing_watcher(self) -> None:
@@ -2631,7 +2631,8 @@ class AutoTrader:
         This monitor checks every 10s. When:
           - Time remaining <= 5 min (300s)
           - Stored decision exists for the active market
-          - CLOB odds for the decided direction >= 70% AND < 80%
+          - CLOB odds for the decided direction >= 70%
+          - Fast non-AI check passes (RSI/MACD/trend alignment)
         it fires _execute_timed_entry() to place the order.
         """
         logger.info(
@@ -2705,8 +2706,21 @@ class AutoTrader:
                     )
 
                     if current_odds >= self.TIMED_ENTRY_ODDS_MIN:
+                        # Run fast non-AI check: RSI/MACD/trend alignment
+                        fast_ok, fast_reason = self._fast_entry_check(stored, action)
+                        if not fast_ok:
+                            logger.info(
+                                "Timed entry skipped — fast check failed (will retry next cycle)",
+                                market_id=market_id,
+                                action=action,
+                                current_odds=f"{current_odds:.2%}",
+                                reason=fast_reason,
+                                time_remaining=time_remaining
+                            )
+                            continue  # Retry on next 10s cycle
+
                         logger.info(
-                            "Timed entry condition met — executing stored decision",
+                            "Timed entry condition met — fast check passed, executing",
                             market_id=market_id,
                             action=action,
                             current_odds=f"{current_odds:.2%}",
@@ -2718,6 +2732,60 @@ class AutoTrader:
 
             except Exception as e:
                 logger.error("Timed entry monitor error", error=str(e))
+
+    def _fast_entry_check(self, stored: dict, action: str) -> tuple[bool, str]:
+        """Fast non-AI validation of stored technical signals before order placement.
+
+        Uses analysis-time indicators (RSI, MACD, trend) to verify the AI's decision
+        hasn't become technically contradicted. No API calls — runs on cached data only.
+
+        Checks:
+          1. RSI extremes: overbought RSI contradicts YES; oversold contradicts NO
+          2. MACD histogram: strongly opposing momentum contradicts the direction
+          3. Trend: a clear opposing trend contradicts the direction
+          4. BTC distance: BTC far on wrong side of price-to-beat at analysis time
+
+        Returns:
+            (True, "ok") if entry is supported
+            (False, reason) if entry should be skipped this cycle
+        """
+        indicators = stored.get('indicators')
+        btc_current = stored.get('btc_current')
+        btc_price_to_beat = stored.get('btc_price_to_beat')
+
+        # Check 1: RSI extreme contradiction
+        if indicators and indicators.rsi is not None:
+            rsi = indicators.rsi
+            if action == "YES" and rsi > 85:
+                return False, f"RSI overbought ({rsi:.1f} > 85) contradicts YES entry"
+            if action == "NO" and rsi < 15:
+                return False, f"RSI oversold ({rsi:.1f} < 15) contradicts NO entry"
+
+        # Check 2: MACD histogram direction (strong opposing momentum)
+        if indicators and indicators.macd_histogram is not None:
+            hist = indicators.macd_histogram
+            if action == "YES" and hist < -0.5:
+                return False, f"MACD histogram ({hist:.3f}) shows strong bearish momentum vs YES"
+            if action == "NO" and hist > 0.5:
+                return False, f"MACD histogram ({hist:.3f}) shows strong bullish momentum vs NO"
+
+        # Check 3: Trend alignment
+        if indicators and indicators.trend:
+            trend = indicators.trend
+            if action == "YES" and trend == "BEARISH":
+                return False, f"Technical trend BEARISH contradicts YES entry"
+            if action == "NO" and trend == "BULLISH":
+                return False, f"Technical trend BULLISH contradicts NO entry"
+
+        # Check 4: BTC price far on wrong side of price-to-beat at analysis time
+        if btc_current is not None and btc_price_to_beat is not None:
+            diff = btc_current - btc_price_to_beat
+            if action == "YES" and diff < -150:
+                return False, f"BTC was ${diff:+.0f} vs price-to-beat at analysis — unlikely to close gap"
+            if action == "NO" and diff > 150:
+                return False, f"BTC was ${diff:+.0f} vs price-to-beat at analysis — unlikely to reverse"
+
+        return True, "ok"
 
     async def _execute_timed_entry(self, market_id: str, stored: dict, trigger_odds: float) -> None:
         """Execute a stored timed decision when entry conditions are met.
@@ -2735,6 +2803,17 @@ class AutoTrader:
 
             market = stored['market']
             decision = stored['decision']
+
+            # Final fast-check gate at actual execution time
+            fast_ok, fast_reason = self._fast_entry_check(stored, decision.action)
+            if not fast_ok:
+                logger.info(
+                    "Timed entry aborted at execution — fast check failed",
+                    market_id=market_id,
+                    action=decision.action,
+                    reason=fast_reason
+                )
+                return
 
             # Get fresh CLOB odds for execution price
             _rt_odds = self.realtime_streamer.get_current_odds(market_id)
