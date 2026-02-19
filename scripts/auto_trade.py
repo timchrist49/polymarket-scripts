@@ -1552,24 +1552,35 @@ class AutoTrader:
             # RSI-action contradiction check: reject bets that fight strong momentum.
             # RSI > 85 means BTC is surging UP — betting NO (DOWN) contradicts this.
             # RSI < 15 means BTC is collapsing — betting YES (UP) contradicts this.
-            # The contrarian system handles extremes (RSI<10 / RSI>90) with crowd odds context;
-            # this guard catches the zone between contrarian and neutral.
+            # EXCEPTION: Contrarian mean-reversion bets are exempt — OVERBOUGHT_REVERSAL
+            # intentionally bets NO when RSI > 90 + crowd is overly bullish, and
+            # OVERSOLD_REVERSAL intentionally bets YES when RSI < 10 + crowd is oversold.
             if indicators and indicators.rsi is not None and not self.test_mode.enabled:
                 rsi = indicators.rsi
-                if decision.action == "NO" and rsi > 85:
+                is_contrarian_no = (
+                    contrarian_signal is not None
+                    and contrarian_signal.type == "OVERBOUGHT_REVERSAL"
+                    and decision.action == "NO"
+                )
+                is_contrarian_yes = (
+                    contrarian_signal is not None
+                    and contrarian_signal.type == "OVERSOLD_REVERSAL"
+                    and decision.action == "YES"
+                )
+                if decision.action == "NO" and rsi > 85 and not is_contrarian_no:
                     logger.info(
                         "Skipping NO trade — RSI strongly overbought contradicts DOWN bet",
                         market_id=market.id,
                         rsi=f"{rsi:.1f}",
-                        reason="RSI > 85 = strong upward momentum contradicts NO/DOWN bet"
+                        reason="RSI > 85 = strong upward momentum contradicts NO/DOWN bet (no contrarian signal)"
                     )
                     return
-                if decision.action == "YES" and rsi < 15:
+                if decision.action == "YES" and rsi < 15 and not is_contrarian_yes:
                     logger.info(
                         "Skipping YES trade — RSI strongly oversold contradicts UP bet",
                         market_id=market.id,
                         rsi=f"{rsi:.1f}",
-                        reason="RSI < 15 = strong downward momentum contradicts YES/UP bet"
+                        reason="RSI < 15 = strong downward momentum contradicts YES/UP bet (no contrarian signal)"
                     )
                     return
 

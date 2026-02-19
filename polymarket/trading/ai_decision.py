@@ -628,6 +628,11 @@ STRATEGY:
 ═══════════════════════════════════════════════════════════════════
 No contrarian setup detected. RSI is not at extreme levels (< 10 or > 90).
 Proceed with standard technical and sentiment analysis.
+
+⚠️ RSI HARD LIMITS (auto-enforced even without contrarian signal):
+- RSI > 85 + NO bet  → Auto-rejected (strong upward momentum contradicts DOWN bet)
+- RSI < 15 + YES bet → Auto-rejected (strong downward momentum contradicts UP bet)
+If current RSI is in these zones, recommend HOLD unless this is a contrarian reversal setup.
 ═══════════════════════════════════════════════════════════════════
 """
 
@@ -716,15 +721,20 @@ STRATEGY PRIORITY (CRITICAL):
    - These trades have 3-5x higher profit potential
    - Historical data: Contrarian trades average $5.67 profit vs $0.83 for crowd-following
 
-2. **AVOID HIGH-ODDS BETS** (odds > 0.70) unless EXTREMELY high confidence (> 0.95)
-   - Even when you win, profit is minimal
-   - Only justified if signals are overwhelmingly strong
+2. **HARD LIMITS — Risk system will AUTO-REJECT these (do not waste a bet on them):**
+   - Odds > 0.80: Auto-rejected regardless of confidence (fees eat all profit)
+   - Odds < 0.25: Auto-rejected (too wide, implies broken market)
+   - Confidence < 0.70: Auto-rejected
 
-3. **CALCULATE EXPECTED VALUE:**
+3. **AVOID HIGH-ODDS BETS** (odds > 0.65) unless EXTREMELY high confidence (> 0.95)
+   - Even when you win, profit is minimal
+   - Bets at > 0.80 odds are auto-rejected — do not recommend them
+
+4. **CALCULATE EXPECTED VALUE:**
    - Low odds bet: 60% win rate × $15 profit = $9.00 EV (GOOD!)
    - High odds bet: 60% win rate × $1.67 profit = $1.00 EV (POOR!)
 
-4. When both signals and odds align for contrarian bet → STRONG BUY signal
+5. When both signals and odds align for contrarian bet → STRONG BUY signal
    - Example: Bearish signals + YES at $0.30 (crowd thinks UP) → Buy NO token
    - You're betting against the crowd with data supporting your position
 
@@ -739,6 +749,11 @@ DECISION INSTRUCTIONS:
    - ⚠️ CHECK MARKET REGIME - is it TRENDING/RANGING/VOLATILE/UNCLEAR?
    - ⚠️ CHECK TIMEFRAME ALIGNMENT - are daily + 4h aligned or conflicting?
    - ⚠️ CHECK VOLUME - is there sufficient volume for the move?
+   - ⚠️ CHECK RSI HARD LIMITS (auto-rejected if violated):
+       · RSI > 85 + action = NO  → HOLD instead (unless contrarian OVERBOUGHT_REVERSAL signal present)
+       · RSI < 15 + action = YES → HOLD instead (unless contrarian OVERSOLD_REVERSAL signal present)
+       · Reason: RSI > 85 = BTC has strong upward momentum; betting DOWN contradicts it.
+       · Exception: Contrarian OVERBOUGHT/OVERSOLD reversal signals intentionally exploit these extremes.
    - Price-to-beat direction (is current price up or down from start?)
    - Actual BTC momentum (is BTC moving up or down right now?)
    - Market signals (what does Polymarket sentiment say?)
@@ -800,9 +815,9 @@ Return JSON with:
   "confidence": 0.0-1.0,
   "reasoning": "MUST include: (1) Base confidence before signals, (2) Market signals direction & confidence, (3) Alignment or conflict assessment, (4) Signal adjustment applied (+/- amount), (5) Final confidence. Example: 'Technical BULLISH (base: 0.70). Signals: BULLISH (0.75). ALIGNED. Applied +0.12 boost. Final: 0.82.'",
   "confidence_adjustment": "+0.1" or "-0.05" or "0.0",
-  "position_size": "amount in USDC as number",
   "stop_loss": "odds threshold to cancel bet (0.0-1.0)"
 }}
+Note: position_size is NOT required — sizing is calculated deterministically from confidence and portfolio value.
 
 ACTION MAPPING:
 - Return "YES" to buy the "{yes_outcome}" token (currently {yes_price:.2f} odds)
