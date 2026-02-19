@@ -1771,26 +1771,7 @@ class AutoTrader:
                     yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
                     no_odds_fresh = 1.0 - yes_odds_fresh
 
-                # Timed strategy entry gates: 70% minimum, 80% maximum (near settlement).
-                # Ceiling check: always reject - above 80% means near settlement, minimal upside.
-                if decision.action == "YES" and yes_odds_fresh >= 0.80:
-                    logger.info(
-                        "Skipping trade - YES odds above max ceiling (near settlement)",
-                        market_id=market.id,
-                        odds=f"{yes_odds_fresh:.2%}",
-                        ceiling="80%"
-                    )
-                    return
-                elif decision.action == "NO" and no_odds_fresh >= 0.80:
-                    logger.info(
-                        "Skipping trade - NO odds above max ceiling (near settlement)",
-                        market_id=market.id,
-                        odds=f"{no_odds_fresh:.2%}",
-                        ceiling="80%"
-                    )
-                    return
-
-                # Floor check: entry requires 70%+ odds (timed strategy).
+                # Floor check: entry requires 70%+ odds (timed strategy). No upper ceiling.
                 # If odds not yet there, store context and let _timed_entry_monitor execute later.
                 entry_odds_met = (
                     (decision.action == "YES" and yes_odds_fresh >= 0.70) or
@@ -2723,17 +2704,7 @@ class AutoTrader:
                         time_remaining=time_remaining
                     )
 
-                    if current_odds >= self.TIMED_ENTRY_ODDS_MAX:
-                        logger.info(
-                            "Timed entry: odds too high (>=80%), abandoning decision",
-                            market_id=market_id,
-                            action=action,
-                            current_odds=f"{current_odds:.2%}"
-                        )
-                        self._timed_decisions.pop(market_id, None)
-                        continue
-
-                    if self.TIMED_ENTRY_ODDS_MIN <= current_odds < self.TIMED_ENTRY_ODDS_MAX:
+                    if current_odds >= self.TIMED_ENTRY_ODDS_MIN:
                         logger.info(
                             "Timed entry condition met — executing stored decision",
                             market_id=market_id,
@@ -2776,15 +2747,7 @@ class AutoTrader:
                 odds_no = market_price
                 odds_yes = 1.0 - market_price
 
-            # Final JIT guard: re-validate bounds at actual execution time
-            if market_price >= self.TIMED_ENTRY_ODDS_MAX:
-                logger.info(
-                    "Timed entry blocked — odds rose above 80% ceiling at execution",
-                    market_id=market_id,
-                    action=decision.action,
-                    odds=f"{market_price:.2%}"
-                )
-                return
+            # Final JIT guard: re-validate 70% floor at actual execution time
             if market_price < self.TIMED_ENTRY_ODDS_MIN:
                 logger.info(
                     "Timed entry blocked — odds fell below 70% between monitor check and execution",
