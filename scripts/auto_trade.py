@@ -2217,6 +2217,19 @@ class AutoTrader:
             order_id = execution_result["order_id"]
             filled_via = execution_result.get("filled_via", "limit")
 
+            # CRITICAL: Mark market as traded IMMEDIATELY after CLOB order is confirmed
+            # filled. Do NOT wait until after verification/Telegram/DB updates — any
+            # exception in those steps would leave _traded_markets unset, clearing all
+            # locks and allowing the next OddsMonitor trigger to place a second order.
+            if not self.test_mode.enabled:
+                self._traded_markets.add(market.id)
+                self._markets_with_active_cycle_analysis.discard(market.id)
+                logger.info(
+                    "Market locked immediately after CLOB fill - no further orders possible",
+                    market_id=market.id,
+                    order_id=order_id
+                )
+
             # NEW: Phase 1 Quick Status Check (2 seconds)
             logger.info(
                 "Running quick order verification",
