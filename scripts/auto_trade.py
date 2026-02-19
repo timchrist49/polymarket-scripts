@@ -1744,7 +1744,7 @@ class AutoTrader:
                     yes_odds_fresh = fresh_market.best_bid if fresh_market.best_bid else 0.50
                     no_odds_fresh = 1.0 - yes_odds_fresh
 
-                # Check if AI's chosen side still qualifies (60% threshold)
+                # Check if AI's chosen side still qualifies (60% lower bound, 80% upper bound)
                 if decision.action == "YES" and yes_odds_fresh <= 0.60:
                     logger.info(
                         "Skipping trade - YES odds below threshold at execution time",
@@ -1753,12 +1753,28 @@ class AutoTrader:
                         threshold="60%"
                     )
                     return
+                elif decision.action == "YES" and yes_odds_fresh >= 0.80:
+                    logger.info(
+                        "Skipping trade - YES odds above max ceiling at execution time (near settlement)",
+                        market_id=market.id,
+                        odds=f"{yes_odds_fresh:.2%}",
+                        ceiling="80%"
+                    )
+                    return
                 elif decision.action == "NO" and no_odds_fresh <= 0.60:
                     logger.info(
                         "Skipping trade - NO odds below threshold at execution time",
                         market_id=market.id,
                         odds=f"{no_odds_fresh:.2%}",
                         threshold="60%"
+                    )
+                    return
+                elif decision.action == "NO" and no_odds_fresh >= 0.80:
+                    logger.info(
+                        "Skipping trade - NO odds above max ceiling at execution time (near settlement)",
+                        market_id=market.id,
+                        odds=f"{no_odds_fresh:.2%}",
+                        ceiling="80%"
                     )
                     return
 
