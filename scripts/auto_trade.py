@@ -232,6 +232,13 @@ class AutoTrader:
         # is set (which only happens deep inside _process_market, 30-60s later).
         self._markets_with_active_watcher_analysis: set[str] = set()
 
+        # Cycle-level analysis lock: tracks markets currently undergoing AI analysis in
+        # ANY cycle (OddsMonitor-triggered, timer-triggered, or watcher-triggered).
+        # The OddsMonitor has a 30s cooldown, but AI analysis takes 30-60s, so a second
+        # cycle can start and pass the _traded_markets check before the first cycle places
+        # its order. This lock prevents the AI call from even starting for a duplicate.
+        self._markets_with_active_cycle_analysis: set[str] = set()
+
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
 
@@ -1018,6 +1025,21 @@ class AutoTrader:
                     )
                     return
 
+                # Cycle-level analysis lock: if another cycle is already running AI
+                # analysis for this market, skip. Without this, an OddsMonitor re-fire
+                # during the 30-60s AI call starts a second concurrent analysis that
+                # also passes the _traded_markets check above (since the first cycle
+                # hasn't executed yet), resulting in two real orders.
+                if market.id in self._markets_with_active_cycle_analysis:
+                    logger.info(
+                        "Skipping market - AI analysis already in progress for this market",
+                        market_id=market.id,
+                        market_question=market.question[:80] if market.question else ""
+                    )
+                    return
+
+                self._markets_with_active_cycle_analysis.add(market.id)
+
             # Get real-time odds from WebSocket streamer
             odds_snapshot = self.realtime_streamer.get_current_odds(market.id)
 
@@ -1450,6 +1472,18 @@ class AutoTrader:
                 force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
 
+            # Re-check _traded_markets after AI call: another concurrent cycle may have
+            # placed an order during the 30-60s AI processing window (belt-and-suspenders
+            # alongside _markets_with_active_cycle_analysis which blocks at entry).
+            if not self.test_mode.enabled and market.id in self._traded_markets:
+                self._markets_with_active_cycle_analysis.discard(market.id)
+                logger.info(
+                    "Skipping - market was traded by concurrent cycle during AI analysis",
+                    market_id=market.id
+                )
+                return
+
+
             # NEW: Conflict detection and confidence adjustment
             conflict_detector = SignalConflictDetector()
             conflict_analysis = conflict_detector.analyze_conflicts(
@@ -1812,6 +1846,12 @@ class AutoTrader:
                 market_id=market.id,
                 error=str(e)
             )
+        finally:
+            # Always release the cycle analysis lock on any exit (HOLD, error, or
+            # after-trade). For the traded path this is a no-op since it was already
+            # cleared in _traded_markets.add(), but it's safe to discard twice.
+            if not self.test_mode.enabled:
+                self._markets_with_active_cycle_analysis.discard(market.id)
 
     async def _get_fresh_market_data(self, market_id: str) -> Optional[Market]:
         """
@@ -2238,6 +2278,7 @@ class AutoTrader:
             # Mark market as traded in production mode (prevent double-betting)
             if not self.test_mode.enabled:
                 self._traded_markets.add(market.id)
+                self._markets_with_active_cycle_analysis.discard(market.id)
                 logger.info(
                     "Market marked as traded - will not re-enter this market",
                     market_id=market.id,
