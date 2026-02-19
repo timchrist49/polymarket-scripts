@@ -1816,8 +1816,10 @@ class AutoTrader:
                         'btc_data': btc_data,
                         'btc_current': float(btc_data.price),
                         'btc_price_to_beat': float(price_to_beat) if price_to_beat else None,
-                        'indicators': indicators,        # For fast non-AI entry check (RSI/MACD/trend)
-                        'btc_momentum': btc_momentum,    # For fast non-AI entry check (volume)
+                        'indicators': indicators,            # RSI/trend for fast entry check
+                        'btc_momentum': btc_momentum,        # Volume/momentum for fast entry check
+                        'timeframe_analysis': timeframe_analysis,  # 1m/5m/15m/30m alignment for fast entry check
+                        'contrarian_signal': contrarian_signal,    # Prevents trend check from blocking contrarian plays
                         'arbitrage_opportunity': arbitrage_opportunity,
                         'conflict_analysis': conflict_analysis,
                         'signal_lag_detected': signal_lag_detected,
@@ -2754,14 +2756,25 @@ class AutoTrader:
     def _fast_entry_check(self, stored: dict, action: str) -> tuple[bool, str]:
         """Fast non-AI validation of stored technical signals before order placement.
 
-        Uses analysis-time indicators (RSI, MACD, trend) to verify the AI's decision
-        hasn't become technically contradicted. No API calls — runs on cached data only.
+        Uses analysis-time indicators to confirm the AI's directional thesis is still
+        plausible. No API calls — runs on cached data only.
+
+        Design principles:
+        - The primary real-time confirmation is already CLOB odds >= 70% (Gate 2).
+        - These checks only BLOCK on clear, strong contradictions — not MACD noise.
+        - Contrarian plays (OVERBOUGHT_REVERSAL/OVERSOLD_REVERSAL) bypass trend blocking
+          since they intentionally trade against the short-term trend.
+        - Data is from T=5min analysis; thresholds are set conservatively to account
+          for staleness by the time this runs at T=10-15min.
 
         Checks:
-          1. RSI extremes: overbought RSI contradicts YES; oversold contradicts NO
-          2. MACD histogram: strongly opposing momentum contradicts the direction
-          3. Trend: a clear opposing trend contradicts the direction
-          4. BTC distance: BTC far on wrong side of price-to-beat at analysis time
+          1. RSI extremes: RSI > 85 blocks YES (overbought); RSI < 15 blocks NO (oversold)
+             — contrarian bets are EXEMPT (they intentionally trade reversals)
+          2. Trend contradiction: short-term trend strongly opposing direction
+             — contrarian bets are EXEMPT
+          3. Multi-timeframe alignment: 1m/5m/15m/30m all aligned AGAINST our direction
+          4. High-volume opposing momentum: high-volume flow in wrong direction
+          5. BTC gap: BTC was >$500 on wrong side of price-to-beat at analysis time
 
         Returns:
             (True, "ok") if entry is supported
@@ -2771,51 +2784,75 @@ class AutoTrader:
         btc_momentum = stored.get('btc_momentum')
         btc_current = stored.get('btc_current')
         btc_price_to_beat = stored.get('btc_price_to_beat')
+        timeframe_analysis = stored.get('timeframe_analysis')
+        contrarian_signal = stored.get('contrarian_signal')
 
-        # Check 1: RSI extreme contradiction
-        if indicators and indicators.rsi is not None:
+        # Determine if this is a contrarian play (exempt from trend/RSI-direction blocking)
+        is_contrarian = (
+            contrarian_signal is not None and (
+                (action == "NO" and getattr(contrarian_signal, 'type', None) == "OVERBOUGHT_REVERSAL") or
+                (action == "YES" and getattr(contrarian_signal, 'type', None) == "OVERSOLD_REVERSAL")
+            )
+        )
+
+        # Check 1: RSI extremes (scale-independent, 0-100)
+        # RSI > 85 = severely overbought → bet UP (YES) is exhausted
+        # RSI < 15 = severely oversold  → bet DOWN (NO) is exhausted
+        # Contrarian plays are exempt — OVERBOUGHT_REVERSAL bets NO when RSI > 85 on purpose
+        if not is_contrarian and indicators and indicators.rsi is not None:
             rsi = indicators.rsi
             if action == "YES" and rsi > 85:
-                return False, f"RSI overbought ({rsi:.1f} > 85) contradicts YES entry"
+                return False, f"RSI severely overbought ({rsi:.1f}) contradicts YES entry"
             if action == "NO" and rsi < 15:
-                return False, f"RSI oversold ({rsi:.1f} < 15) contradicts NO entry"
+                return False, f"RSI severely oversold ({rsi:.1f}) contradicts NO entry"
 
-        # Check 2: MACD histogram direction (strong opposing momentum)
-        if indicators and indicators.macd_histogram is not None:
-            hist = indicators.macd_histogram
-            if action == "YES" and hist < -0.5:
-                return False, f"MACD histogram ({hist:.3f}) shows strong bearish momentum vs YES"
-            if action == "NO" and hist > 0.5:
-                return False, f"MACD histogram ({hist:.3f}) shows strong bullish momentum vs NO"
-
-        # Check 3: Trend alignment
-        if indicators and indicators.trend:
+        # Check 2: Short-term trend contradiction
+        # Only block if both ema_short/ema_long AND momentum clearly oppose direction.
+        # Contrarian plays are exempt — they intentionally bet against the short-term trend.
+        # NOTE: No MACD histogram threshold — MACD values are in raw USD (e.g. $5, $30) and
+        # vary wildly with BTC price scale; the `trend` field already encodes MACD direction.
+        if not is_contrarian and indicators and indicators.trend:
             trend = indicators.trend
             if action == "YES" and trend == "BEARISH":
-                return False, f"Technical trend BEARISH contradicts YES entry"
+                return False, f"Short-term trend BEARISH contradicts YES entry (use contrarian flag to bypass)"
             if action == "NO" and trend == "BULLISH":
-                return False, f"Technical trend BULLISH contradicts NO entry"
+                return False, f"Short-term trend BULLISH contradicts NO entry (use contrarian flag to bypass)"
 
-        # Check 4: Volume alignment — is volume flow supporting the direction?
-        # btc_momentum.momentum_direction is "UP"/"DOWN"/"FLAT" based on price velocity + volume
-        # btc_momentum.volume_ratio is current_hour_volume / avg_hourly_volume
+        # Check 3: Multi-timeframe alignment — block only on strong unanimous opposition
+        # alignment_score values: ALIGNED_BULLISH, STRONG_BULLISH, ALIGNED_BEARISH,
+        #                          STRONG_BEARISH, MIXED, CONFLICTING
+        # Only block if ALL major timeframes are unanimously against our direction.
+        # MIXED / CONFLICTING = uncertain → let CLOB odds decide → allow.
+        if timeframe_analysis:
+            alignment = getattr(timeframe_analysis, 'alignment_score', None)
+            if alignment:
+                if action == "YES" and alignment in ("ALIGNED_BEARISH", "STRONG_BEARISH"):
+                    return False, f"All timeframes ({alignment}) oppose YES entry"
+                if action == "NO" and alignment in ("ALIGNED_BULLISH", "STRONG_BULLISH"):
+                    return False, f"All timeframes ({alignment}) oppose NO entry"
+
+        # Check 4: High-volume opposing momentum
+        # Only block when volume is clearly elevated (>2x average) AND momentum direction
+        # is firmly opposite. Threshold raised to 2x (from 1.5x) to reduce false blocks.
         if btc_momentum:
             vol_ratio = getattr(btc_momentum, 'volume_ratio', None)
             mom_direction = getattr(btc_momentum, 'momentum_direction', None)
-            # If volume is significantly elevated AND momentum contradicts our direction, skip
-            if vol_ratio is not None and mom_direction is not None and vol_ratio > 1.5:
+            if vol_ratio is not None and mom_direction is not None and vol_ratio > 2.0:
                 if action == "YES" and mom_direction == "DOWN":
-                    return False, f"High-volume ({vol_ratio:.1f}x) momentum DOWN contradicts YES entry"
+                    return False, f"High-volume ({vol_ratio:.1f}x) momentum DOWN contradicts YES"
                 if action == "NO" and mom_direction == "UP":
-                    return False, f"High-volume ({vol_ratio:.1f}x) momentum UP contradicts NO entry"
+                    return False, f"High-volume ({vol_ratio:.1f}x) momentum UP contradicts NO"
 
-        # Check 5: BTC price far on wrong side of price-to-beat at analysis time
+        # Check 5: BTC price grossly on wrong side of price-to-beat at analysis time
+        # Threshold is $500 (not $150) — analysis data is from T=5min, stale by T=10-15min.
+        # BTC can move $150-300 in 5 minutes. Only block truly impossible cases.
+        # The CLOB odds >= 70% (Gate 2) is the real-time gap assessment.
         if btc_current is not None and btc_price_to_beat is not None:
             diff = btc_current - btc_price_to_beat
-            if action == "YES" and diff < -150:
-                return False, f"BTC was ${diff:+.0f} vs price-to-beat at analysis — unlikely to close gap"
-            if action == "NO" and diff > 150:
-                return False, f"BTC was ${diff:+.0f} vs price-to-beat at analysis — unlikely to reverse"
+            if action == "YES" and diff < -500:
+                return False, f"BTC was ${diff:+.0f} vs price-to-beat at analysis — gap too large for YES"
+            if action == "NO" and diff > 500:
+                return False, f"BTC was ${diff:+.0f} vs price-to-beat at analysis — gap too large for NO"
 
         return True, "ok"
 
