@@ -226,6 +226,12 @@ class AutoTrader:
         # to avoid re-fetching indicators/sentiment on every 10s price-movement check.
         self._last_cycle_data: dict | None = None
 
+        # Watcher-level analysis lock: tracks markets for which the price watcher has
+        # already spawned an analysis task that hasn't finished yet.
+        # Prevents the 10s loop from queuing duplicate tasks before _markets_with_pending_orders
+        # is set (which only happens deep inside _process_market, 30-60s later).
+        self._markets_with_active_watcher_analysis: set[str] = set()
+
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
 
@@ -1543,6 +1549,30 @@ class AutoTrader:
                     )
                     return  # Skip WITHOUT creating DB record
 
+            # RSI-action contradiction check: reject bets that fight strong momentum.
+            # RSI > 85 means BTC is surging UP — betting NO (DOWN) contradicts this.
+            # RSI < 15 means BTC is collapsing — betting YES (UP) contradicts this.
+            # The contrarian system handles extremes (RSI<10 / RSI>90) with crowd odds context;
+            # this guard catches the zone between contrarian and neutral.
+            if indicators and indicators.rsi is not None and not self.test_mode.enabled:
+                rsi = indicators.rsi
+                if decision.action == "NO" and rsi > 85:
+                    logger.info(
+                        "Skipping NO trade — RSI strongly overbought contradicts DOWN bet",
+                        market_id=market.id,
+                        rsi=f"{rsi:.1f}",
+                        reason="RSI > 85 = strong upward momentum contradicts NO/DOWN bet"
+                    )
+                    return
+                if decision.action == "YES" and rsi < 15:
+                    logger.info(
+                        "Skipping YES trade — RSI strongly oversold contradicts UP bet",
+                        market_id=market.id,
+                        rsi=f"{rsi:.1f}",
+                        reason="RSI < 15 = strong downward momentum contradicts YES/UP bet"
+                    )
+                    return
+
             # NOW log decision to performance tracker (only if validation passed)
             trade_id = -1
             try:
@@ -2457,6 +2487,16 @@ class AutoTrader:
                             continue
                         if market.id in self._traded_markets:
                             continue
+                        # Skip if the watcher already has a live analysis task for this market.
+                        # This is the primary duplicate-prevention guard: _process_market takes
+                        # 30-60s (AI call), so without this the 10s loop would queue 3-6 tasks
+                        # before _markets_with_pending_orders is ever set.
+                        if market.id in self._markets_with_active_watcher_analysis:
+                            logger.debug(
+                                "Price watcher skipping — analysis already in progress",
+                                market_id=market.id
+                            )
+                            continue
 
                         direction = "UP" if current_price > price_to_beat else "DOWN"
                         logger.info(
@@ -2466,7 +2506,8 @@ class AutoTrader:
                             threshold=f"${self.PRICE_WATCHER_TRIGGER_USD}",
                             direction=direction
                         )
-                        # Fire-and-forget — errors don't stop the watcher
+                        # Lock BEFORE creating the task so the next 10s tick sees it immediately
+                        self._markets_with_active_watcher_analysis.add(market.id)
                         asyncio.create_task(self._trigger_market_analysis(market, btc_price_data))
 
             except Exception as e:
@@ -2478,10 +2519,27 @@ class AutoTrader:
         Called by _price_movement_watcher. Uses self._last_cycle_data so we don't
         re-fetch indicators/sentiment on every 10s tick — the cached values are
         fresh enough for a spot-price-triggered decision.
+        Lock (_markets_with_active_watcher_analysis) is always cleared on exit.
         """
         try:
             cache = self._last_cycle_data
             if not cache:
+                return
+
+            # Stale cache guard: if indicators are older than 90s (half of the 180s main cycle),
+            # they may reflect a market regime that has changed. Skip and let the next main cycle
+            # provide fresh indicators. This prevents firing NO bets when RSI has since jumped
+            # to overbought (as happened on market 1771490700 where cached RSI=26.6 was used
+            # while the real RSI had already moved to 97.9).
+            MAX_CACHE_AGE_SECONDS = 90
+            cache_age = (datetime.now(timezone.utc) - cache['timestamp']).total_seconds()
+            if cache_age > MAX_CACHE_AGE_SECONDS:
+                logger.info(
+                    "Price watcher skipping — cached indicators too stale for reliable analysis",
+                    market_id=market.id,
+                    cache_age_seconds=f"{cache_age:.0f}s",
+                    max_age=f"{MAX_CACHE_AGE_SECONDS}s"
+                )
                 return
 
             await self._process_market(
@@ -2498,6 +2556,9 @@ class AutoTrader:
             )
         except Exception as e:
             logger.error("Price trigger analysis failed", market_id=market.id, error=str(e))
+        finally:
+            # Always release the watcher lock so the next price move can trigger again
+            self._markets_with_active_watcher_analysis.discard(market.id)
 
     async def _close_position(self, close: dict) -> None:
         """Close a position via stop-loss."""
