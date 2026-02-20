@@ -15,7 +15,7 @@ import structlog
 import ccxt.async_support as ccxt
 import aiohttp
 
-from polymarket.models import BTCPriceData, PricePoint, PriceChange, FundingRateSignal, BTCDominanceSignal
+from polymarket.models import BTCPriceData, PricePoint, PriceChange, FundingRateSignal, BTCDominanceSignal, OrderFlowSignal
 from polymarket.config import Settings
 from polymarket.trading.crypto_price_stream import CryptoPriceStream
 from polymarket.trading.price_cache import CandleCache
@@ -1198,6 +1198,96 @@ class BTCPriceService:
                 error_type=type(e).__name__
             )
             return 0.005
+
+    async def get_order_flow_signal(self, minutes: int = 10) -> "OrderFlowSignal | None":
+        """
+        Compute buy/sell pressure signal from sequential Kraken 1-min candle CVD.
+
+        Uses price direction between consecutive candles as a proxy for candle CVD:
+        - Rising candle (close[N] > close[N-1]): volume counted as buy pressure
+        - Falling candle: volume counted as sell pressure
+
+        This detects whether recent BTC moves have been driven by buying or selling,
+        which helps confirm if Polymarket CLOB is lagging a genuine momentum move.
+
+        Returns:
+            OrderFlowSignal or None if insufficient data
+        """
+        try:
+            # Fetch slightly more than needed to have N+1 candles for N differences
+            history = await self.get_price_history(minutes=max(minutes + 5, 20))
+            if len(history) < 5:
+                logger.warning("Insufficient price history for order flow signal", candles=len(history))
+                return None
+
+            # Use the last `minutes` candles (but keep one extra for first diff)
+            window = history[-(minutes + 1):] if len(history) >= minutes + 1 else history
+
+            # Compute candle CVD from sequential price direction
+            buy_volume = Decimal("0")
+            sell_volume = Decimal("0")
+            for i in range(1, len(window)):
+                vol = window[i].volume
+                if vol == 0:
+                    continue
+                if window[i].price >= window[i - 1].price:
+                    buy_volume += vol
+                else:
+                    sell_volume += vol
+
+            total_volume = buy_volume + sell_volume
+            if total_volume == 0:
+                return None
+
+            cvd_raw = float(buy_volume - sell_volume)
+            cvd_normalized = float((buy_volume - sell_volume) / total_volume)
+
+            # Volume acceleration: last 2 candles vs last 10 candles average
+            recent_candles = window[-3:]   # last 2 diffs
+            base_candles = window[-11:]    # last 10 diffs
+            vol_recent = sum(float(p.volume) for p in recent_candles) / max(len(recent_candles), 1)
+            vol_base = sum(float(p.volume) for p in base_candles) / max(len(base_candles), 1)
+            volume_acceleration = vol_recent / vol_base if vol_base > 0 else 1.0
+
+            # Price velocity: $ change per minute
+            velocity_1min = float(window[-1].price - window[-2].price) if len(window) >= 2 else 0.0
+            velocity_5min = (
+                float(window[-1].price - window[-6].price) / 5.0
+                if len(window) >= 6 else velocity_1min
+            )
+
+            # Direction classification based on CVD strength
+            if cvd_normalized > 0.20:
+                direction = "BUYING"
+            elif cvd_normalized < -0.20:
+                direction = "SELLING"
+            else:
+                direction = "NEUTRAL"
+
+            confidence = min(abs(cvd_normalized) * 2.5, 1.0)
+
+            signal = OrderFlowSignal(
+                cvd_raw=cvd_raw,
+                cvd_normalized=cvd_normalized,
+                volume_acceleration=volume_acceleration,
+                velocity_1min=velocity_1min,
+                velocity_5min=velocity_5min,
+                direction=direction,
+                confidence=confidence,
+            )
+            logger.debug(
+                "Order flow signal computed",
+                cvd_normalized=f"{cvd_normalized:+.2f}",
+                direction=direction,
+                volume_acceleration=f"{volume_acceleration:.2f}x",
+                velocity_1min=f"${velocity_1min:+.1f}",
+                velocity_5min=f"${velocity_5min:+.1f}/min",
+            )
+            return signal
+
+        except Exception as e:
+            logger.warning("Order flow signal computation failed", error=str(e))
+            return None
 
     async def close(self):
         """Clean up resources."""

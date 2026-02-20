@@ -69,3 +69,6 @@ Thumbs.db
 *.sqlite
 logs/*.old
 .worktrees/
+
+# 5m bot env (contains private keys)
+.env.5m

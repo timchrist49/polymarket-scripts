@@ -72,8 +72,8 @@ class MarketValidator:
         current_time = datetime.now(timezone.utc)
         market_start = datetime.fromtimestamp(market_timestamp, timezone.utc)
 
-        # BTC 15-minute markets run from start to start+15min
-        market_duration_seconds = 15 * 60  # 15 minutes
+        # Detect market duration from slug: btc-updown-5m-* = 5min, else 15min
+        market_duration_seconds = 300 if "-5m-" in slug else 900
         tolerance_seconds = tolerance_minutes * 60
 
         # Calculate market window: [start - tolerance, end + tolerance]

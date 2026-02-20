@@ -29,7 +29,9 @@ class ProbabilityCalculator:
         price_10min_ago: float,
         volatility_15min: float,
         time_remaining_seconds: int,
-        orderbook_imbalance: float = 0.0
+        orderbook_imbalance: float = 0.0,
+        cvd_imbalance: float = 0.0,  # -1.0 (selling) to +1.0 (buying)
+        market_duration_seconds: int = 900,  # 900 for 15m markets, 300 for 5m
     ) -> float:
         """
         Calculate probability that BTC ends HIGHER than target price.
@@ -83,7 +85,7 @@ class ProbabilityCalculator:
         weighted_momentum = (momentum_5min * 0.7) + (momentum_10min * 0.3)
 
         # Step 3: Project expected return based on momentum
-        time_fraction = time_remaining_seconds / 900  # 900s = 15min
+        time_fraction = time_remaining_seconds / market_duration_seconds
         if time_fraction <= 0:
             time_fraction = 0.01  # Minimum to avoid division by zero
 
@@ -107,10 +109,10 @@ class ProbabilityCalculator:
         # Step 6: Convert z-score to probability using normal distribution CDF
         probability_reach_target = norm.cdf(z_score)
 
-        # Step 7: Adjust for orderbook imbalance
-        # Orderbook imbalance adds up to ±10% to probability
+        # Step 7: Adjust for orderbook imbalance (±10%) and CVD (±8%)
         imbalance_adjustment = orderbook_imbalance * 0.1
-        final_probability = probability_reach_target + imbalance_adjustment
+        cvd_adjustment = cvd_imbalance * 0.08
+        final_probability = probability_reach_target + imbalance_adjustment + cvd_adjustment
 
         # Step 8: Clip to [0.05, 0.95] to avoid overconfidence
         final_probability = max(0.05, min(0.95, final_probability))
@@ -130,6 +132,7 @@ class ProbabilityCalculator:
             z_score=f"{z_score:+.2f}",
             probability_before_adjustment=f"{probability_reach_target:.2%}",
             orderbook_adjustment=f"{imbalance_adjustment:+.2%}",
+            cvd_adjustment=f"{cvd_adjustment:+.2%}",
             final_probability=f"{final_probability:.2%}"
         )
 

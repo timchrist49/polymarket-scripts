@@ -85,6 +85,33 @@ def generate_btc_15min_slug(utc_dt: datetime | None = None) -> str:
     return f"btc-updown-15m-{timestamp}"
 
 
+def floor_to_5min_interval(utc_dt: datetime) -> datetime:
+    """Round down datetime to the start of its 5-minute interval."""
+    minute = (utc_dt.minute // 5) * 5
+    return utc_dt.replace(minute=minute, second=0, microsecond=0)
+
+
+def generate_btc_5min_slug(utc_dt: datetime | None = None) -> str:
+    """
+    Generate the BTC 5-min market slug for a given time.
+
+    The slug format is: btc-updown-5m-{timestamp}
+    Where timestamp is the Unix epoch of the interval START time.
+
+    Args:
+        utc_dt: UTC datetime (defaults to current time)
+
+    Returns:
+        Market slug like "btc-updown-5m-1770608700"
+    """
+    if utc_dt is None:
+        utc_dt = datetime.now(timezone.utc)
+
+    interval_start = floor_to_5min_interval(utc_dt)
+    timestamp = int(interval_start.timestamp())
+    return f"btc-updown-5m-{timestamp}"
+
+
 class PolymarketClient:
     """
     High-level client for Polymarket CLOB API operations.
@@ -268,6 +295,88 @@ class PolymarketClient:
 
         raise MarketDiscoveryError(
             "Could not discover active BTC 15-min market. "
+            "Try manual --market-id from Polymarket dashboard."
+        )
+
+    def discover_btc_5min_market(self) -> Market:
+        """
+        Discover the currently active BTC 5-minute market.
+
+        Strategy:
+        1. Slug-based discovery: try current and adjacent 5-min intervals
+        2. Fallback: search Gamma API for "BTC Up or Down 5 Minutes"
+
+        Returns:
+            Market object for the active BTC 5-min market
+
+        Raises:
+            MarketDiscoveryError: If no active market found
+        """
+        logger.info("Discovering BTC 5-min market...")
+
+        # Primary: slug-based discovery
+        offsets = [0, -5, 5, -10, 10]
+        now = datetime.now(timezone.utc)
+
+        for offset_minutes in offsets:
+            test_time = now + timedelta(minutes=offset_minutes)
+            test_slug = generate_btc_5min_slug(test_time)
+
+            logger.debug(f"Trying slug: {test_slug}")
+            markets = self._fetch_gamma_markets(slug=test_slug, limit=1)
+            if markets:
+                market = Market(**markets[0])
+                if market.is_tradeable():
+                    logger.info(f"Found BTC 5-min market via slug: {market.slug}")
+                    return market
+
+        # Secondary: search by query
+        logger.info("Slug discovery failed, trying search query...")
+        markets = self._fetch_gamma_markets(
+            search="Bitcoin Up or Down",
+            limit=50,
+            active=True,
+            accepting_orders=True,
+        )
+
+        btc_5min_market = None
+        other_btc_market = None
+
+        for market_data in markets:
+            market = Market(**market_data)
+            if not market.is_tradeable():
+                continue
+
+            question_lower = (market.question or "").lower()
+            slug_lower = (market.slug or "").lower()
+
+            is_btc_5min = (
+                ("5m" in slug_lower or "5-minute" in question_lower or "5 min" in question_lower)
+                and ("btc" in slug_lower or "bitcoin" in question_lower)
+            )
+
+            is_btc_market = (
+                "bitcoin" in question_lower
+                or "btc" in question_lower
+                or "bitcoin" in slug_lower
+                or "btc" in slug_lower
+            )
+
+            if is_btc_5min:
+                logger.info(f"Found BTC 5-min market: {market.slug} (ID: {market.id})")
+                return market
+            elif is_btc_market and other_btc_market is None:
+                other_btc_market = market
+
+        if other_btc_market:
+            logger.warning(
+                f"No BTC 5-min market found. "
+                f"Using other BTC market: {other_btc_market.slug} (ID: {other_btc_market.id})"
+            )
+            return other_btc_market
+
+        raise MarketDiscoveryError(
+            "Could not discover active BTC 5-min market. "
             "Try manual --market-id from Polymarket dashboard."
         )
 
@@ -767,11 +876,10 @@ class PolymarketClient:
             unrealized_pl = positions_value - purchase_value
             total_value = usdc_balance + positions_value
 
-            # Free cash = CLOB collateral balance minus value locked in token positions.
-            # Polymarket's CTF converts USDC into conditional tokens when you open a position,
-            # so get_balance_allowance(COLLATERAL) returns the inflated total.
-            # We subtract positions_value to get only the truly spendable USDC.
-            free_cash = max(usdc_balance - positions_value, 0.0)
+            # CLOB collateral balance is already the spendable USDC.
+            # When buying tokens, USDC leaves the CLOB balance immediately.
+            # positions_value is derived from trade history and must NOT be subtracted.
+            free_cash = usdc_balance
 
             return PortfolioSummary(
                 open_orders=open_orders,
@@ -779,7 +887,7 @@ class PolymarketClient:
                 positions=positions,
                 total_exposure=total_notional,
                 trades=trades,  # Include raw trades for detailed display
-                usdc_balance=free_cash,          # ← free cash only (was: inflated CLOB balance)
+                usdc_balance=free_cash,
                 positions_value=positions_value,
                 total_value=total_value,         # kept accurate for display
                 purchase_value=purchase_value,

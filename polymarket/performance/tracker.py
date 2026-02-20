@@ -207,6 +207,85 @@ class PerformanceTracker:
             # Don't block trading on logging failure
             return -1
 
+    async def log_5m_decision(
+        self,
+        market: Market,
+        decision: TradingDecision,
+        btc_data,
+        time_remaining_seconds: Optional[int] = None,
+        snapshot_btc_price: Optional[float] = None,
+        yes_odds: float = 0.5,
+        no_odds: float = 0.5,
+        is_test_mode: bool = False,
+    ) -> int:
+        """Log a 5m CLOB-driven decision (no technical indicators or AI signals).
+
+        Called just before _execute_trade() for 5m CLOB-driven entries where no
+        pre-analysis DB record exists (trade_id=-1 in stored context).
+        """
+        try:
+            market_slug = market.slug or market.id
+            trade_data = {
+                "timestamp": datetime.now(),
+                "market_slug": market_slug,
+                "market_id": market.id,
+                "action": decision.action,
+                "confidence": decision.confidence,
+                "position_size": float(decision.position_size),
+                "reasoning": decision.reasoning,
+                "btc_price": float(btc_data.price) if btc_data else None,
+                "price_to_beat": snapshot_btc_price,
+                "time_remaining_seconds": time_remaining_seconds,
+                "is_end_phase": False,
+                # Signals — not applicable for CLOB-driven 5m strategy
+                "social_score": None,
+                "market_score": None,
+                "final_score": None,
+                "final_confidence": decision.confidence,
+                "signal_type": "CLOB_5M",
+                # Technical — not applicable
+                "rsi": None,
+                "macd": None,
+                "trend": None,
+                # Pricing (CLOB odds at execution time)
+                "yes_price": yes_odds,
+                "no_price": no_odds,
+                "executed_price": yes_odds if decision.action == "YES" else no_odds,
+                # Arbitrage — not applicable
+                "actual_probability": None,
+                "arbitrage_edge": None,
+                "arbitrage_urgency": None,
+                # Timeframe analysis — not applicable
+                "timeframe_15m_direction": None,
+                "timeframe_1h_direction": None,
+                "timeframe_4h_direction": None,
+                "timeframe_alignment": None,
+                "confidence_modifier": None,
+                # Enhanced fields — not applicable
+                "funding_rate": None,
+                "funding_rate_normalized": None,
+                "btc_dominance": None,
+                "btc_dominance_change_24h": None,
+                "whale_activity": None,
+                "order_book_imbalance": None,
+                "spread_bps": None,
+                "volatility": None,
+                "contrarian_detected": False,
+                "contrarian_type": None,
+                "is_test_mode": 1 if is_test_mode else 0,
+            }
+            trade_id = self.db.log_trade(trade_data)
+            logger.info(
+                "5m CLOB decision logged to database",
+                trade_id=trade_id,
+                action=decision.action,
+                market_slug=market_slug,
+            )
+            return trade_id
+        except Exception as e:
+            logger.error("Failed to log 5m decision", error=str(e))
+            return -1
+
     def _extract_market_slug(self, market: dict) -> str:
         """Extract market slug from market data."""
         # Try explicit slug field first

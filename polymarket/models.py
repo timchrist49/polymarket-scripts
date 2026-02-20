@@ -531,6 +531,18 @@ class ContrarianSignal:
 # === WebSocket Real-time Odds Models ===
 
 @dataclass
+class OrderFlowSignal:
+    """Buy/sell pressure from sequential candle CVD (Kraken OHLC)."""
+    cvd_raw: float              # Raw CVD: sum(buy_vol - sell_vol) over window
+    cvd_normalized: float       # -1.0 (all selling) to +1.0 (all buying)
+    volume_acceleration: float  # Ratio: recent 2-min avg vol / 10-min avg vol (>1.5 = spike)
+    velocity_1min: float        # $ price change in the last 1 minute
+    velocity_5min: float        # $ price change per minute, averaged over last 5 min
+    direction: str              # "BUYING" | "SELLING" | "NEUTRAL"
+    confidence: float           # 0.0 to 1.0 (based on CVD imbalance strength)
+
+
+@dataclass
 class WebSocketOddsSnapshot:
     """Real-time odds snapshot from WebSocket."""
     market_id: str

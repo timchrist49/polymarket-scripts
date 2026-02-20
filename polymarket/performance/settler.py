@@ -46,7 +46,10 @@ class TradeSettler:
         match = re.search(r'(\d{10})$', market_slug)
 
         if match:
-            return int(match.group(1))
+            # The slug contains the market START timestamp.
+            # Detect market duration from slug: btc-updown-5m-* = 300s, else 900s (15m).
+            duration = 300 if "-5m-" in market_slug else 900
+            return int(match.group(1)) + duration
 
         logger.warning(
             "Failed to parse timestamp from market slug",

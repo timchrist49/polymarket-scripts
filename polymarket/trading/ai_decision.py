@@ -58,6 +58,7 @@ class AIDecisionService:
         arbitrage_opportunity: "ArbitrageOpportunity | None" = None,  # NEW: arbitrage detection
         market_signals: "Any | None" = None,  # NEW: CoinGecko Pro market signals
         contrarian_signal: ContrarianSignal | None = None,  # NEW: contrarian mean-reversion signal
+        order_flow_signal: "Any | None" = None,  # NEW: CVD buy/sell pressure from Kraken
         force_trade: bool = False  # NEW: TEST MODE - force YES/NO decision
     ) -> TradingDecision:
         """Generate trading decision using AI with regime awareness, timeframe, arbitrage, and market signals."""
@@ -69,7 +70,8 @@ class AIDecisionService:
                 btc_price, technical_indicators, aggregated_sentiment,
                 market_data, portfolio_value, orderbook_data,
                 timeframe_analysis, regime,
-                arbitrage_opportunity, market_signals, contrarian_signal, force_trade
+                arbitrage_opportunity, market_signals, contrarian_signal,
+                order_flow_signal, force_trade
             )
 
             # Call OpenAI with GPT-5-Nano parameters
@@ -98,7 +100,7 @@ You MUST follow this priority order when making decisions:
 - Volume confirmation: Is the move supported by volume?
 - Orderbook bias: Where is institutional money flowing?
 - Liquidity and execution quality
-- RULE: Large moves without volume = false breakout = HOLD
+- RULE: Large moves without volume = false breakout = reduce confidence, favor the more likely direction
 
 **Tier 3: EXTERNAL SIGNALS (15% weight)**
 - CoinGecko Pro signals (funding rates, premiums)
@@ -110,28 +112,28 @@ You MUST follow this priority order when making decisions:
 - Social sentiment, community votes, fear/greed
 - Polymarket order flow sentiment
 - RULE: Sentiment CANNOT override price reality
-- If sentiment conflicts with price → Reduce confidence or HOLD
+- If sentiment conflicts with price → Reduce confidence, follow price direction
 
 ## Market Regime Strategy
 - TRENDING Markets: Follow trend, enter on pullbacks (not extremes)
 - RANGING Markets: Buy support, sell resistance
-- VOLATILE/UNCLEAR Markets: HOLD - Don't trade unclear conditions
+- VOLATILE/UNCLEAR Markets: Follow the strongest available signal with reduced confidence (0.70-0.75)
 
 ## Volume Requirements
 - Breakouts ($200+ moves): REQUIRE volume > 1.5x average
-- Without volume = false breakout = HOLD
+- Without volume = false breakout = reduce confidence by 0.10, still return YES/NO
 
 ## Timeframe Alignment
 - ALIGNED timeframes (daily + 4h same): High confidence trades
-- CONFLICTING timeframes: HOLD - Don't trade against larger trend
+- CONFLICTING timeframes: Follow dominant signal, reduce confidence by 0.10
 
 ## CONFLICT RESOLUTION RULES
 
-When signals conflict, apply these rules:
-1. Price UP + Sentiment BEARISH → HOLD or favor price (reduce confidence)
-2. Price DOWN + Sentiment BULLISH → HOLD or favor price (reduce confidence)
-3. Strong price signal (>0.7) + weak sentiment → Follow price
-4. Weak price signal (<0.5) + strong sentiment → HOLD (unclear)
+When signals conflict, apply these rules (NEVER return HOLD):
+1. Price UP + Sentiment BEARISH → Follow price direction, reduce confidence by 0.10
+2. Price DOWN + Sentiment BULLISH → Follow price direction, reduce confidence by 0.10
+3. Strong price signal (>0.7) + weak sentiment → Follow price at full confidence
+4. Weak price signal (<0.5) + strong sentiment → Follow sentiment, set confidence to 0.71
 
 Use reasoning tokens to analyze all signals carefully. Always return valid JSON."""
                         },
@@ -252,6 +254,7 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
         arbitrage_opportunity: "ArbitrageOpportunity | None" = None,
         market_signals: "Any | None" = None,
         contrarian_signal: ContrarianSignal | None = None,
+        order_flow_signal: "Any | None" = None,
         force_trade: bool = False
     ) -> str:
         """Build the AI prompt with all context including regime, timeframe, orderbook, and market signals."""
@@ -435,6 +438,18 @@ Your confidence will be automatically adjusted based on alignment:
         # NEW: Arbitrage opportunity context
         arbitrage_context = ""
         if arbitrage_opportunity and arbitrage_opportunity.edge_percentage >= 0.05:
+            # Compute mandatory override text for very high edge
+            _arb_action = "YES" if arbitrage_opportunity.recommended_action == "BUY_YES" else "NO"
+            _mandatory_override = ""
+            if arbitrage_opportunity.edge_percentage >= 0.25:
+                _mandatory_override = f"""
+⚡ EXTREME EDGE — {arbitrage_opportunity.edge_percentage:.0%} MATHEMATICAL ADVANTAGE:
+The probability model shows a large real mispricing vs live CLOB odds (not stale Gamma).
+At this edge size, the statistical evidence overwhelmingly favors {_arb_action}.
+Your action should be "{_arb_action}" unless you can identify a specific, concrete
+technical reason that invalidates the momentum calculation (e.g., sudden BTC reversal,
+zero liquidity, data error). Speculative doubt is NOT sufficient — the math is clear.
+"""
             arbitrage_context = f"""
 ═══════════════════════════════════════════════════════════════════
 🎯 ARBITRAGE OPPORTUNITY DETECTED
@@ -461,11 +476,13 @@ This is a QUANTIFIED MISPRICING based on:
 CONFIDENCE SCALING:
 - Edge 5-10%: Moderate opportunity (confidence boost: +0.10 to +0.20)
 - Edge 10-15%: Strong opportunity (confidence boost: +0.20, urgency: MEDIUM)
-- Edge 15%+: Extreme opportunity (confidence boost: +0.20, urgency: HIGH)
+- Edge 15-25%: Extreme opportunity — strongly follow the math (confidence 0.80+)
+- Edge 25%+: Extreme edge — follow the math unless concrete technical contradiction
 
 The larger the edge, the higher your confidence should be.
 Edges of 10%+ justify high confidence (0.85-0.95).
-
+Note: All edge calculations now use live CLOB odds, not stale Gamma prices.
+{_mandatory_override}
 ═══════════════════════════════════════════════════════════════════
 """
         else:
@@ -475,6 +492,34 @@ Edges of 10%+ justify high confidence (0.85-0.95).
 ═══════════════════════════════════════════════════════════════════
 No significant arbitrage edge detected (< 5%).
 Rely on technical indicators, sentiment, and regime analysis.
+═══════════════════════════════════════════════════════════════════
+"""
+
+        # NEW: Order flow signal (CVD from Kraken candles)
+        order_flow_context = ""
+        if order_flow_signal:
+            _vol_spike_note = (
+                f" ⚡ VOLUME SPIKE {order_flow_signal.volume_acceleration:.1f}x above average"
+                if order_flow_signal.volume_acceleration >= 1.5
+                else ""
+            )
+            _dir_icon = {"BUYING": "🟢", "SELLING": "🔴", "NEUTRAL": "⚪"}.get(order_flow_signal.direction, "⚪")
+            order_flow_context = f"""
+═══════════════════════════════════════════════════════════════════
+🌊 ORDER FLOW (Kraken 10-min Candle CVD)
+═══════════════════════════════════════════════════════════════════
+
+{_dir_icon} Direction: {order_flow_signal.direction} (confidence: {order_flow_signal.confidence:.2f})
+├─ CVD (normalized): {order_flow_signal.cvd_normalized:+.2f} (−1=all selling, +1=all buying)
+├─ Volume Acceleration: {order_flow_signal.volume_acceleration:.2f}x avg{_vol_spike_note}
+├─ Price Velocity (1min): ${order_flow_signal.velocity_1min:+.1f}
+└─ Price Velocity (5min avg): ${order_flow_signal.velocity_5min:+.1f}/min
+
+INTERPRETATION:
+- BUYING + high volume: BTC accumulation, momentum likely continues UP → favors YES
+- SELLING + high volume: BTC distribution, momentum likely continues DOWN → favors NO
+- NEUTRAL or low volume: No strong directional pressure → rely on other signals
+
 ═══════════════════════════════════════════════════════════════════
 """
 
@@ -657,6 +702,8 @@ Use your reasoning tokens to carefully analyze all signals before making a decis
 
 {arbitrage_context}
 
+{order_flow_context}
+
 {market_signals_context}
 
 {contrarian_context}
@@ -793,13 +840,12 @@ DECISION INSTRUCTIONS:
    - If move > $200, require high volume (volume_ratio > 1.5x)
    - Confidence > 0.70
 
-   **HOLD (do not trade):**
-   - Regime is VOLATILE or UNCLEAR
-   - Timeframes CONFLICTING
-   - No volume on large moves
-   - Price at extremes (exhausted momentum)
-   - Confidence < 0.70
-   - Unclear market conditions
+   **When signals are mixed:**
+   - Regime is VOLATILE or UNCLEAR → follow strongest signal, reduce confidence to 0.71-0.73
+   - Timeframes CONFLICTING → follow dominant direction, reduce confidence by 0.10
+   - No volume on large moves → reduce confidence by 0.10, follow price direction
+   - Price at extremes (exhausted momentum) → reduce confidence, trade the mean-reversion direction
+   - Always return YES or NO — never HOLD
 
 4. The aggregated confidence ({aggregated.final_confidence:.2f}) is pre-calculated.
    - You may ADJUST by max ±0.15 if you spot patterns we missed
@@ -811,7 +857,7 @@ DECISION INSTRUCTIONS:
 DECISION FORMAT:
 Return JSON with:
 {{
-  "action": "YES" | "NO" | "HOLD",
+  "action": "YES" | "NO",
   "confidence": 0.0-1.0,
   "reasoning": "MUST include: (1) Base confidence before signals, (2) Market signals direction & confidence, (3) Alignment or conflict assessment, (4) Signal adjustment applied (+/- amount), (5) Final confidence. Example: 'Technical BULLISH (base: 0.70). Signals: BULLISH (0.75). ALIGNED. Applied +0.12 boost. Final: 0.82.'",
   "confidence_adjustment": "+0.1" or "-0.05" or "0.0",
@@ -822,15 +868,15 @@ Note: position_size is NOT required — sizing is calculated deterministically f
 ACTION MAPPING:
 - Return "YES" to buy the "{yes_outcome}" token (currently {yes_price:.2f} odds)
 - Return "NO" to buy the "{no_outcome}" token (currently {no_price:.2f} odds)
-- Return "HOLD" if signals are unclear or confidence is too low
+- NEVER return "HOLD" — always commit to YES or NO with appropriate confidence
 
 CRITICAL ALIGNMENT CHECK:
-- BULLISH signals + TRENDING UP/RANGING regime + ALIGNED timeframes → Buy "{yes_outcome}" token
-- BEARISH signals + TRENDING DOWN/RANGING regime + ALIGNED timeframes → Buy "{no_outcome}" token
-- If regime is VOLATILE/UNCLEAR → HOLD (wait for clarity)
-- If timeframes CONFLICTING → HOLD (don't trade against larger trend)
-- If large move without volume → HOLD (false breakout)
-- If price-to-beat shows +2% but you're bearish → HOLD (conflicting signals)
+- BULLISH signals + TRENDING UP/RANGING regime + ALIGNED timeframes → Buy "{yes_outcome}" token (high confidence)
+- BEARISH signals + TRENDING DOWN/RANGING regime + ALIGNED timeframes → Buy "{no_outcome}" token (high confidence)
+- If regime is VOLATILE/UNCLEAR → follow strongest signal, set confidence 0.71-0.73
+- If timeframes CONFLICTING → follow dominant direction, reduce confidence by 0.10
+- If large move without volume → reduce confidence by 0.10, still return YES/NO
+- If price-to-beat shows small move (<0.3%) → treat as neutral, rely on other signals
 """
 
     def _format_orderbook_section(self, orderbook_data: "OrderbookData | None") -> str:
@@ -858,11 +904,13 @@ ORDERBOOK INTERPRETATION:
 
     def _parse_decision(self, data: dict, token_id: str) -> TradingDecision:
         """Parse AI response into TradingDecision."""
-        action = data.get("action", "HOLD").upper()
+        action = data.get("action", "NO").upper()
 
-        # Validate action
-        if action not in ("YES", "NO", "HOLD"):
-            action = "HOLD"
+        # Validate action — treat HOLD as NO (bearish default) with reduced confidence
+        if action == "HOLD":
+            action = "NO"
+        elif action not in ("YES", "NO"):
+            action = "NO"
 
         confidence = float(data.get("confidence", 0.0))
         reasoning = data.get("reasoning", "No reasoning provided")

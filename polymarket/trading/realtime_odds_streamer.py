@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import structlog
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -48,6 +49,13 @@ class RealtimeOddsStreamer:
         self._rest_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
         self._running = False
+        self._odds_callbacks: list = []  # Registered by AutoTrader for real-time entry checks
+
+    def _discover_current_market(self):
+        """Discover the active BTC market based on MARKET_TYPE env var."""
+        if os.getenv("MARKET_TYPE", "15m").lower() == "5m":
+            return self.client.discover_btc_5min_market()
+        return self.client.discover_btc_15min_market()
 
     def get_current_odds(self, market_id: str) -> Optional[WebSocketOddsSnapshot]:
         """
@@ -73,6 +81,19 @@ class RealtimeOddsStreamer:
                 )
 
         return snapshot
+
+    def register_odds_callback(self, callback) -> None:
+        """Register a coroutine callback to be called on every odds update.
+
+        The callback receives a single WebSocketOddsSnapshot argument.
+        Used by AutoTrader to trigger real-time timed entry checks.
+        """
+        self._odds_callbacks.append(callback)
+
+    def _fire_odds_callbacks(self, snapshot: "WebSocketOddsSnapshot") -> None:
+        """Schedule all registered callbacks with the latest snapshot (non-blocking)."""
+        for cb in self._odds_callbacks:
+            asyncio.create_task(cb(snapshot))
 
     async def _update_odds_from_orderbook(
         self,
@@ -174,6 +195,8 @@ class RealtimeOddsStreamer:
         async with self._lock:
             self._current_odds[self._current_market_id] = snapshot
 
+        self._fire_odds_callbacks(snapshot)
+
         logger.info(
             "📊 Odds updated",
             source=source,
@@ -214,6 +237,8 @@ class RealtimeOddsStreamer:
         # Store atomically
         async with self._lock:
             self._current_odds[self._current_market_id] = snapshot
+
+        self._fire_odds_callbacks(snapshot)
 
         logger.info(
             "📊 Odds updated",
@@ -335,6 +360,8 @@ class RealtimeOddsStreamer:
                 # Store atomically
                 async with self._lock:
                     self._current_odds[self._current_market_id] = snapshot
+
+                self._fire_odds_callbacks(snapshot)
 
                 logger.info(
                     "📊 Odds updated from CLOB last-trade-price",
@@ -476,7 +503,7 @@ class RealtimeOddsStreamer:
                 return True
 
             # Primary: Check if API returns different market
-            market = self.client.discover_btc_15min_market()
+            market = self._discover_current_market()
 
             if market.id != self._current_market_id:
                 logger.info(
@@ -512,8 +539,9 @@ class RealtimeOddsStreamer:
                 if market_start_timestamp:
                     current_time = datetime.now(timezone.utc)
                     market_start_time = datetime.fromtimestamp(market_start_timestamp, timezone.utc)
-                    # BTC 15-minute markets run for 15 minutes
-                    market_end_time = market_start_time + timedelta(minutes=15)
+                    # Detect market duration from slug: 5m=300s, else 15m=900s
+                    market_duration_s = 300 if self._current_market_slug and "-5m-" in self._current_market_slug else 900
+                    market_end_time = market_start_time + timedelta(seconds=market_duration_s)
                     seconds_until_end = (market_end_time - current_time).total_seconds()
 
                     if seconds_until_end > 30:
@@ -568,7 +596,7 @@ class RealtimeOddsStreamer:
         retry_delay = 5
 
         for attempt in range(max_retries):
-            market = self.client.discover_btc_15min_market()
+            market = self._discover_current_market()
 
             # If this is a new market (or first connection), proceed
             if old_market_id is None or market.id != old_market_id:
@@ -778,6 +806,8 @@ class RealtimeOddsStreamer:
                     # Store atomically
                     async with self._lock:
                         self._current_odds[self._current_market_id] = snapshot
+
+                    self._fire_odds_callbacks(snapshot)
 
                     logger.info(
                         "⚡ Odds updated from WS last_trade_price",

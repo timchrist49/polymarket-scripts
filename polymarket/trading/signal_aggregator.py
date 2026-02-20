@@ -159,8 +159,18 @@ class SignalAggregator:
                 for _, score, _, weight in available_signals
             )
 
-            # Base confidence from average of individual confidences
-            base_confidence = sum(conf for _, _, conf, _ in available_signals) / len(available_signals)
+            # Base confidence from average of individual confidences.
+            # Exclude signals with conf < 0.15 — they are near-noise and
+            # including them in a simple average unfairly drags down the
+            # overall confidence when high-conviction signals agree strongly.
+            # (Score direction still counts them; only the confidence average ignores them.)
+            MIN_CONF_FOR_AVERAGE = 0.15
+            qualified_confs = [conf for _, _, conf, _ in available_signals if conf >= MIN_CONF_FOR_AVERAGE]
+            if qualified_confs:
+                base_confidence = sum(qualified_confs) / len(qualified_confs)
+            else:
+                # Fallback: use all signals if none meet threshold
+                base_confidence = sum(conf for _, _, conf, _ in available_signals) / len(available_signals)
 
             # Calculate agreement multiplier across all pairs
             agreement_scores = []

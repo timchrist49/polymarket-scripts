@@ -6,6 +6,7 @@ Stores odds in shared state for early market filtering.
 """
 
 import asyncio
+import os
 import structlog
 from datetime import datetime
 
@@ -61,8 +62,11 @@ class MarketOddsPoller:
         Discovers current BTC 15-min market, fetches fresh odds, stores snapshot.
         """
         try:
-            # Discover current BTC 15-min market
-            market = self.client.discover_btc_15min_market()
+            # Discover current BTC market (5m or 15m based on MARKET_TYPE env)
+            if os.getenv("MARKET_TYPE", "15m").lower() == "5m":
+                market = self.client.discover_btc_5min_market()
+            else:
+                market = self.client.discover_btc_15min_market()
 
             # The discovered market already has fresh best_bid/ask odds
             # No need for a separate API call

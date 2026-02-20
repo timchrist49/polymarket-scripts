@@ -149,7 +149,19 @@ class RiskManager:
         max_position: Decimal,
         odds: Decimal
     ) -> Decimal:
-        """Calculate position size based on confidence and odds."""
+        """Calculate position size based on confidence and odds.
+
+        Override: set BOT_FIXED_BET_SIZE=50 (or any amount) in .env to bet a
+        flat dollar amount on every trade, bypassing the multiplier logic entirely.
+        Unset it to revert to the standard confidence-scaled sizing.
+        """
+        import os
+        fixed_bet = os.getenv("BOT_FIXED_BET_SIZE")
+        if fixed_bet:
+            fixed = Decimal(str(fixed_bet))
+            POLYMARKET_MIN_BET = Decimal("5.0")
+            return max(fixed, POLYMARKET_MIN_BET)
+
         base_size = portfolio_value * Decimal(str(self.settings.bot_max_position_percent))
 
         # Scale by confidence
@@ -171,11 +183,6 @@ class RiskManager:
         # Apply odds multiplier
         odds_multiplier = self._calculate_odds_multiplier(odds)
         calculated = calculated * odds_multiplier
-
-        # Apply absolute dollar cap
-        dollar_cap = Decimal(str(self.settings.bot_max_position_dollars))
-        calculated = min(calculated, dollar_cap)
-        max_position = min(max_position, dollar_cap)
 
         final_size = min(calculated, max_position)
 

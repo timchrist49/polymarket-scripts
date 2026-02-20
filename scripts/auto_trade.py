@@ -241,9 +241,21 @@ class AutoTrader:
 
         # Timed strategy state: AI decisions stored at T=10min for entry in last 5 min.
         # _timed_decisions holds the full execution context keyed by market_id.
-        # _analysis_triggered tracks markets where the 10min analysis has been fired.
+        # _analysis_triggered tracks markets where any timed analysis has been fired
+        # (used in _process_market to bypass the 60% odds filter).
+        # _market_sub_analyses holds per-market list of validated AI decisions from
+        # each 2-min sub-analysis (T=2, T=4, T=6, T=8). Aggregated at T=12min.
+        # _sub_analysis_triggered_count tracks how many sub-analysis cycles have fired.
+        # _meta_analysis_triggered tracks markets where the T=12min meta-analysis fired.
         self._timed_decisions: dict[str, dict] = {}
         self._analysis_triggered: set[str] = set()
+        self._market_sub_analyses: dict[str, list[dict]] = {}
+        self._sub_analysis_triggered_count: dict[str, int] = {}
+        self._meta_analysis_triggered: set[str] = set()
+
+        # 5m CLOB-driven strategy: CLOB snapshot at T=1min for direction consistency check.
+        # Maps market_id → {action, yes_odds, no_odds, snapshot_time}.
+        self._5m_clob_snapshots: dict[str, dict] = {}
 
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
@@ -275,6 +287,9 @@ class AutoTrader:
                 min_edge=f"{self.test_mode.min_arbitrage_edge * 100:.0f}%"
             )
             logger.warning("=" * 70)
+
+        # Apply market-type profile (15m default, override with MARKET_TYPE=5m)
+        self._apply_market_profile()
 
     def _handle_opportunity_detected(self, market_slug: str, direction: str, odds: float) -> None:
         """Handle detected trading opportunity by triggering cycle asynchronously.
@@ -333,6 +348,10 @@ class AutoTrader:
         await self.realtime_streamer.start()
         logger.info("Real-time odds streamer started")
 
+        # Register real-time timed entry callback (replaces 10s polling for execution)
+        self.realtime_streamer.register_odds_callback(self._on_realtime_odds_update)
+        logger.info("Real-time timed entry callback registered")
+
         # Start OddsMonitor for event-driven cycle triggering
         await self.odds_monitor.start()
         logger.info("OddsMonitor started for event-driven triggering")
@@ -366,13 +385,14 @@ class AutoTrader:
             interval_seconds=self.STOP_LOSS_WATCHER_INTERVAL_SECONDS
         )
 
-        # Timed strategy: timing watcher fires AI analysis at T=10min of each 15-min market
+        # Multi-analysis strategy: sub-analyses at T=2/4/6/8min, meta-analysis at T=12min
         timing_watcher_task = asyncio.create_task(self._market_timing_watcher())
         self.background_tasks.append(timing_watcher_task)
         logger.info(
-            "Market timing watcher started (AI analysis triggered at T=10min)",
-            analysis_trigger_at="600s elapsed",
-            entry_window="last 5 minutes (<=300s remaining)"
+            "Market timing watcher started (multi-analysis: T=2/4/6/8min sub + T=12min meta)",
+            sub_analysis_schedule="T=2, T=4, T=6, T=8 min",
+            meta_analysis_at="T=12min (720s elapsed)",
+            entry_window="last 5 minutes (T=10-15min)",
         )
 
         # Timed strategy: entry monitor executes stored decisions when odds reach 70%
@@ -529,6 +549,26 @@ class AutoTrader:
                         errors=stats["errors"][:3]  # First 3 errors
                     )
 
+                # Clean up stale positions from open_positions.
+                # Each BTC 15-min market lasts 900s; any position older than
+                # 960s (15 min + 60s buffer) is for an expired market and
+                # should be removed so the exposure check doesn't block new
+                # trades indefinitely.
+                if self.open_positions:
+                    now_utc = datetime.now(timezone.utc)
+                    before = len(self.open_positions)
+                    self.open_positions = [
+                        p for p in self.open_positions
+                        if (now_utc - datetime.fromisoformat(p["timestamp"])).total_seconds() < self.MARKET_DURATION_SECONDS + 60
+                    ]
+                    removed = before - len(self.open_positions)
+                    if removed:
+                        logger.info(
+                            "Cleaned stale positions from exposure tracker",
+                            removed=removed,
+                            remaining=len(self.open_positions),
+                        )
+
             except Exception as e:
                 logger.error("Settlement loop error", error=str(e))
 
@@ -646,8 +686,15 @@ class AutoTrader:
             logger.warning("BTC momentum calculation failed", error=str(e))
             return None  # Graceful fallback
 
-    async def run_cycle(self) -> None:
-        """Execute one trading cycle."""
+    async def run_cycle(self, is_sub_analysis: bool = False) -> None:
+        """Execute one trading cycle.
+
+        Args:
+            is_sub_analysis: When True the cycle runs full AI analysis but stores
+                the result in _market_sub_analyses instead of executing a trade.
+                The meta-analysis at T=12min will aggregate these and promote the
+                best decision to _timed_decisions for the betting window.
+        """
         self.cycle_count += 1
         cycle_start_time = datetime.now(timezone.utc)
         logger.info(
@@ -885,7 +932,8 @@ class AutoTrader:
                     cycle_start_time,  # NEW: pass cycle start time for JIT metrics
                     timeframe_analysis,  # NEW: timeframe analysis for AI context
                     regime,  # NEW: market regime for adaptive strategy
-                    contrarian_signal  # NEW: contrarian signal detection
+                    contrarian_signal,  # NEW: contrarian signal detection
+                    is_sub_analysis=is_sub_analysis,  # NEW: sub-analysis mode (no execution)
                 )
 
             # Cache cycle data for the price-movement watcher (Enhancement 4).
@@ -916,20 +964,21 @@ class AutoTrader:
             )
 
     async def _discover_markets(self) -> list[Market]:
-        """Find active BTC 15-minute markets."""
+        """Find active BTC markets for the configured market type (15m or 5m)."""
         try:
-            # Use the slug-based discovery method from client
-            market = self.client.discover_btc_15min_market()
+            # Use the slug-based discovery method from client (profile-aware)
+            market = self._discover_current_market()
             return [market]
         except Exception as e:
             logger.warning("Market discovery failed", error=str(e))
             # Fallback: try manual search
             try:
+                slug_tag = "5m" if getattr(self, "_market_type", "15m") == "5m" else "15m"
                 markets = self.client.get_markets(search="bitcoin", limit=50, active_only=True)
                 btc_markets = [
                     m for m in markets
                     if ("btc" in m.question.lower() or "bitcoin" in m.question.lower())
-                    and ("15" in m.question.lower() or "15m" in (m.slug or "").lower())
+                    and (slug_tag in (m.slug or "").lower())
                     and m.active
                 ]
                 return btc_markets
@@ -1023,7 +1072,8 @@ class AutoTrader:
         cycle_start_time: datetime,  # NEW: for JIT execution metrics
         timeframe_analysis,  # NEW: multi-timeframe trend analysis
         regime,  # NEW: market regime detection
-        contrarian_signal  # NEW: contrarian signal detection
+        contrarian_signal,  # NEW: contrarian signal detection
+        is_sub_analysis: bool = False,  # NEW: when True, store result and return (no execution)
     ) -> None:
         """Process a single market for trading decision."""
         try:
@@ -1049,20 +1099,19 @@ class AutoTrader:
                     )
                     return
 
-                # Cycle-level analysis lock: if another cycle is already running AI
-                # analysis for this market, skip. Without this, an OddsMonitor re-fire
-                # during the 30-60s AI call starts a second concurrent analysis that
-                # also passes the _traded_markets check above (since the first cycle
-                # hasn't executed yet), resulting in two real orders.
-                if market.id in self._markets_with_active_cycle_analysis:
-                    logger.info(
-                        "Skipping market - AI analysis already in progress for this market",
-                        market_id=market.id,
-                        market_question=market.question[:80] if market.question else ""
-                    )
-                    return
-
-                self._markets_with_active_cycle_analysis.add(market.id)
+                # Cycle-level analysis lock: prevents duplicate real orders when
+                # OddsMonitor re-fires during a 30-60s AI call. Sub-analyses are
+                # exempt — they never execute trades so concurrent runs are safe
+                # and the lock would starve T=4/T=6/T=8 sub-analyses.
+                if not is_sub_analysis:
+                    if market.id in self._markets_with_active_cycle_analysis:
+                        logger.info(
+                            "Skipping market - AI analysis already in progress for this market",
+                            market_id=market.id,
+                            market_question=market.question[:80] if market.question else ""
+                        )
+                        return
+                    self._markets_with_active_cycle_analysis.add(market.id)
 
             # Get real-time odds from WebSocket streamer
             odds_snapshot = self.realtime_streamer.get_current_odds(market.id)
@@ -1204,23 +1253,20 @@ class AutoTrader:
                 )
 
                 if signal_lag_detected:
-                    # Bypass signal lag when BTC has moved far enough that the CLOB lag
-                    # IS the arbitrage opportunity. A BTC move of ≥10% from price_to_beat
-                    # means the market simply hasn't repriced yet — that's exactly what we trade.
-                    # Below 10%, the contradiction could be genuine noise → still block.
                     btc_movement_pct = (
                         abs(float(diff) / float(price_to_beat)) * 100
                         if price_to_beat and price_to_beat != 0 else 0
                     )
-                    ARBITRAGE_BYPASS_THRESHOLD_PCT = 10.0  # 10% BTC move bypasses signal lag
 
-                    if btc_movement_pct >= ARBITRAGE_BYPASS_THRESHOLD_PCT:
+                    # For timed T=5min analysis: CLOB lagging behind BTC IS the opportunity.
+                    # The timed entry monitor's 70% odds gate is the real execution guard —
+                    # only execute if the market eventually agrees. Always let analysis proceed.
+                    if is_timed_analysis:
                         logger.info(
-                            "Signal lag detected but bypassed — large BTC move vs CLOB lag = arbitrage",
+                            "Signal lag detected in timed analysis — bypassed (CLOB lag = opportunity; 70% gate protects execution)",
                             market_id=market.id,
-                            btc_movement_pct=f"{btc_movement_pct:.1f}%",
-                            bypass_threshold=f"{ARBITRAGE_BYPASS_THRESHOLD_PCT:.0f}%",
-                            reason="CLOB has not repriced — this IS the edge"
+                            btc_movement_pct=f"{btc_movement_pct:.2f}%",
+                            reason=signal_lag_reason
                         )
                         # Fall through to analysis — do NOT return
                     elif not self.test_mode.enabled:
@@ -1230,7 +1276,7 @@ class AutoTrader:
                             reason=signal_lag_reason,
                             btc_movement_pct=f"{btc_movement_pct:.1f}%"
                         )
-                        return  # HOLD - contradiction below bypass threshold
+                        return  # HOLD - contradiction, non-timed path
                     else:
                         logger.info(
                             "[TEST] Signal lag detected - data sent to AI anyway",
@@ -1254,23 +1300,16 @@ class AutoTrader:
 
                 abs_diff = abs(diff)
                 if abs_diff < MIN_MOVEMENT_THRESHOLD:
-                    if not self.test_mode.enabled:
-                        logger.info(
-                            "Skipping market - insufficient BTC movement",
-                            market_id=market.id,
-                            movement=f"${abs_diff:.2f}",
-                            threshold=f"${MIN_MOVEMENT_THRESHOLD}",
-                            reason="Wait for clearer directional signal"
-                        )
-                        return  # Skip this market, no trade
-                    else:
-                        logger.info(
-                            "[TEST] Bypassing movement threshold - data sent to AI",
-                            market_id=market.id,
-                            movement=f"${abs_diff:.2f}",
-                            threshold=f"${MIN_MOVEMENT_THRESHOLD}",
-                            bypassed=True
-                        )
+                    logger.info(
+                        "BTC movement below threshold at T=5min — AI will analyze, timed entry waits for 70%+ odds",
+                        market_id=market.id,
+                        movement=f"${abs_diff:.2f}",
+                        threshold=f"${MIN_MOVEMENT_THRESHOLD}",
+                    )
+                    # Do NOT return — let the AI analyze and store a decision for the
+                    # timed entry monitor. The 70%+ CLOB odds gate in _timed_entry_monitor
+                    # is the natural execution filter: odds can't spike to 70%+ unless
+                    # BTC has actually moved significantly by the last 5 minutes.
 
 
             # NEW: Enhanced Market Signals from CoinGecko Pro
@@ -1425,14 +1464,14 @@ class AutoTrader:
                 "outcomes": market.outcomes if hasattr(market, 'outcomes') else ["Yes", "No"],
                 # NEW: Price-to-beat and timing context
                 "price_to_beat": price_to_beat,
-                "time_remaining_seconds": time_remaining or 900,  # Default to 15 min if None
+                "time_remaining_seconds": time_remaining or self.MARKET_DURATION_SECONDS,
                 "is_end_of_market": is_end_of_market,
                 # NEW: BTC momentum data
                 "btc_momentum": btc_momentum,  # Will be None if unavailable
             }
 
             logger.info(
-                "Market prices (complementary)",
+                "Market prices (Gamma, may be stale)",
                 market_id=market.id,
                 up_bid=f"{up_bid:.3f}",
                 up_ask=f"{up_ask:.3f}",
@@ -1441,6 +1480,31 @@ class AutoTrader:
                 outcomes=market_dict["outcomes"],
                 note="DOWN price = 1 - UP bid"
             )
+
+            # Override market_dict prices with live CLOB odds.
+            # Gamma best_bid/best_ask lags CLOB by 30-50%. For 5m markets a $12 BTC move at
+            # T=1min reads as ~51% on Gamma vs ~60% on CLOB — inflating the arbitrage edge from
+            # ~5% (real) to ~44% (fake). Both the AI prompt and arbitrage detector use these
+            # prices, so using CLOB here fixes both in one place.
+            _clob_snapshot = self.realtime_streamer.get_current_odds(market.id)
+            if _clob_snapshot:
+                market_dict['yes_price'] = _clob_snapshot.yes_odds
+                market_dict['no_price'] = _clob_snapshot.no_odds
+                logger.info(
+                    "Market prices updated to live CLOB",
+                    market_id=market.id,
+                    clob_yes=f"{_clob_snapshot.yes_odds:.3f}",
+                    clob_no=f"{_clob_snapshot.no_odds:.3f}",
+                    gamma_yes=f"{up_ask:.3f}",
+                    gamma_no=f"{1 - up_bid:.3f}",
+                )
+            else:
+                logger.warning(
+                    "CLOB snapshot unavailable — using stale Gamma prices for AI/arbitrage",
+                    market_id=market.id,
+                    gamma_yes=f"{up_ask:.3f}",
+                    gamma_no=f"{1 - up_bid:.3f}",
+                )
 
             # NEW: Calculate actual probability from price momentum
             probability_calculator = ProbabilityCalculator()
@@ -1454,14 +1518,20 @@ class AutoTrader:
             price_10min_ago = float(price_10min_result) if price_10min_result else float(btc_data.price)
             volatility_15min = await self.btc_service.calculate_15min_volatility() or 0.005  # Default 0.5%
 
+            # Order flow: CVD from Kraken 1-min candles (buy/sell pressure proxy)
+            order_flow_signal = await self.btc_service.get_order_flow_signal(minutes=10)
+            cvd_imbalance = order_flow_signal.cvd_normalized if order_flow_signal else 0.0
+
             actual_probability = probability_calculator.calculate_directional_probability(
                 current_price=float(btc_data.price),
                 target_price=float(price_to_beat) if price_to_beat else float(btc_data.price),
                 price_5min_ago=price_5min_ago,
                 price_10min_ago=price_10min_ago,
                 volatility_15min=volatility_15min,
-                time_remaining_seconds=time_remaining or 900,
-                orderbook_imbalance=orderbook_analysis.order_imbalance if orderbook_analysis else 0.0
+                time_remaining_seconds=time_remaining or self.MARKET_DURATION_SECONDS,
+                orderbook_imbalance=orderbook_analysis.order_imbalance if orderbook_analysis else 0.0,
+                cvd_imbalance=cvd_imbalance,
+                market_duration_seconds=self.MARKET_DURATION_SECONDS,
             )
 
             # NEW: Detect arbitrage opportunity
@@ -1480,7 +1550,10 @@ class AutoTrader:
                     edge_percentage=f"{arbitrage_opportunity.edge_percentage:.1%}",
                     recommended_action=arbitrage_opportunity.recommended_action,
                     urgency=arbitrage_opportunity.urgency,
-                    confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}"
+                    confidence_boost=f"{arbitrage_opportunity.confidence_boost:.2f}",
+                    yes_odds_used=f"{market_dict['yes_price']:.3f}",
+                    no_odds_used=f"{market_dict['no_price']:.3f}",
+                    odds_source="clob" if _clob_snapshot else "gamma_fallback",
                 )
 
             # Step 1: AI Decision - pass all market context including orderbook, timeframe, regime, arbitrage, market signals, and contrarian signal
@@ -1496,13 +1569,16 @@ class AutoTrader:
                 arbitrage_opportunity=arbitrage_opportunity,  # NEW: arbitrage opportunity
                 market_signals=market_signals,  # NEW: CoinGecko Pro market signals
                 contrarian_signal=contrarian_signal,  # NEW: contrarian mean-reversion signal
+                order_flow_signal=order_flow_signal,  # NEW: CVD buy/sell pressure
                 force_trade=self.test_mode.enabled  # NEW: TEST MODE - force YES/NO decision
             )
 
             # Re-check _traded_markets after AI call: another concurrent cycle may have
             # placed an order during the 30-60s AI processing window (belt-and-suspenders
             # alongside _markets_with_active_cycle_analysis which blocks at entry).
-            if not self.test_mode.enabled and market.id in self._traded_markets:
+            # Sub-analyses skip this — they don't execute orders; the duplicate guard at
+            # execution time (line ~1837) handles the real-trade case.
+            if not self.test_mode.enabled and not is_sub_analysis and market.id in self._traded_markets:
                 self._markets_with_active_cycle_analysis.discard(market.id)
                 logger.info(
                     "Skipping - market was traded by concurrent cycle during AI analysis",
@@ -1513,8 +1589,16 @@ class AutoTrader:
 
             # NEW: Conflict detection and confidence adjustment
             conflict_detector = SignalConflictDetector()
+            _pct_from_target = (
+                abs((btc_data.price - price_to_beat) / price_to_beat * 100)
+                if price_to_beat else 0.0
+            )
+            _btc_conflict_direction = (
+                "NEUTRAL" if _pct_from_target < 0.30
+                else ("UP" if btc_data.price > price_to_beat else "DOWN")
+            )
             conflict_analysis = conflict_detector.analyze_conflicts(
-                btc_direction="UP" if (price_to_beat and btc_data.price > price_to_beat) else "DOWN",
+                btc_direction=_btc_conflict_direction,
                 technical_trend=indicators.trend,
                 sentiment_direction="BULLISH" if aggregated_sentiment.final_score > 0 else "BEARISH",
                 regime_trend=regime.trend_direction if regime else None,
@@ -1523,30 +1607,49 @@ class AutoTrader:
                 market_signals_confidence=market_signals.confidence if market_signals else None
             )
 
-            # Apply conflict analysis
+            # Apply conflict analysis — no longer auto-hold, apply large penalty instead
             if conflict_analysis.should_hold:
-                logger.warning(
-                    "AUTO-HOLD due to SEVERE signal conflicts",
+                original_conf = decision.confidence
+                decision.confidence = max(0.0, decision.confidence - 0.30)
+                logger.info(
+                    "Severe conflict penalty applied (no auto-hold)",
                     market_id=market.id,
                     severity=conflict_analysis.severity.value,
-                    conflicts=conflict_analysis.conflicts_detected
+                    conflicts=conflict_analysis.conflicts_detected,
+                    original=f"{original_conf:.2f}",
+                    final=f"{decision.confidence:.2f}"
                 )
-                return  # Don't trade
 
-            # Apply confidence penalty
+            # Apply confidence penalty — bypass if arbitrage edge is HIGH/EXTREME.
+            # A 10%+ mispricing edge is stronger evidence than minor technical indicator lag.
+            # The arbitrage edge already reflects the price reality, so penalizing confidence
+            # for technical vs BTC-direction disagreement doubly-counts the same weak signal.
+            arb_is_high_urgency = (
+                arbitrage_opportunity is not None and
+                arbitrage_opportunity.edge_percentage >= self.settings.arbitrage_high_edge_pct
+            )
             if conflict_analysis.confidence_penalty != 0.0:
-                original_confidence = decision.confidence
-                decision.confidence += conflict_analysis.confidence_penalty
-                decision.confidence = max(0.0, min(1.0, decision.confidence))  # Clamp to 0-1
+                if arb_is_high_urgency and not conflict_analysis.should_hold:
+                    logger.info(
+                        "Conflict penalty bypassed — high-urgency arbitrage edge supersedes minor signal conflicts",
+                        market_id=market.id,
+                        penalty_skipped=f"{conflict_analysis.confidence_penalty:+.2f}",
+                        arbitrage_edge=f"{arbitrage_opportunity.edge_percentage:.1%}",
+                        conflicts=conflict_analysis.conflicts_detected
+                    )
+                else:
+                    original_confidence = decision.confidence
+                    decision.confidence += conflict_analysis.confidence_penalty
+                    decision.confidence = max(0.0, min(1.0, decision.confidence))  # Clamp to 0-1
 
-                logger.info(
-                    "Applied conflict penalty",
-                    market_id=market.id,
-                    original=f"{original_confidence:.2f}",
-                    penalty=f"{conflict_analysis.confidence_penalty:+.2f}",
-                    final=f"{decision.confidence:.2f}",
-                    conflicts=conflict_analysis.conflicts_detected
-                )
+                    logger.info(
+                        "Applied conflict penalty",
+                        market_id=market.id,
+                        original=f"{original_confidence:.2f}",
+                        penalty=f"{conflict_analysis.confidence_penalty:+.2f}",
+                        final=f"{decision.confidence:.2f}",
+                        conflicts=conflict_analysis.conflicts_detected
+                    )
 
             # Test mode: Force YES/NO and check confidence threshold
             if self.test_mode.enabled:
@@ -1592,13 +1695,44 @@ class AutoTrader:
 
                 decision.position_size = final_size
 
+            # Arbitrage direction guard: if probability model says BUY_NO but AI says YES
+            # (or vice versa) AND edge >= 10%, the math trumps the AI. Override direction.
+            # Example: actual_prob=5% YES (95% NO), AI says YES @ 0.98 → catastrophic loss.
+            if (
+                arbitrage_opportunity is not None and
+                arbitrage_opportunity.edge_percentage >= self.settings.arbitrage_high_edge_pct
+            ):
+                arb_direction = (
+                    "YES" if arbitrage_opportunity.recommended_action == "BUY_YES" else "NO"
+                )
+                if arb_direction != decision.action:
+                    logger.warning(
+                        "AI direction contradicts arbitrage math — overriding to match probability model",
+                        market_id=market.id,
+                        ai_action=decision.action,
+                        arb_action=arb_direction,
+                        actual_probability=f"{arbitrage_opportunity.actual_probability:.0%}",
+                        arb_edge=f"{arbitrage_opportunity.edge_percentage:.1%}",
+                        ai_confidence=f"{decision.confidence:.2f}"
+                    )
+                    decision.action = arb_direction
+                    decision.confidence = min(decision.confidence, 0.75)
+
             # Additional validation: YES trades need stronger momentum to avoid mean reversion
+            # EXCEPTION: bypass when arbitrage edge >= arbitrage_high_edge_pct (default 10%)
+            # A large mispricing edge (e.g. 61%) is stronger evidence than momentum lag.
+            # Sub-analyses skip this — they collect AI opinions for meta-aggregation; the
+            # execution guard runs at timed-entry time when momentum may have changed.
             # CHECK FIRST before logging to avoid phantom trades
-            if decision.action == "YES" and price_to_beat and not self.test_mode.enabled:
+            _arb_bypasses_yes_check = (
+                arbitrage_opportunity is not None and
+                arbitrage_opportunity.edge_percentage >= self.settings.arbitrage_high_edge_pct
+            )
+            if decision.action == "YES" and price_to_beat and not self.test_mode.enabled and not _arb_bypasses_yes_check and not is_sub_analysis:
                 diff, _ = self.market_tracker.calculate_price_difference(
                     btc_data.price, price_to_beat
                 )
-                MIN_YES_MOVEMENT = 30  # $30 minimum for YES trades
+                MIN_YES_MOVEMENT = self.MIN_YES_MOVEMENT_USD  # profile-aware minimum
 
                 if diff < MIN_YES_MOVEMENT:
                     logger.info(
@@ -1616,7 +1750,9 @@ class AutoTrader:
             # EXCEPTION: Contrarian mean-reversion bets are exempt — OVERBOUGHT_REVERSAL
             # intentionally bets NO when RSI > 90 + crowd is overly bullish, and
             # OVERSOLD_REVERSAL intentionally bets YES when RSI < 10 + crowd is oversold.
-            if indicators and indicators.rsi is not None and not self.test_mode.enabled:
+            # Sub-analyses skip this check — RSI state at T=2-8min may differ from execution
+            # at T=10-15min; the fast_entry_check re-validates RSI at actual execution time.
+            if indicators and indicators.rsi is not None and not self.test_mode.enabled and not is_sub_analysis:
                 rsi = indicators.rsi
                 is_contrarian_no = (
                     contrarian_signal is not None
@@ -1723,32 +1859,79 @@ class AutoTrader:
                         ai_reasoning=decision.reasoning[:100] if decision.reasoning else "No reasoning provided"
                     )
 
-            # Skip if HOLD decision
-            if decision.action == "HOLD" or token_id is None:
+            # Convert HOLD to directional based on sentiment (no more skipping)
+            if decision.action == "HOLD":
+                decision.action = "YES" if aggregated_sentiment.final_score > 0 else "NO"
+                decision.confidence = min(decision.confidence, 0.72)
                 logger.info(
-                    "Decision: HOLD",
+                    "AI returned HOLD — converted to direction from sentiment",
                     market_id=market.id,
-                    reason=decision.reasoning
+                    sentiment_score=aggregated_sentiment.final_score,
+                    forced_action=decision.action,
+                    confidence=f"{decision.confidence:.2f}"
                 )
+
+            if token_id is None:
                 return
 
             # Guard: skip if a limit order is already pending for this market
             # (open_positions is only updated AFTER order verification, leaving a
             # gap where the OddsMonitor can retrigger a second/third order)
-            if market.id in self._markets_with_pending_orders:
+            # Sub-analyses are exempt: they don't execute orders; the pending-order guard
+            # will still fire at actual execution time in _execute_timed_entry.
+            if not is_sub_analysis and market.id in self._markets_with_pending_orders:
                 logger.info(
                     "Skipping cycle - pending order already exists for market",
                     market_id=market.id
                 )
                 return
 
-            # Step 2: Risk Validation
+            # Sub-analysis mode: store AI decision for meta-aggregation.
+            # Bypasses risk validation entirely — sub-analyses never execute real
+            # trades so exposure limits, dollar caps, and duplicate checks are
+            # irrelevant. The real risk check runs at execution time instead.
+            if is_sub_analysis:
+                self._markets_with_active_cycle_analysis.discard(market.id)
+                self._market_sub_analyses.setdefault(market.id, []).append({
+                    'action': decision.action,
+                    'confidence': decision.confidence,
+                    'market': market,
+                    'decision': decision,
+                    'amount': None,  # no real position — sized at execution time
+                    'portfolio_value': portfolio_value,  # for position sizing at execution
+                    'token_id': token_id,
+                    'token_name': token_name,
+                    'trade_id': trade_id,
+                    'btc_data': btc_data,
+                    'btc_current': float(btc_data.price),
+                    'btc_price_to_beat': float(price_to_beat) if price_to_beat else None,
+                    'indicators': indicators,
+                    'btc_momentum': btc_momentum,
+                    'timeframe_analysis': timeframe_analysis,
+                    'contrarian_signal': contrarian_signal,
+                    'arbitrage_opportunity': arbitrage_opportunity,
+                    'order_flow_signal': order_flow_signal,
+                    'conflict_analysis': conflict_analysis,
+                    'signal_lag_detected': signal_lag_detected,
+                    'signal_lag_reason': signal_lag_reason,
+                    'stored_at': datetime.now(timezone.utc),
+                })
+                logger.info(
+                    "Sub-analysis stored for meta-aggregation",
+                    market_id=market.id,
+                    action=decision.action,
+                    confidence=f"{decision.confidence:.2f}",
+                    sub_count=len(self._market_sub_analyses.get(market.id, [])),
+                )
+                return
+
+            # Step 2: Risk Validation (real executions only — sub-analyses skip this)
             validation = await self.risk_manager.validate_decision(
                 decision=decision,
                 portfolio_value=portfolio_value,
                 market=market_dict,
                 open_positions=self.open_positions,
-                test_mode=self.test_mode.enabled  # NEW: pass test mode flag
+                test_mode=self.test_mode.enabled
             )
 
             if not validation.approved:
@@ -1760,7 +1943,7 @@ class AutoTrader:
                 return
 
             # NEW: JIT odds validation (fetch fresh odds before execution)
-            fresh_market = self.client.discover_btc_15min_market()
+            fresh_market = self._discover_current_market()
             if fresh_market:
                 # Use CLOB realtime odds for JIT check (avoids stale Gamma prices)
                 _jit_odds = self.realtime_streamer.get_current_odds(market.id)
@@ -1821,6 +2004,7 @@ class AutoTrader:
                         'timeframe_analysis': timeframe_analysis,  # 1m/5m/15m/30m alignment for fast entry check
                         'contrarian_signal': contrarian_signal,    # Prevents trend check from blocking contrarian plays
                         'arbitrage_opportunity': arbitrage_opportunity,
+                        'order_flow_signal': order_flow_signal,    # CVD at analysis time (for logging)
                         'conflict_analysis': conflict_analysis,
                         'signal_lag_detected': signal_lag_detected,
                         'signal_lag_reason': signal_lag_reason,
@@ -1931,7 +2115,7 @@ class AutoTrader:
         """
         try:
             # Refetch the current market to get latest prices
-            fresh_market = self.client.discover_btc_15min_market()
+            fresh_market = self._discover_current_market()
 
             # Verify it's the same market
             if fresh_market.id != market_id:
@@ -2236,7 +2420,7 @@ class AutoTrader:
                 current_best_ask=smart_best_ask,
                 current_best_bid=smart_best_bid,
                 tick_size=0.001,
-                max_fallback_price=smart_best_ask * 1.20  # Cap fallback at 20% slippage from decision price
+                max_fallback_price=min(smart_best_ask * 1.20, 0.90)  # Cap at 20% slippage AND hard 90% EV ceiling
             )
 
             # Check execution result
@@ -2569,28 +2753,110 @@ class AutoTrader:
     # ─────────────────────────────────────────────────────────────────────────
 
     TIMING_WATCHER_INTERVAL_SECONDS = 10
-    ANALYSIS_TRIGGER_ELAPSED_SECONDS = 300   # T=5min into the 15-min market (first 5-min mark)
-    ANALYSIS_TRIGGER_WINDOW_SECONDS = 60     # 60s window to fire (300–360s elapsed)
     TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter (no upper ceiling)
     TIMED_ENTRY_WINDOW_SECONDS = 300         # Only enter in last 5 minutes (<=300s remaining)
 
-    async def _market_timing_watcher(self) -> None:
-        """Background task: trigger AI analysis at the 10-minute mark of each 15-min market.
+    # Multi-analysis strategy: run sub-analyses every 2 min, meta-analysis before betting window
+    # NOTE: AI calls observed to take 60–240s. Meta fires at T=12min (720s) to ensure
+    # even slow T=8min AI calls (480s trigger + 240s = 720s) are captured before aggregation.
+    # Execution window (last 5min = T=10-15min) still covers T=12-15min for trade entry.
+    SUB_ANALYSIS_FIRST_AT_SECONDS = 120      # First sub-analysis at T=2min
+    SUB_ANALYSIS_INTERVAL_SECONDS = 120      # Repeat every 2 min (T=2, T=4, T=6, T=8)
+    SUB_ANALYSIS_MAX_COUNT = 4               # At most 4 sub-analyses per market
+    META_ANALYSIS_TRIGGER_SECONDS = 720      # Meta-analysis at T=12min (allows 240s AI call time)
+    META_ANALYSIS_WINDOW_SECONDS = 60        # Fire meta in 720–780s window
 
-        This replaces the OddsMonitor as the primary cycle trigger. At T=10min
-        (600s elapsed, 300s remaining), fires run_cycle() once per market for
-        full AI analysis + data collection. The _timed_entry_monitor then watches
-        for 70%+ odds in the remaining 5 minutes to execute the order.
+    # Market profile defaults (15m) — overridden by _apply_market_profile() for MARKET_TYPE=5m
+    MARKET_DURATION_SECONDS = 900            # Total market duration in seconds
+    MIN_YES_MOVEMENT_USD = 30                # Min BTC rise above price-to-beat to allow YES
+    FAST_CHECK_STALE_THRESHOLD = 180         # Skip stale fast-check data when <N seconds remaining
+    PRICE_WATCHER_MAX_CACHE_SECONDS = 90     # Max age of cached price data in price watcher
+    # 5m CLOB-driven strategy constants (disabled for 15m, activated in _apply_market_profile for 5m)
+    CLOB_SNAPSHOT_AT_SECONDS = 999999        # Disabled for 15m; set to 60 for 5m
+    MIN_CONFIDENCE_5M = 0.85                 # Higher confidence threshold for noisy 5m markets
+
+    def _apply_market_profile(self) -> None:
+        """Override timing constants based on MARKET_TYPE env var (15m or 5m).
+
+        Called once at the end of __init__.  All instance-level overrides are
+        stored as instance attributes, shadowing the class-level defaults.
+        """
+        market_type = os.getenv("MARKET_TYPE", "15m").lower()
+        self._market_type = market_type
+
+        if market_type == "5m":
+            # 5-minute market profile — CLOB-driven strategy.
+            # No AI sub-analysis or meta-analysis. Instead:
+            #   T=1min  Record CLOB snapshot (crowd direction at 60s)
+            #   T=3-5min  Execute only if CLOB direction unchanged + probability agrees + conf ≥ 0.85
+            self.MARKET_DURATION_SECONDS = 300
+            self.market_tracker.MARKET_DURATION_SECONDS = 300  # Fix: sync tracker duration
+            self.SUB_ANALYSIS_FIRST_AT_SECONDS = 60      # Not used (MAX_COUNT=0)
+            self.SUB_ANALYSIS_INTERVAL_SECONDS = 300     # Not used
+            self.SUB_ANALYSIS_MAX_COUNT = 0              # CLOB-driven: no AI sub-analysis
+            self.META_ANALYSIS_TRIGGER_SECONDS = 999999  # Disabled: no meta-analysis
+            self.META_ANALYSIS_WINDOW_SECONDS = 20
+            self.TIMED_ENTRY_WINDOW_SECONDS = 120        # Last 2min (<=120s remaining)
+            self.TIMING_WATCHER_INTERVAL_SECONDS = 5
+            self.MIN_YES_MOVEMENT_USD = 10
+            self.FAST_CHECK_STALE_THRESHOLD = 60
+            self.PRICE_WATCHER_MAX_CACHE_SECONDS = 40
+            self.CLOB_SNAPSHOT_AT_SECONDS = 60           # CLOB snapshot at T=1min
+            self.MIN_CONFIDENCE_5M = 0.85                # High threshold for noisy 5m markets
+            logger.info(
+                "Market profile applied: 5m (CLOB-driven strategy)",
+                duration_seconds=300,
+                strategy="CLOB snapshot T=1min → execute last 2min with probability agreement",
+                entry_window="last 2min (<=120s remaining)",
+                min_confidence=0.85,
+                min_yes_movement_usd=10,
+            )
+        else:
+            # 15-minute market profile (class defaults — already set)
+            logger.info(
+                "Market profile applied: 15m",
+                duration_seconds=900,
+                sub_analysis="T=2/4/6/8min (4 cycles)",
+                meta_analysis="T=12min",
+                entry_window="last 5min (<=300s remaining)",
+                min_yes_movement_usd=30,
+            )
+
+    def _discover_current_market(self):
+        """Discover the current active market based on the market-type profile.
+
+        Returns the Market object from Polymarket for the active BTC up/down market
+        matching the configured market type (15m or 5m).
+        """
+        if getattr(self, "_market_type", "15m") == "5m":
+            return self.client.discover_btc_5min_market()
+        return self.client.discover_btc_15min_market()
+
+    async def _market_timing_watcher(self) -> None:
+        """Background task: run multi-analysis strategy across each 15-min market.
+
+        Timeline for each market:
+          T=2min  Sub-analysis #1 (AI cycle, no execution)
+          T=4min  Sub-analysis #2
+          T=6min  Sub-analysis #3
+          T=8min  Sub-analysis #4
+          T=12min Meta-analysis: compiles all sub-analyses via weighted vote,
+                  stores final decision in _timed_decisions
+          T=10-15min  _timed_entry_monitor executes when CLOB odds >= 70%
 
         State managed here:
-          _analysis_triggered — set when the cycle is fired (prevents re-firing)
-          _timed_decisions    — populated by _process_market when odds < 70% at analysis time
+          _analysis_triggered         — set on first sub-analysis (bypasses 60% filter in _process_market)
+          _market_sub_analyses        — per-market list of validated sub-analysis contexts
+          _sub_analysis_triggered_count — how many sub-analysis cycles have been fired
+          _meta_analysis_triggered    — set when meta-analysis fires (prevents re-firing)
+          _timed_decisions            — populated by _run_meta_analysis with the final decision
         """
         logger.info(
-            "Market timing watcher started",
-            analysis_trigger_at=f"T+{self.ANALYSIS_TRIGGER_ELAPSED_SECONDS}s (5-min mark)",
-            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (final 5 min)",
-            entry_odds_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}"
+            "Market timing watcher started (multi-analysis strategy)",
+            sub_analysis_schedule="T=2, T=4, T=6, T=8 min",
+            meta_analysis_at=f"T={int(self.META_ANALYSIS_TRIGGER_SECONDS / 60)}min",
+            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (T=10-15min)",
+            entry_odds_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}",
         )
 
         while self.running:
@@ -2611,44 +2877,313 @@ class AutoTrader:
 
                 now = datetime.now(timezone.utc)
                 elapsed = (now - start_time).total_seconds()
-                time_remaining = max(0, 900 - elapsed)
+                time_remaining = max(0, self.MARKET_DURATION_SECONDS - elapsed)
 
                 # Clean up expired market state
                 if time_remaining == 0:
                     self._analysis_triggered.discard(market_id)
                     self._timed_decisions.pop(market_id, None)
+                    self._market_sub_analyses.pop(market_id, None)
+                    self._sub_analysis_triggered_count.pop(market_id, None)
+                    self._meta_analysis_triggered.discard(market_id)
+                    self._5m_clob_snapshots.pop(market_id, None)
                     continue
 
                 # Skip if already traded for this market
                 if market_id in self._traded_markets:
                     continue
 
-                # Skip if analysis already triggered for this market in this epoch
-                if market_id in self._analysis_triggered:
-                    continue
+                # === Sub-analyses: fire every 2 min from T=2min to T=8min ===
+                # Triggers at T=2 (120s), T=4 (240s), T=6 (360s), T=8 (480s).
+                # Each runs a full AI cycle in sub-analysis mode (no execution) and
+                # stores its validated decision in _market_sub_analyses for meta-aggregation.
+                if (elapsed >= self.SUB_ANALYSIS_FIRST_AT_SECONDS
+                        and elapsed < self.META_ANALYSIS_TRIGGER_SECONDS):
+                    count = self._sub_analysis_triggered_count.get(market_id, 0)
+                    expected = min(
+                        int((elapsed - self.SUB_ANALYSIS_FIRST_AT_SECONDS)
+                            / self.SUB_ANALYSIS_INTERVAL_SECONDS) + 1,
+                        self.SUB_ANALYSIS_MAX_COUNT
+                    )
+                    if count < expected:
+                        self._sub_analysis_triggered_count[market_id] = expected
+                        self._analysis_triggered.add(market_id)  # bypass 60% odds filter
+                        logger.info(
+                            f"T={int(elapsed / 60)}min — triggering sub-analysis #{expected}",
+                            market_id=market_id,
+                            market_slug=market_slug,
+                            elapsed_seconds=int(elapsed),
+                            time_remaining_seconds=int(time_remaining),
+                        )
+                        asyncio.create_task(self.run_cycle(is_sub_analysis=True))
 
-                # Trigger analysis when 600–660s have elapsed (T=10min window)
-                trigger_end = self.ANALYSIS_TRIGGER_ELAPSED_SECONDS + self.ANALYSIS_TRIGGER_WINDOW_SECONDS
-                if self.ANALYSIS_TRIGGER_ELAPSED_SECONDS <= elapsed < trigger_end:
+                # === Meta-analysis at T=12min: compile all sub-analyses into final decision ===
+                # Fires once, in the 720–780s window (T=12min), just before the last-5-min
+                # betting window opens. Uses weighted vote across sub-analyses to produce
+                # a final YES/NO decision stored in _timed_decisions for the entry monitor.
+                if (elapsed >= self.META_ANALYSIS_TRIGGER_SECONDS
+                        and elapsed < self.META_ANALYSIS_TRIGGER_SECONDS + self.META_ANALYSIS_WINDOW_SECONDS
+                        and market_id not in self._meta_analysis_triggered):
+                    self._meta_analysis_triggered.add(market_id)
+                    self._analysis_triggered.add(market_id)  # ensure bypass flags active
+                    sub_analyses = self._market_sub_analyses.get(market_id, [])
                     logger.info(
-                        "T=5min mark reached — triggering AI analysis",
+                        "T=12min — triggering meta-analysis",
                         market_id=market_id,
                         market_slug=market_slug,
                         elapsed_seconds=int(elapsed),
-                        time_remaining_seconds=int(time_remaining)
+                        time_remaining_seconds=int(time_remaining),
+                        sub_analyses_collected=len(sub_analyses),
                     )
-                    self._analysis_triggered.add(market_id)
-                    asyncio.create_task(self.run_cycle())
+                    asyncio.create_task(self._run_meta_analysis(market_id, sub_analyses))
+
+                # === 5m CLOB-driven strategy: record CLOB snapshot at T=1min ===
+                # Fires once when elapsed >= CLOB_SNAPSHOT_AT_SECONDS (60s for 5m, disabled for 15m).
+                # Stores the crowd's directional commitment without any AI call. The snapshot
+                # direction is compared against the CLOB at execution time (T=3-5min) to
+                # confirm direction consistency before placing an order.
+                if (self.CLOB_SNAPSHOT_AT_SECONDS < 999999
+                        and elapsed >= self.CLOB_SNAPSHOT_AT_SECONDS
+                        and market_id not in self._5m_clob_snapshots
+                        and market_id not in self._traded_markets):
+                    asyncio.create_task(self._record_5m_clob_snapshot(market_id, market_slug))
 
             except Exception as e:
                 logger.error("Market timing watcher error", error=str(e))
 
+    async def _record_5m_clob_snapshot(self, market_id: str, market_slug: str) -> None:
+        """Record CLOB direction at T=1min for the 5m CLOB-driven strategy.
+
+        Called once per market at elapsed >= CLOB_SNAPSHOT_AT_SECONDS (60s for 5m).
+        No AI call. Records the crowd's directional commitment in _5m_clob_snapshots
+        and stores a placeholder execution context in _timed_decisions so that
+        _timed_entry_monitor can watch for the entry condition.
+
+        At execution time (T=3-5min), _timed_entry_monitor will:
+          1. Confirm current CLOB direction still matches this snapshot
+          2. Confirm probability model agrees (>= 55% in our direction)
+          3. Confirm composite confidence >= MIN_CONFIDENCE_5M (0.85)
+        Only then will it build a synthetic TradingDecision and execute.
+        """
+        try:
+            clob_snapshot = self.realtime_streamer.get_current_odds(market_id)
+            if not clob_snapshot:
+                logger.warning(
+                    "5m CLOB snapshot: no CLOB odds available — skipping",
+                    market_id=market_id,
+                )
+                return
+
+            # Determine crowd direction from live CLOB
+            action = "YES" if clob_snapshot.yes_odds > clob_snapshot.no_odds else "NO"
+            direction_odds = clob_snapshot.yes_odds if action == "YES" else clob_snapshot.no_odds
+
+            # Get market object for execution context (sync API call)
+            market = self._discover_current_market()
+            if not market:
+                logger.warning(
+                    "5m CLOB snapshot: could not discover market — skipping",
+                    market_id=market_id,
+                )
+                return
+
+            # Get token IDs from market
+            token_ids = market.get_token_ids()
+            if not token_ids or len(token_ids) < 2:
+                logger.warning(
+                    "5m CLOB snapshot: market has no token IDs — skipping",
+                    market_id=market_id,
+                )
+                return
+
+            # Map action to token (YES = token_ids[0] "Up", NO = token_ids[1] "Down")
+            outcomes = getattr(market, 'outcomes', None) or ['Up', 'Down']
+            if action == "YES":
+                token_id = token_ids[0]
+                token_name = outcomes[0] if outcomes else "Up"
+            else:
+                token_id = token_ids[1]
+                token_name = outcomes[1] if len(outcomes) > 1 else "Down"
+
+            # Get BTC data for reference (used by _execute_trade for logging/DB)
+            btc_data = await self.btc_service.get_current_price()
+
+            now = datetime.now(timezone.utc)
+
+            # Store snapshot for direction consistency check at execution time
+            self._5m_clob_snapshots[market_id] = {
+                'action': action,
+                'yes_odds': clob_snapshot.yes_odds,
+                'no_odds': clob_snapshot.no_odds,
+                'direction_odds': direction_odds,
+                'snapshot_time': now,
+            }
+
+            # Store minimal execution context in _timed_decisions.
+            # decision=None and confidence=None will be computed at execution time
+            # after direction consistency + probability agreement checks pass.
+            self._timed_decisions[market_id] = {
+                'action': action,
+                'market': market,
+                'confidence': None,              # computed at execution time
+                'decision': None,                # built synthetically at execution time
+                'amount': None,                  # deferred to risk manager
+                'portfolio_value': Decimal('100'),
+                'stored_at': now,
+                'clob_driven': True,             # 5m CLOB-driven marker
+                'snapshot_clob_yes': clob_snapshot.yes_odds,
+                'snapshot_clob_no': clob_snapshot.no_odds,
+                'snapshot_clob_odds': direction_odds,
+                'token_id': token_id,
+                'token_name': token_name,
+                'trade_id': -1,                  # no pre-logged decision
+                'btc_data': btc_data,
+                'btc_current': float(btc_data.price) if btc_data else None,
+                'snapshot_btc_price': float(btc_data.price) if btc_data else None,  # immutable T=1min BTC reference
+                'btc_price_to_beat': None,       # fetched at execution time
+                # Technical indicator fields — None: fast_entry_check will skip all checks
+                'indicators': None,
+                'btc_momentum': None,
+                'timeframe_analysis': None,
+                'contrarian_signal': None,
+                'arbitrage_opportunity': None,
+                'order_flow_signal': None,
+                'conflict_analysis': None,
+                'signal_lag_detected': False,
+                'signal_lag_reason': None,
+            }
+            self._analysis_triggered.add(market_id)
+
+            logger.info(
+                "5m CLOB snapshot recorded — watching for execution conditions",
+                market_id=market_id,
+                direction=action,
+                yes_odds=f"{clob_snapshot.yes_odds:.1%}",
+                no_odds=f"{clob_snapshot.no_odds:.1%}",
+                direction_odds=f"{direction_odds:.1%}",
+                token=token_name,
+                btc_price=f"${btc_data.price:,.2f}" if btc_data else "N/A",
+            )
+
+        except Exception as e:
+            logger.error("5m CLOB snapshot failed", market_id=market_id, error=str(e))
+
+    async def _run_meta_analysis(self, market_id: str, sub_analyses: list[dict]) -> None:
+        """Compile sub-analysis results via weighted vote and store final decision.
+
+        Called at T=12min. Aggregates all validated sub-analysis decisions collected
+        at T=2, T=4, T=6, T=8 via confidence-weighted majority vote.  The highest-
+        confidence matching context is promoted to _timed_decisions so that
+        _timed_entry_monitor can execute when CLOB odds reach 70% in the last 5 min.
+
+        Fallback: if no sub-analyses were collected (bot started mid-market), logs
+        a warning and skips — the market will not trade this cycle.
+        """
+        try:
+            if not sub_analyses:
+                logger.warning(
+                    "Meta-analysis: no sub-analyses collected — market will not trade",
+                    market_id=market_id,
+                )
+                return
+
+            # Separate by direction
+            yes_analyses = [a for a in sub_analyses if a['action'] == 'YES']
+            no_analyses  = [a for a in sub_analyses if a['action'] == 'NO']
+
+            # Confidence-weighted vote: higher confidence = stronger directional signal
+            yes_weight = sum(a['confidence'] for a in yes_analyses)
+            no_weight  = sum(a['confidence'] for a in no_analyses)
+
+            final_action   = 'YES' if yes_weight > no_weight else 'NO'
+            winning_side   = yes_analyses if final_action == 'YES' else no_analyses
+            losing_weight  = no_weight if final_action == 'YES' else yes_weight
+
+            if not winning_side:
+                logger.warning(
+                    "Meta-analysis: no analyses on winning side — skipping",
+                    market_id=market_id,
+                )
+                return
+
+            # Agreement ratio: fraction of analyses that agree with final direction
+            agreement_ratio = len(winning_side) / len(sub_analyses)
+
+            # Final confidence = avg confidence of winning side × agreement boost (0.80–1.00)
+            # Exclude zero/near-zero confidence entries (e.g. AI errors) from the average —
+            # they represent failures, not genuine low-confidence signals.
+            MIN_META_CONF = 0.15
+            valid_winning = [a for a in winning_side if a['confidence'] >= MIN_META_CONF]
+            if valid_winning:
+                avg_winning_conf = sum(a['confidence'] for a in valid_winning) / len(valid_winning)
+            else:
+                avg_winning_conf = sum(a['confidence'] for a in winning_side) / len(winning_side)
+            final_confidence = min(avg_winning_conf * (0.80 + 0.20 * agreement_ratio), 1.0)
+
+            logger.info(
+                "Meta-analysis vote complete",
+                market_id=market_id,
+                sub_analyses_total=len(sub_analyses),
+                yes_votes=f"{len(yes_analyses)} (weight={yes_weight:.2f})",
+                no_votes=f"{len(no_analyses)} (weight={no_weight:.2f})",
+                final_action=final_action,
+                agreement=f"{agreement_ratio:.0%}",
+                avg_winning_conf=f"{avg_winning_conf:.2f}",
+                final_confidence=f"{final_confidence:.2f}",
+                margin=f"{abs(yes_weight - no_weight):.2f}",
+            )
+
+            if final_confidence < self.TIMED_ENTRY_ODDS_MIN:
+                # Reuse the trading threshold as the confidence floor — if the
+                # aggregated signal isn't above 0.70 we don't have an edge.
+                logger.info(
+                    "Meta-analysis confidence below 0.70 threshold — no trade",
+                    market_id=market_id,
+                    final_confidence=f"{final_confidence:.2f}",
+                )
+                return
+
+            # Promote the highest-confidence matching context as the execution template.
+            # Only the direction has been meta-validated; all other execution fields
+            # (market object, token_id, amounts, btc_data, etc.) come from this analysis.
+            best = max(winning_side, key=lambda a: a['confidence'])
+
+            # Shallow-copy and annotate with meta-analysis provenance
+            context = dict(best)
+            context['meta_analysis'] = {
+                'yes_votes':       len(yes_analyses),
+                'no_votes':        len(no_analyses),
+                'total':           len(sub_analyses),
+                'agreement_ratio': agreement_ratio,
+                'yes_weight':      yes_weight,
+                'no_weight':       no_weight,
+                'final_confidence': final_confidence,
+            }
+
+            self._timed_decisions[market_id] = context
+
+            # Clean up sub-analysis state — no longer needed after meta promotion.
+            # Prevents unbounded memory growth across many market cycles.
+            self._market_sub_analyses.pop(market_id, None)
+            self._sub_analysis_triggered_count.pop(market_id, None)
+
+            logger.info(
+                "Meta-analysis stored in _timed_decisions — ready for timed entry monitor",
+                market_id=market_id,
+                action=final_action,
+                meta_confidence=f"{final_confidence:.2f}",
+                template_sub_analysis_confidence=f"{best['confidence']:.2f}",
+                template_stored_at=best['stored_at'].isoformat(),
+            )
+
+        except Exception as e:
+            logger.error("Meta-analysis failed", market_id=market_id, error=str(e))
+
     async def _timed_entry_monitor(self) -> None:
         """Background task: execute stored decisions when 70%+ odds appear in last 5 minutes.
 
-        After _market_timing_watcher fires run_cycle() at T=10min, _process_market
-        may store a decision in _timed_decisions if the odds aren't yet at 70%.
-        This monitor checks every 10s. When:
+        After _run_meta_analysis populates _timed_decisions at T=12min, this monitor
+        checks every 10s. When:
           - Time remaining <= 5 min (300s)
           - Stored decision exists for the active market
           - CLOB odds for the decided direction >= 70%
@@ -2725,9 +3260,166 @@ class AutoTrader:
                         time_remaining=time_remaining
                     )
 
-                    if current_odds >= self.TIMED_ENTRY_ODDS_MIN:
+                    MAX_EXEC_ODDS = 0.90
+                    if self.TIMED_ENTRY_ODDS_MIN <= current_odds <= MAX_EXEC_ODDS:
+                        # 5m CLOB-driven strategy: additional pre-execution checks.
+                        # These run BEFORE Improvement C and fast_entry_check.
+                        # If any check fails, `continue` retries on the next 5s cycle
+                        # (decision stays in _timed_decisions, not popped yet).
+                        if stored.get('clob_driven'):
+                            # Check 1: Current CLOB direction must match T=1min snapshot.
+                            # If the crowd has flipped (e.g. snapshot=NO but now YES=75%),
+                            # abort this cycle — the signal is no longer valid.
+                            snapshot_action = stored['action']
+                            clob_action = "YES" if odds_snapshot.yes_odds > odds_snapshot.no_odds else "NO"
+                            if clob_action != snapshot_action:
+                                logger.info(
+                                    "5m timed entry skipped — direction flipped since T=1min snapshot",
+                                    market_id=market_id,
+                                    snapshot_action=snapshot_action,
+                                    current_clob_action=clob_action,
+                                    yes_odds=f"{odds_snapshot.yes_odds:.1%}",
+                                    no_odds=f"{odds_snapshot.no_odds:.1%}",
+                                )
+                                continue
+
+                            # Check 2: BTC micro-momentum must confirm CLOB direction.
+                            # Compares current BTC to T=1min snapshot BTC price.
+                            # The probability model (z-score) is blind for 5m markets because
+                            # BTC moves <$50 in 5min → gap≈$0 → z-score≈0 → always ~50%.
+                            # Micro-delta is the real signal: if BTC moved $15+ in the same
+                            # direction the CLOB crowd is pricing, both signals agree.
+                            # Composite: 0.70 + 0.15*clob_strength + 0.15*momentum_strength
+                            try:
+                                _btc_now = await self.btc_service.get_current_price()
+                                _snapshot_btc = stored.get('snapshot_btc_price')
+
+                                if _snapshot_btc is None:
+                                    logger.warning(
+                                        "5m: snapshot_btc_price missing — skipping cycle",
+                                        market_id=market_id,
+                                    )
+                                    continue
+
+                                _current_btc = float(_btc_now.price)
+                                _micro_delta = _current_btc - _snapshot_btc  # positive = BTC rose
+
+                                # Hard block: BTC must have moved ≥$15 in the confirmed direction.
+                                # $15 is just above the 2-min noise floor (~1-sigma ≈ $15-25).
+                                MIN_MICRO_DELTA = 15.0
+                                _dir_ok = (
+                                    (snapshot_action == "YES" and _micro_delta >= MIN_MICRO_DELTA) or
+                                    (snapshot_action == "NO"  and _micro_delta <= -MIN_MICRO_DELTA)
+                                )
+
+                                if not _dir_ok:
+                                    logger.info(
+                                        "5m timed entry skipped — BTC micro-momentum does not confirm CLOB",
+                                        market_id=market_id,
+                                        action=snapshot_action,
+                                        snapshot_btc=f"${_snapshot_btc:,.0f}",
+                                        current_btc=f"${_current_btc:,.0f}",
+                                        micro_delta=f"${_micro_delta:+.0f}",
+                                        min_required=f"${MIN_MICRO_DELTA:.0f}",
+                                        current_clob=f"{current_odds:.1%}",
+                                    )
+                                    continue
+
+                                # Composite confidence:
+                                #   clob_strength:     how far CLOB is above 70% floor [0,1]
+                                #   momentum_strength: BTC move size normalized to $50 [0,1]
+                                # Formula: 0.70 + 0.15*clob + 0.15*momentum → [0.70, 1.00]
+                                _clob_str = min((current_odds - self.TIMED_ENTRY_ODDS_MIN) / 0.20, 1.0)
+                                _mom_str  = min(abs(_micro_delta) / 50.0, 1.0)
+                                _comp_conf = 0.70 + 0.15 * _clob_str + 0.15 * _mom_str
+
+                                if _comp_conf < self.MIN_CONFIDENCE_5M:
+                                    logger.info(
+                                        "5m timed entry skipped — composite confidence below threshold",
+                                        market_id=market_id,
+                                        composite_confidence=f"{_comp_conf:.2f}",
+                                        threshold=f"{self.MIN_CONFIDENCE_5M:.2f}",
+                                        clob_strength=f"{_clob_str:.2f}",
+                                        momentum_strength=f"{_mom_str:.2f}",
+                                        micro_delta=f"${_micro_delta:+.0f}",
+                                        current_clob=f"{current_odds:.1%}",
+                                    )
+                                    continue
+
+                                # All checks passed: build synthetic decision and update context.
+                                from polymarket.models import TradingDecision as _TD
+                                _synthetic = _TD(
+                                    action=snapshot_action,
+                                    confidence=_comp_conf,
+                                    reasoning=(
+                                        f"5m CLOB-driven: direction={snapshot_action}, "
+                                        f"CLOB={current_odds:.0%}, BTC_delta=${_micro_delta:+.0f}, "
+                                        f"composite_conf={_comp_conf:.2f}"
+                                    ),
+                                    token_id=stored.get('token_id', ''),
+                                    position_size=Decimal('0'),
+                                    stop_loss_threshold=0.40,
+                                )
+                                stored['decision'] = _synthetic
+                                stored['confidence'] = _comp_conf
+                                stored['btc_current'] = _current_btc
+                                stored['btc_data'] = _btc_now
+                                stored['btc_price_to_beat'] = _snapshot_btc  # T=1min price as reference
+
+                                logger.info(
+                                    "5m CLOB-driven: all checks passed — proceeding to execution",
+                                    market_id=market_id,
+                                    action=snapshot_action,
+                                    current_clob=f"{current_odds:.1%}",
+                                    micro_delta=f"${_micro_delta:+.0f}",
+                                    snapshot_btc=f"${_snapshot_btc:,.0f}",
+                                    current_btc=f"${_current_btc:,.0f}",
+                                    composite_confidence=f"{_comp_conf:.2f}",
+                                    time_remaining=time_remaining,
+                                )
+
+                            except Exception as _e5m:
+                                logger.error(
+                                    "5m micro-momentum check failed — skipping this cycle",
+                                    market_id=market_id,
+                                    error=str(_e5m),
+                                )
+                                continue
+
+                        # Improvement C: Require minimum current mathematical edge.
+                        # Compares the actual_prob estimate against current CLOB odds.
+                        # If CLOB has already moved to match or exceed our probability estimate,
+                        # there is no longer any edge — the opportunity has been priced in.
+                        #
+                        # EXCEPTION 1: Skip for meta-analysis decisions. The actual_prob stored
+                        # in sub-analyses is from T=2-8min; by T=12min when meta fires, the CLOB
+                        # has already moved ahead of those stale estimates — making Improvement C
+                        # always block. Meta-analysis decisions are pre-filtered by multi-vote
+                        # agreement (≥0.70 confidence), so the 70-90% CLOB window is sufficient.
+                        #
+                        # EXCEPTION 2: Skip for 5m CLOB-driven decisions — these already passed
+                        # the probability agreement check above (direction_prob >= 55%).
+                        is_meta_decision = 'meta_analysis' in stored
+                        is_clob_driven = stored.get('clob_driven', False)
+                        arb = stored.get('arbitrage_opportunity')
+                        if arb is not None and not is_meta_decision and not is_clob_driven:
+                            direction_prob = arb.actual_probability if action == "YES" else (1.0 - arb.actual_probability)
+                            current_edge = direction_prob - current_odds
+                            MIN_EXEC_EDGE = 0.03  # 3% — must exceed fees (~1-2%)
+                            if current_edge < MIN_EXEC_EDGE:
+                                logger.info(
+                                    "Timed entry skipped — CLOB has priced in the move (edge < 3%)",
+                                    market_id=market_id,
+                                    action=action,
+                                    actual_prob=f"{arb.actual_probability:.1%}",
+                                    direction_prob=f"{direction_prob:.1%}",
+                                    current_clob=f"{current_odds:.1%}",
+                                    current_edge=f"{current_edge:.1%}",
+                                )
+                                continue
+
                         # Run fast non-AI check: RSI/MACD/trend alignment
-                        fast_ok, fast_reason = self._fast_entry_check(stored, action)
+                        fast_ok, fast_reason = self._fast_entry_check(stored, action, time_remaining=time_remaining)
                         if not fast_ok:
                             logger.info(
                                 "Timed entry skipped — fast check failed (will retry next cycle)",
@@ -2748,12 +3440,76 @@ class AutoTrader:
                         )
                         # Remove from dict BEFORE creating task to prevent double-execution
                         entry_context = self._timed_decisions.pop(market_id)
-                        asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds))
+                        asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds, time_remaining))
 
             except Exception as e:
                 logger.error("Timed entry monitor error", error=str(e))
 
-    def _fast_entry_check(self, stored: dict, action: str) -> tuple[bool, str]:
+    async def _on_realtime_odds_update(self, snapshot) -> None:
+        """Real-time callback fired by RealtimeOddsStreamer on every odds update.
+
+        Mirrors the timed entry monitor check but triggered immediately on each
+        WebSocket/REST price update rather than waiting for the 10s poll cycle.
+        Only active when a stored decision exists and we're in the betting window.
+        """
+        try:
+            market_id = snapshot.market_id
+            if not market_id or market_id not in self._timed_decisions:
+                return
+
+            stored = self._timed_decisions.get(market_id)
+            if not stored:
+                return
+
+            # 5m CLOB-driven: probability check requires multiple async BTC calls.
+            # The periodic monitor (_timed_entry_monitor, every 5s) handles this — skip
+            # the real-time WebSocket path to avoid blocking on every odds update tick.
+            if stored.get('clob_driven'):
+                return
+
+            if market_id in self._traded_markets or market_id in self._markets_with_pending_orders:
+                return
+
+            market = stored['market']
+            start_time = self.market_tracker.parse_market_start(market.slug or "")
+            if not start_time:
+                return
+
+            time_remaining = self.market_tracker.calculate_time_remaining(start_time)
+            if time_remaining == 0 or time_remaining > self.TIMED_ENTRY_WINDOW_SECONDS:
+                return
+
+            action = stored['action']
+            current_odds = snapshot.yes_odds if action == "YES" else snapshot.no_odds
+
+            MAX_EXEC_ODDS = 0.90
+            if current_odds < self.TIMED_ENTRY_ODDS_MIN or current_odds > MAX_EXEC_ODDS:
+                return
+
+            # Improvement C: skip for meta-analysis decisions (same logic as monitor)
+            is_meta_decision = 'meta_analysis' in stored
+            arb = stored.get('arbitrage_opportunity')
+            if arb is not None and not is_meta_decision:
+                direction_prob = arb.actual_probability if action == "YES" else (1.0 - arb.actual_probability)
+                if direction_prob - current_odds < 0.03:
+                    return
+
+            fast_ok, fast_reason = self._fast_entry_check(stored, action, time_remaining=time_remaining)
+            if not fast_ok:
+                return
+
+            logger.info(
+                "Timed entry condition met (real-time) — executing",
+                market_id=market_id, action=action,
+                current_odds=f"{current_odds:.2%}", time_remaining=time_remaining
+            )
+            entry_context = self._timed_decisions.pop(market_id)
+            asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds, time_remaining))
+
+        except Exception as e:
+            logger.error("Real-time odds callback error", error=str(e))
+
+    def _fast_entry_check(self, stored: dict, action: str, time_remaining: int | None = None) -> tuple[bool, str]:
         """Fast non-AI validation of stored technical signals before order placement.
 
         Uses analysis-time indicators to confirm the AI's directional thesis is still
@@ -2799,7 +3555,11 @@ class AutoTrader:
         # RSI > 85 = severely overbought → bet UP (YES) is exhausted
         # RSI < 15 = severely oversold  → bet DOWN (NO) is exhausted
         # Contrarian plays are exempt — OVERBOUGHT_REVERSAL bets NO when RSI > 85 on purpose
-        if not is_contrarian and indicators and indicators.rsi is not None:
+        # SKIP when time_remaining < FAST_CHECK_STALE_THRESHOLD — stored sub-analysis RSI is
+        # stale by execution time; CLOB odds >= 70% (Gate 2) are the real-time confirmation.
+        if time_remaining is not None and time_remaining < self.FAST_CHECK_STALE_THRESHOLD:
+            pass  # Stale threshold reached: CLOB is ground truth, skip stale RSI check
+        elif not is_contrarian and indicators and indicators.rsi is not None:
             rsi = indicators.rsi
             if action == "YES" and rsi > 85:
                 return False, f"RSI severely overbought ({rsi:.1f}) contradicts YES entry"
@@ -2811,7 +3571,11 @@ class AutoTrader:
         # Contrarian plays are exempt — they intentionally bet against the short-term trend.
         # NOTE: No MACD histogram threshold — MACD values are in raw USD (e.g. $5, $30) and
         # vary wildly with BTC price scale; the `trend` field already encodes MACD direction.
-        if not is_contrarian and indicators and indicators.trend:
+        # SKIP when time_remaining < FAST_CHECK_STALE_THRESHOLD — stored trend data is stale;
+        # CLOB odds >= 70% (Gate 2) already serve as the real-time directional confirmation.
+        if time_remaining is not None and time_remaining < self.FAST_CHECK_STALE_THRESHOLD:
+            pass  # Stale threshold reached: CLOB is ground truth, skip stale trend check
+        elif not is_contrarian and indicators and indicators.trend:
             trend = indicators.trend
             if action == "YES" and trend == "BEARISH":
                 return False, f"Short-term trend BEARISH contradicts YES entry (use contrarian flag to bypass)"
@@ -2856,7 +3620,7 @@ class AutoTrader:
 
         return True, "ok"
 
-    async def _execute_timed_entry(self, market_id: str, stored: dict, trigger_odds: float) -> None:
+    async def _execute_timed_entry(self, market_id: str, stored: dict, trigger_odds: float, time_remaining: int | None = None) -> None:
         """Execute a stored timed decision when entry conditions are met.
 
         Called by _timed_entry_monitor when 70%+ odds are detected. Performs a
@@ -2873,8 +3637,18 @@ class AutoTrader:
             market = stored['market']
             decision = stored['decision']
 
+            # Guard: decision object must be valid with a YES/NO action.
+            # Protects against None decisions or legacy HOLD values leaking through.
+            if not decision or decision.action not in ("YES", "NO"):
+                logger.error(
+                    "Timed entry aborted — invalid decision object",
+                    market_id=market_id,
+                    action=getattr(decision, 'action', None),
+                )
+                return
+
             # Final fast-check gate at actual execution time
-            fast_ok, fast_reason = self._fast_entry_check(stored, decision.action)
+            fast_ok, fast_reason = self._fast_entry_check(stored, decision.action, time_remaining=time_remaining)
             if not fast_ok:
                 logger.info(
                     "Timed entry aborted at execution — fast check failed",
@@ -2905,23 +3679,82 @@ class AutoTrader:
                 )
                 return
 
+            # Fix 13: MAX_ODDS ceiling at execution time using real CLOB price.
+            # Risk manager validate_decision() uses Gamma orderbook prices (~50%) not CLOB,
+            # so its 90% ceiling never fires for timed entries. Guard it here explicitly.
+            MAX_EXEC_ODDS = 0.90
+            if market_price > MAX_EXEC_ODDS:
+                logger.info(
+                    "Timed entry blocked — CLOB odds above 90% ceiling (negative EV after fees)",
+                    market_id=market_id,
+                    action=decision.action,
+                    odds=f"{market_price:.2%}",
+                    max_odds=f"{MAX_EXEC_ODDS:.0%}"
+                )
+                return
+
+            # Position size was deferred during sub-analysis (amount=None stored intentionally).
+            # Compute it now using fresh CLOB odds and the stored portfolio value.
+            amount = stored['amount']
+            if amount is None:
+                portfolio_value = stored.get('portfolio_value', Decimal('100'))
+                exec_market_dict = {
+                    'yes_price': odds_yes,
+                    'no_price': odds_no,
+                    'active': True,
+                }
+                exec_validation = await self.risk_manager.validate_decision(
+                    decision=decision,
+                    portfolio_value=portfolio_value,
+                    market=exec_market_dict,
+                    open_positions=self.open_positions,
+                    test_mode=self.test_mode.enabled,
+                )
+                if not exec_validation.approved:
+                    logger.info(
+                        "Timed entry aborted — risk validation failed at execution time",
+                        market_id=market_id,
+                        reason=exec_validation.reason,
+                    )
+                    return
+                amount = exec_validation.adjusted_position
+
             logger.info(
                 "Executing timed entry",
                 market_id=market_id,
                 action=decision.action,
                 odds=f"{market_price:.2%}",
-                amount=str(stored['amount']),
+                amount=str(amount),
                 stored_at=stored['stored_at'].isoformat()
             )
+
+            # For 5m CLOB-driven entries: no DB record was pre-created (trade_id=-1).
+            # Create the record now so execution metrics and fill details are tracked.
+            trade_id = stored['trade_id']
+            if trade_id == -1 and stored.get('clob_driven'):
+                try:
+                    trade_id = await self.performance_tracker.log_5m_decision(
+                        market=market,
+                        decision=decision,
+                        btc_data=stored.get('btc_data'),
+                        time_remaining_seconds=time_remaining,
+                        snapshot_btc_price=stored.get('snapshot_btc_price'),
+                        yes_odds=odds_yes,
+                        no_odds=odds_no,
+                        is_test_mode=self.test_mode.enabled,
+                    )
+                except Exception as _db_err:
+                    logger.error("5m pre-execution DB log failed — continuing", error=str(_db_err))
+                    trade_id = -1
 
             await self._execute_trade(
                 market=market,
                 decision=decision,
-                amount=stored['amount'],
+                amount=amount,
                 token_id=stored['token_id'],
                 token_name=stored['token_name'],
                 market_price=market_price,
-                trade_id=stored['trade_id'],
+                trade_id=trade_id,
                 cycle_start_time=stored['stored_at'],
                 btc_data=stored['btc_data'],
                 btc_current=stored['btc_current'],
@@ -3022,7 +3855,7 @@ class AutoTrader:
             # provide fresh indicators. This prevents firing NO bets when RSI has since jumped
             # to overbought (as happened on market 1771490700 where cached RSI=26.6 was used
             # while the real RSI had already moved to 97.9).
-            MAX_CACHE_AGE_SECONDS = 90
+            MAX_CACHE_AGE_SECONDS = self.PRICE_WATCHER_MAX_CACHE_SECONDS
             cache_age = (datetime.now(timezone.utc) - cache['timestamp']).total_seconds()
             if cache_age > MAX_CACHE_AGE_SECONDS:
                 logger.info(
