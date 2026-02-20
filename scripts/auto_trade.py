@@ -2796,7 +2796,7 @@ class AutoTrader:
             self.SUB_ANALYSIS_MAX_COUNT = 0              # CLOB-driven: no AI sub-analysis
             self.META_ANALYSIS_TRIGGER_SECONDS = 999999  # Disabled: no meta-analysis
             self.META_ANALYSIS_WINDOW_SECONDS = 20
-            self.TIMED_ENTRY_WINDOW_SECONDS = 120        # Last 2min (<=120s remaining)
+            self.TIMED_ENTRY_WINDOW_SECONDS = 60         # Last 1min (<=60s remaining)
             self.TIMING_WATCHER_INTERVAL_SECONDS = 5
             self.MIN_YES_MOVEMENT_USD = 10
             self.FAST_CHECK_STALE_THRESHOLD = 60
@@ -2807,7 +2807,7 @@ class AutoTrader:
                 "Market profile applied: 5m (CLOB-driven strategy)",
                 duration_seconds=300,
                 strategy="CLOB snapshot T=1min → execute last 2min with probability agreement",
-                entry_window="last 2min (<=120s remaining)",
+                entry_window="last 1min (<=60s remaining)",
                 min_confidence=0.85,
                 min_yes_movement_usd=10,
             )
@@ -3019,6 +3019,17 @@ class AutoTrader:
                 'snapshot_time': now,
             }
 
+            # Parse market start timestamp from slug for price-to-beat check at execution time.
+            # e.g. "btc-updown-5m-1771609500" → market_start_ts=1771609500
+            _market_slug_str = getattr(market, 'slug', '') or ''
+            _market_start_ts = None
+            try:
+                _slug_parts = _market_slug_str.split('-')
+                if _slug_parts and _slug_parts[-1].isdigit():
+                    _market_start_ts = int(_slug_parts[-1])
+            except Exception:
+                pass
+
             # Store minimal execution context in _timed_decisions.
             # decision=None and confidence=None will be computed at execution time
             # after direction consistency + probability agreement checks pass.
@@ -3041,6 +3052,7 @@ class AutoTrader:
                 'btc_current': float(btc_data.price) if btc_data else None,
                 'snapshot_btc_price': float(btc_data.price) if btc_data else None,  # immutable T=1min BTC reference
                 'btc_price_to_beat': None,       # fetched at execution time
+                'market_start_ts': _market_start_ts,  # for price-to-beat alignment check
                 # Technical indicator fields — None: fast_entry_check will skip all checks
                 'indicators': None,
                 'btc_momentum': None,
@@ -3345,6 +3357,49 @@ class AutoTrader:
                                         current_clob=f"{current_odds:.1%}",
                                     )
                                     continue
+
+                                # Check 3: BTC must be on correct side of market start price-to-beat.
+                                # Even if BTC is declining from T=1min snapshot (micro-delta confirms NO),
+                                # if BTC is still ABOVE the market open price, NO cannot win at market end.
+                                _market_start_ts = stored.get('market_start_ts')
+                                if _market_start_ts is not None:
+                                    try:
+                                        _ptb_price = await self.btc_service.get_price_at_timestamp(_market_start_ts)
+                                        if _ptb_price is not None:
+                                            _ptb = float(_ptb_price)
+                                            _ptb_ok = (
+                                                (snapshot_action == "YES" and _current_btc > _ptb) or
+                                                (snapshot_action == "NO" and _current_btc < _ptb)
+                                            )
+                                            if not _ptb_ok:
+                                                logger.info(
+                                                    "5m timed entry skipped — BTC on wrong side of price-to-beat",
+                                                    market_id=market_id,
+                                                    action=snapshot_action,
+                                                    current_btc=f"${_current_btc:,.0f}",
+                                                    price_to_beat=f"${_ptb:,.0f}",
+                                                    micro_delta=f"${_micro_delta:+.0f}",
+                                                )
+                                                continue
+                                            else:
+                                                logger.debug(
+                                                    "5m price-to-beat alignment confirmed",
+                                                    market_id=market_id,
+                                                    action=snapshot_action,
+                                                    current_btc=f"${_current_btc:,.0f}",
+                                                    price_to_beat=f"${_ptb:,.0f}",
+                                                )
+                                        else:
+                                            logger.debug(
+                                                "5m: price-to-beat not in buffer — skipping alignment check",
+                                                market_id=market_id,
+                                            )
+                                    except Exception as _ptb_err:
+                                        logger.debug(
+                                            "5m: price-to-beat fetch failed — skipping alignment check",
+                                            market_id=market_id,
+                                            error=str(_ptb_err),
+                                        )
 
                                 # All checks passed: build synthetic decision and update context.
                                 from polymarket.models import TradingDecision as _TD
