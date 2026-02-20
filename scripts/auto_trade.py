@@ -2801,7 +2801,7 @@ class AutoTrader:
             self.SUB_ANALYSIS_MAX_COUNT = 0              # CLOB-driven: no AI sub-analysis
             self.META_ANALYSIS_TRIGGER_SECONDS = 999999  # Disabled: no meta-analysis
             self.META_ANALYSIS_WINDOW_SECONDS = 20
-            self.TIMED_ENTRY_WINDOW_SECONDS = 30         # Last 30s (<=30s remaining)
+            self.TIMED_ENTRY_WINDOW_SECONDS = 60         # Last 60s (<=60s remaining)
             self.TIMING_WATCHER_INTERVAL_SECONDS = 5
             self.MIN_YES_MOVEMENT_USD = 10
             self.FAST_CHECK_STALE_THRESHOLD = 60
@@ -2811,8 +2811,8 @@ class AutoTrader:
             logger.info(
                 "Market profile applied: 5m (CLOB-driven strategy)",
                 duration_seconds=300,
-                strategy="CLOB snapshot T=1min → execute last 30s with probability agreement",
-                entry_window="last 30s (<=30s remaining)",
+                strategy="CLOB snapshot T=1min → execute last 60s with probability agreement",
+                entry_window="last 60s (<=60s remaining)",
                 min_confidence=0.85,
                 min_yes_movement_usd=10,
             )
@@ -3120,7 +3120,7 @@ class AutoTrader:
             # direction with high confidence, BTC has likely reversed. Skip this market.
             # Root cause of 18:15–18:30 UTC loss: T=9min sub said YES (conf=0.84) after BTC
             # reversed above PTB, but 3 earlier NO analyses (T=3/5/7min) outvoted it 3:1.
-            RECENCY_VETO_CONF = 0.75
+            RECENCY_VETO_CONF = 0.90
             most_recent_sub = max(sub_analyses, key=lambda a: a['stored_at'])
             if most_recent_sub['action'] != final_action and most_recent_sub['confidence'] >= RECENCY_VETO_CONF:
                 logger.info(
