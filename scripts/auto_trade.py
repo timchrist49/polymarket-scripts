@@ -252,6 +252,11 @@ class AutoTrader:
         self._market_sub_analyses: dict[str, list[dict]] = {}
         self._sub_analysis_triggered_count: dict[str, int] = {}
         self._meta_analysis_triggered: set[str] = set()
+        # Fix 1: Consecutive CLOB confirmation — tracks how many back-to-back poll/WebSocket
+        # cycles have seen CLOB ≥ TIMED_ENTRY_ODDS_MIN for a given market. Resets to 0 whenever
+        # odds fall out of range. Execution requires ≥ 2 consecutive in-range readings, which
+        # prevents single-spike execution (the root cause of the 18:27 UTC 15m loss).
+        self._clob_consecutive_count: dict[str, int] = {}
 
         # 5m CLOB-driven strategy: CLOB snapshot at T=1min for direction consistency check.
         # Maps market_id → {action, yes_odds, no_odds, snapshot_time}.
@@ -2796,7 +2801,7 @@ class AutoTrader:
             self.SUB_ANALYSIS_MAX_COUNT = 0              # CLOB-driven: no AI sub-analysis
             self.META_ANALYSIS_TRIGGER_SECONDS = 999999  # Disabled: no meta-analysis
             self.META_ANALYSIS_WINDOW_SECONDS = 20
-            self.TIMED_ENTRY_WINDOW_SECONDS = 60         # Last 1min (<=60s remaining)
+            self.TIMED_ENTRY_WINDOW_SECONDS = 30         # Last 30s (<=30s remaining)
             self.TIMING_WATCHER_INTERVAL_SECONDS = 5
             self.MIN_YES_MOVEMENT_USD = 10
             self.FAST_CHECK_STALE_THRESHOLD = 60
@@ -2806,8 +2811,8 @@ class AutoTrader:
             logger.info(
                 "Market profile applied: 5m (CLOB-driven strategy)",
                 duration_seconds=300,
-                strategy="CLOB snapshot T=1min → execute last 2min with probability agreement",
-                entry_window="last 1min (<=60s remaining)",
+                strategy="CLOB snapshot T=1min → execute last 30s with probability agreement",
+                entry_window="last 30s (<=30s remaining)",
                 min_confidence=0.85,
                 min_yes_movement_usd=10,
             )
@@ -3111,6 +3116,26 @@ class AutoTrader:
             winning_side   = yes_analyses if final_action == 'YES' else no_analyses
             losing_weight  = no_weight if final_action == 'YES' else yes_weight
 
+            # Fix 3: Recency veto — if the MOST RECENT sub-analysis contradicts the meta
+            # direction with high confidence, BTC has likely reversed. Skip this market.
+            # Root cause of 18:15–18:30 UTC loss: T=9min sub said YES (conf=0.84) after BTC
+            # reversed above PTB, but 3 earlier NO analyses (T=3/5/7min) outvoted it 3:1.
+            RECENCY_VETO_CONF = 0.75
+            most_recent_sub = max(sub_analyses, key=lambda a: a['stored_at'])
+            if most_recent_sub['action'] != final_action and most_recent_sub['confidence'] >= RECENCY_VETO_CONF:
+                logger.info(
+                    "Meta-analysis blocked — most recent sub-analysis contradicts meta direction "
+                    "(recency veto: BTC likely reversed)",
+                    market_id=market_id,
+                    recent_action=most_recent_sub['action'],
+                    recent_confidence=f"{most_recent_sub['confidence']:.2f}",
+                    meta_action=final_action,
+                    recent_stored_at=most_recent_sub['stored_at'].isoformat(),
+                    yes_weight=f"{yes_weight:.2f}",
+                    no_weight=f"{no_weight:.2f}",
+                )
+                return
+
             if not winning_side:
                 logger.warning(
                     "Meta-analysis: no analyses on winning side — skipping",
@@ -3274,6 +3299,12 @@ class AutoTrader:
 
                     MAX_EXEC_ODDS = 0.90
                     if self.TIMED_ENTRY_ODDS_MIN <= current_odds <= MAX_EXEC_ODDS:
+                        # Fix 1: Increment consecutive in-range CLOB counter.
+                        # Execution requires ≥ 2 consecutive readings to avoid single-spike fires.
+                        self._clob_consecutive_count[market_id] = (
+                            self._clob_consecutive_count.get(market_id, 0) + 1
+                        )
+
                         # 5m CLOB-driven strategy: additional pre-execution checks.
                         # These run BEFORE Improvement C and fast_entry_check.
                         # If any check fails, `continue` retries on the next 5s cycle
@@ -3486,16 +3517,82 @@ class AutoTrader:
                             )
                             continue  # Retry on next 10s cycle
 
+                        # Fix 1: Require 2 consecutive in-range CLOB readings before executing.
+                        # Prevents single-spike execution (e.g. CLOB=70% for 1 reading, then drops).
+                        _consec = self._clob_consecutive_count.get(market_id, 0)
+                        if _consec < 2:
+                            logger.debug(
+                                "Timed entry: waiting for 2nd consecutive CLOB reading ≥70%",
+                                market_id=market_id,
+                                consecutive_count=_consec,
+                                current_odds=f"{current_odds:.2%}",
+                                time_remaining=time_remaining,
+                            )
+                            continue
+
+                        # Fix 2: Price-to-beat alignment for 15m bot at execution time.
+                        # Mirrors the 5m Check 3: BTC must be on correct side of market start price.
+                        # Only applies to non-CLOB-driven (15m) decisions — 5m already has this
+                        # check inside the clob_driven block above.
+                        if not stored.get('clob_driven'):
+                            _slug_15m = getattr(stored.get('market'), 'slug', '') or ''
+                            _start_ts_15m = None
+                            try:
+                                _slug_parts_15m = _slug_15m.split('-')
+                                if _slug_parts_15m and _slug_parts_15m[-1].isdigit():
+                                    _start_ts_15m = int(_slug_parts_15m[-1])
+                            except Exception:
+                                pass
+                            if _start_ts_15m is not None:
+                                try:
+                                    _ptb_15m_price = await self.btc_service.get_price_at_timestamp(_start_ts_15m)
+                                    if _ptb_15m_price is not None:
+                                        _ptb_15m = float(_ptb_15m_price)
+                                        _btc_exec = await self.btc_service.get_current_price()
+                                        if _btc_exec is not None:
+                                            _btc_exec_val = float(_btc_exec.price)
+                                            _ptb_ok_15m = (
+                                                (action == "YES" and _btc_exec_val > _ptb_15m) or
+                                                (action == "NO"  and _btc_exec_val < _ptb_15m)
+                                            )
+                                            if not _ptb_ok_15m:
+                                                logger.info(
+                                                    "15m timed entry blocked — BTC on wrong side of "
+                                                    "price-to-beat at execution time",
+                                                    market_id=market_id,
+                                                    action=action,
+                                                    current_btc=f"${_btc_exec_val:,.0f}",
+                                                    price_to_beat=f"${_ptb_15m:,.0f}",
+                                                    time_remaining=time_remaining,
+                                                )
+                                                self._clob_consecutive_count[market_id] = 0
+                                                continue
+                                            logger.debug(
+                                                "15m price-to-beat alignment confirmed",
+                                                market_id=market_id,
+                                                action=action,
+                                                current_btc=f"${_btc_exec_val:,.0f}",
+                                                price_to_beat=f"${_ptb_15m:,.0f}",
+                                            )
+                                except Exception:
+                                    pass  # Buffer miss — skip PTB check gracefully
+
                         logger.info(
                             "Timed entry condition met — fast check passed, executing",
                             market_id=market_id,
                             action=action,
                             current_odds=f"{current_odds:.2%}",
-                            time_remaining=time_remaining
+                            time_remaining=time_remaining,
+                            consecutive_clob_readings=_consec,
                         )
                         # Remove from dict BEFORE creating task to prevent double-execution
                         entry_context = self._timed_decisions.pop(market_id)
+                        self._clob_consecutive_count.pop(market_id, None)
                         asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds, time_remaining))
+
+                    else:
+                        # Odds out of range: reset consecutive CLOB counter.
+                        self._clob_consecutive_count[market_id] = 0
 
             except Exception as e:
                 logger.error("Timed entry monitor error", error=str(e))
@@ -3539,6 +3636,8 @@ class AutoTrader:
 
             MAX_EXEC_ODDS = 0.90
             if current_odds < self.TIMED_ENTRY_ODDS_MIN or current_odds > MAX_EXEC_ODDS:
+                # Fix 1: Reset consecutive counter when odds fall out of range.
+                self._clob_consecutive_count[market_id] = 0
                 return
 
             # Improvement C: skip for meta-analysis decisions (same logic as monitor)
@@ -3553,12 +3652,66 @@ class AutoTrader:
             if not fast_ok:
                 return
 
+            # Fix 1: Increment consecutive in-range counter; require 2+ readings before executing.
+            # This is the primary guard against the 18:27:10 UTC single-spike case (CLOB hit
+            # exactly 70% for ONE WebSocket update, bot fired, CLOB immediately dropped to 64%).
+            self._clob_consecutive_count[market_id] = self._clob_consecutive_count.get(market_id, 0) + 1
+            _rt_consec = self._clob_consecutive_count.get(market_id, 0)
+            if _rt_consec < 2:
+                logger.debug(
+                    "Real-time: waiting for 2nd consecutive CLOB reading ≥70% before executing",
+                    market_id=market_id,
+                    consecutive_count=_rt_consec,
+                    current_odds=f"{current_odds:.2%}",
+                    time_remaining=time_remaining,
+                )
+                return
+
+            # Fix 2: Price-to-beat alignment for 15m bot at execution time.
+            # Parse market start timestamp from slug to get BTC reference price.
+            _slug_rt = market.slug or ''
+            _start_ts_rt = None
+            try:
+                _slug_parts_rt = _slug_rt.split('-')
+                if _slug_parts_rt and _slug_parts_rt[-1].isdigit():
+                    _start_ts_rt = int(_slug_parts_rt[-1])
+            except Exception:
+                pass
+            if _start_ts_rt is not None:
+                try:
+                    _ptb_rt_price = await self.btc_service.get_price_at_timestamp(_start_ts_rt)
+                    if _ptb_rt_price is not None:
+                        _ptb_rt = float(_ptb_rt_price)
+                        _btc_rt = await self.btc_service.get_current_price()
+                        if _btc_rt is not None:
+                            _btc_rt_val = float(_btc_rt.price)
+                            _ptb_ok_rt = (
+                                (action == "YES" and _btc_rt_val > _ptb_rt) or
+                                (action == "NO"  and _btc_rt_val < _ptb_rt)
+                            )
+                            if not _ptb_ok_rt:
+                                logger.info(
+                                    "15m real-time entry blocked — BTC on wrong side of "
+                                    "price-to-beat at execution time",
+                                    market_id=market_id,
+                                    action=action,
+                                    current_btc=f"${_btc_rt_val:,.0f}",
+                                    price_to_beat=f"${_ptb_rt:,.0f}",
+                                    time_remaining=time_remaining,
+                                )
+                                self._clob_consecutive_count[market_id] = 0
+                                return
+                except Exception:
+                    pass  # Buffer miss — skip PTB check gracefully
+
             logger.info(
                 "Timed entry condition met (real-time) — executing",
                 market_id=market_id, action=action,
-                current_odds=f"{current_odds:.2%}", time_remaining=time_remaining
+                current_odds=f"{current_odds:.2%}", time_remaining=time_remaining,
+                consecutive_clob_readings=_rt_consec,
             )
             entry_context = self._timed_decisions.pop(market_id)
+            self._clob_consecutive_count.pop(market_id, None)
             asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds, time_remaining))
 
         except Exception as e:
