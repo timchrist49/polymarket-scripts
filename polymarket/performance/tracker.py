@@ -640,6 +640,49 @@ class PerformanceTracker:
 
         return paper_trade_id
 
+
+    async def log_ai_analysis(
+        self,
+        market_slug: str,
+        market_id: str | None,
+        bot_type: str,
+        action: str,
+        confidence: float,
+        reasoning: str | None = None,
+        btc_price: float | None = None,
+        ptb_price: float | None = None,
+        rsi: float | None = None,
+    ) -> int:
+        """Log an AI prediction (5m or 15m) to ai_analysis_log. Returns row id."""
+        try:
+            btc_movement: float | None = None
+            if btc_price is not None and ptb_price is not None:
+                btc_movement = btc_price - ptb_price
+            row_id = self.db.log_ai_analysis(
+                market_slug=market_slug,
+                market_id=market_id,
+                bot_type=bot_type,
+                action=action,
+                confidence=confidence,
+                reasoning=reasoning,
+                btc_price=btc_price,
+                ptb_price=ptb_price,
+                btc_movement=btc_movement,
+                rsi=rsi,
+            )
+            logger.info(
+                "AI analysis logged",
+                market_slug=market_slug,
+                bot_type=bot_type,
+                action=action,
+                confidence=f"{confidence:.2f}",
+                row_id=row_id,
+            )
+            return row_id
+        except Exception as e:
+            logger.error("Failed to log AI analysis", error=str(e))
+            return -1
+
     def close(self):
         """Close database connection."""
         if self._owns_db:
