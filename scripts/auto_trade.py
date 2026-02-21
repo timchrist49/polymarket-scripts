@@ -543,6 +543,23 @@ class AutoTrader:
                         pending=stats["pending_count"]
                     )
 
+                # Send AI analysis accuracy alerts for settled markets
+                for _alert in stats.get('ai_alerts', []):
+                    try:
+                        _executed = self.performance_tracker.db.get_executed_trade_for_market(
+                            _alert['market_slug']
+                        )
+                        await self.telegram.send_ai_analysis_alert(
+                            rows=_alert['rows'],
+                            executed_trade=_executed,
+                        )
+                    except Exception as _alert_err:
+                        logger.warning(
+                            "Failed to send AI analysis alert",
+                            market_slug=_alert.get('market_slug'),
+                            error=str(_alert_err),
+                        )
+
                 # Check for stuck trades
                 if stats["pending_count"] > 0 and stats["settled_count"] == 0:
                     logger.warning(

@@ -361,6 +361,15 @@ class TradeSettler:
                             WHERE id = ?
                         """, (actual_outcome, profit_loss, is_win, fee_paid, trade['id']))
                         self.db.conn.commit()
+                    # Collect AI analysis rows for post-settlement Telegram alerts
+                    market_slug = trade['market_slug']
+                    _ai_rows = self.db.update_ai_outcome_and_fetch(market_slug, actual_outcome)
+                    if _ai_rows:
+                        self.db.mark_ai_alerts_sent([r['id'] for r in _ai_rows])
+                        stats.setdefault('ai_alerts', []).append({
+                            'rows': _ai_rows,
+                            'market_slug': market_slug,
+                        })
 
                     # Update stats
                     stats['settled_count'] += 1
