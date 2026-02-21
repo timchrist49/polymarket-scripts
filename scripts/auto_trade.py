@@ -1737,32 +1737,6 @@ class AutoTrader:
                     decision.action = arb_direction
                     decision.confidence = min(decision.confidence, 0.75)
 
-            # Additional validation: YES trades need stronger momentum to avoid mean reversion
-            # EXCEPTION: bypass when arbitrage edge >= arbitrage_high_edge_pct (default 10%)
-            # A large mispricing edge (e.g. 61%) is stronger evidence than momentum lag.
-            # Sub-analyses skip this — they collect AI opinions for meta-aggregation; the
-            # execution guard runs at timed-entry time when momentum may have changed.
-            # CHECK FIRST before logging to avoid phantom trades
-            _arb_bypasses_yes_check = (
-                arbitrage_opportunity is not None and
-                arbitrage_opportunity.edge_percentage >= self.settings.arbitrage_high_edge_pct
-            )
-            if decision.action == "YES" and price_to_beat and not self.test_mode.enabled and not _arb_bypasses_yes_check and not is_sub_analysis:
-                diff, _ = self.market_tracker.calculate_price_difference(
-                    btc_data.price, price_to_beat
-                )
-                MIN_YES_MOVEMENT = self.MIN_YES_MOVEMENT_USD  # profile-aware minimum
-
-                if diff < MIN_YES_MOVEMENT:
-                    logger.info(
-                        "Skipping YES trade - insufficient upward momentum",
-                        market_id=market.id,
-                        movement=f"${diff:+,.2f}",
-                        threshold=f"${MIN_YES_MOVEMENT}",
-                        reason="Avoid buying exhausted momentum (mean reversion risk)"
-                    )
-                    return  # Skip WITHOUT creating DB record
-
             # RSI-action contradiction check: reject bets that fight strong momentum.
             # RSI > 85 means BTC is surging UP — betting NO (DOWN) contradicts this.
             # RSI < 15 means BTC is collapsing — betting YES (UP) contradicts this.
@@ -2792,7 +2766,7 @@ class AutoTrader:
 
     # Market profile defaults (15m) — overridden by _apply_market_profile() for MARKET_TYPE=5m
     MARKET_DURATION_SECONDS = 900            # Total market duration in seconds
-    MIN_YES_MOVEMENT_USD = 30                # Min BTC rise above price-to-beat to allow YES
+    MIN_BTC_MOVEMENT_USD = 30                # Min BTC move (either direction) for 5m micro-delta check
     FAST_CHECK_STALE_THRESHOLD = 180         # Skip stale fast-check data when <N seconds remaining
     PRICE_WATCHER_MAX_CACHE_SECONDS = 90     # Max age of cached price data in price watcher
     # 5m CLOB-driven strategy constants (disabled for 15m, activated in _apply_market_profile for 5m)
@@ -2822,7 +2796,7 @@ class AutoTrader:
             self.META_ANALYSIS_WINDOW_SECONDS = 20
             self.TIMED_ENTRY_WINDOW_SECONDS = 60         # Last 60s (<=60s remaining)
             self.TIMING_WATCHER_INTERVAL_SECONDS = 5
-            self.MIN_YES_MOVEMENT_USD = 10
+            self.MIN_BTC_MOVEMENT_USD = 10
             self.FAST_CHECK_STALE_THRESHOLD = 60
             self.PRICE_WATCHER_MAX_CACHE_SECONDS = 40
             self.CLOB_SNAPSHOT_AT_SECONDS = 60           # CLOB snapshot at T=1min
@@ -3568,10 +3542,9 @@ class AutoTrader:
                                 _current_btc = float(_btc_now.price)
                                 _micro_delta = _current_btc - _snapshot_btc  # positive = BTC rose
 
-                                # Hard block: BTC must have moved ≥ MIN_YES_MOVEMENT_USD in the
-                                # confirmed direction. Kept in sync with the profile threshold
-                                # (10 for 5m, would be 30 for 15m if this path ran there).
-                                MIN_MICRO_DELTA = float(self.MIN_YES_MOVEMENT_USD)
+                                # Hard block: BTC must have moved ≥ MIN_BTC_MOVEMENT_USD in the
+                                # confirmed direction. Applies symmetrically to YES and NO.
+                                MIN_MICRO_DELTA = float(self.MIN_BTC_MOVEMENT_USD)
                                 _path_b_ok = False  # set True if Path B (gap certainty) fires
                                 _dir_ok = (
                                     (snapshot_action == "YES" and _micro_delta >= MIN_MICRO_DELTA) or
