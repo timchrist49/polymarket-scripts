@@ -543,41 +543,11 @@ class AutoTrader:
                         pending=stats["pending_count"]
                     )
 
-                # Send AI analysis accuracy alerts for settled markets (traded)
-                for _alert in stats.get('ai_alerts', []):
-                    try:
-                        _executed = self.performance_tracker.db.get_executed_trade_for_market(
-                            _alert['market_slug']
-                        )
-                        await self.telegram.send_ai_analysis_alert(
-                            rows=_alert['rows'],
-                            executed_trade=_executed,
-                        )
-                    except Exception as _alert_err:
-                        logger.warning(
-                            "Failed to send AI analysis alert",
-                            market_slug=_alert.get('market_slug'),
-                            error=str(_alert_err),
-                        )
-
+                # AI analysis alerts disabled (logging to DB only for analysis)
+                # To re-enable: uncomment send_ai_analysis_alert calls below
                 # Also settle ai_analysis_log rows for markets with no placed trade
                 try:
-                    _ai_only_alerts = await self.trade_settler.settle_pending_ai_analyses()
-                    for _alert in _ai_only_alerts:
-                        try:
-                            _executed = self.performance_tracker.db.get_executed_trade_for_market(
-                                _alert['market_slug']
-                            )
-                            await self.telegram.send_ai_analysis_alert(
-                                rows=_alert['rows'],
-                                executed_trade=_executed,
-                            )
-                        except Exception as _ae:
-                            logger.warning(
-                                "Failed to send AI-only alert",
-                                market_slug=_alert.get('market_slug'),
-                                error=str(_ae),
-                            )
+                    await self.trade_settler.settle_pending_ai_analyses()
                 except Exception as _ai_err:
                     logger.warning("settle_pending_ai_analyses error", error=str(_ai_err))
 
@@ -3632,10 +3602,11 @@ class AutoTrader:
                                                         _t_b = max(time_remaining or 10, 5)
                                                         _exp_move_b = _range_b * _math_b.sqrt(_t_b / 900)
                                                         _z_b = _gap_b / _exp_move_b if _exp_move_b > 0 else 0
-                                                        PATH_B_Z_THRESHOLD = 2.5
-                                                        if _z_b >= PATH_B_Z_THRESHOLD and current_odds <= 0.90:
+                                                        PATH_B_Z_THRESHOLD = 1.8
+                                                        if _z_b >= PATH_B_Z_THRESHOLD:
                                                             _path_b_ok = True
-                                                            _gap_conf_b = min(0.70 + (_z_b - 2.5) * 0.05, 0.90)
+                                                            _gap_conf_b = min(0.70 + (_z_b - 1.8) * 0.05, 0.90)
+                                                            stored['_path_b_confirmed'] = True
                                                             logger.info(
                                                                 "5m PATH-B: Gap certainty — executing despite flat BTC",
                                                                 market_id=market_id,
@@ -3913,8 +3884,11 @@ class AutoTrader:
 
                         # Fix 1: Require 2 consecutive in-range CLOB readings before executing.
                         # Prevents single-spike execution (e.g. CLOB=70% for 1 reading, then drops).
+                        # EXCEPTION: PATH-B (gap certainty) bypasses this — it's a one-shot high-
+                        # confidence signal where waiting for a 2nd reading risks CLOB jumping above
+                        # the 90% ceiling and resetting the counter before execution.
                         _consec = self._clob_consecutive_count.get(market_id, 0)
-                        if _consec < 2:
+                        if _consec < 2 and not stored.get('_path_b_confirmed'):
                             logger.debug(
                                 "Timed entry: waiting for 2nd consecutive CLOB reading ≥70%",
                                 market_id=market_id,
@@ -4007,8 +3981,12 @@ class AutoTrader:
                         asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds, time_remaining))
 
                     else:
-                        # Odds out of range: reset consecutive CLOB counter.
-                        self._clob_consecutive_count[market_id] = 0
+                        # Odds out of range. Only reset consecutive counter if CLOB dropped
+                        # *below* the 70% floor (signal lost / uncertain). If CLOB is *above*
+                        # the 90% ceiling the signal is even stronger — keep the counter so a
+                        # brief spike above ceiling doesn't erase accumulated confirmations.
+                        if current_odds < self.TIMED_ENTRY_ODDS_MIN:
+                            self._clob_consecutive_count[market_id] = 0
 
             except Exception as e:
                 logger.error("Timed entry monitor error", error=str(e))
