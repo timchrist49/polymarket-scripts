@@ -3177,6 +3177,30 @@ class AutoTrader:
                 margin=f"{abs(yes_weight - no_weight):.2f}",
             )
 
+            # Log meta-analysis result for post-settlement accuracy tracking
+            try:
+                _meta_market = sub_analyses[0].get('market') if sub_analyses else None
+                _meta_market_slug = getattr(_meta_market, 'slug', None) or market_id
+                _meta_btc_data = sub_analyses[-1].get('btc_data') if sub_analyses else None
+                _meta_ptb = sub_analyses[-1].get('btc_price_to_beat') if sub_analyses else None
+                _meta_ind = sub_analyses[-1].get('indicators') if sub_analyses else None
+                await self.performance_tracker.log_ai_analysis(
+                    market_slug=_meta_market_slug,
+                    market_id=market_id,
+                    bot_type='15m',
+                    action=final_action,
+                    confidence=final_confidence,
+                    reasoning=(
+                        f"Meta-vote: {len(yes_analyses)}Y/{len(no_analyses)}N "
+                        f"agreement={agreement_ratio:.0%} margin={abs(yes_weight - no_weight):.2f}"
+                    ),
+                    btc_price=float(_meta_btc_data.price) if _meta_btc_data else None,
+                    ptb_price=float(_meta_ptb) if _meta_ptb else None,
+                    rsi=getattr(_meta_ind, 'rsi', None) if _meta_ind else None,
+                )
+            except Exception as _log_err:
+                logger.debug("Failed to log 15m meta-analysis", error=str(_log_err))
+
             if final_confidence < self.TIMED_ENTRY_ODDS_MIN:
                 # Reuse the trading threshold as the confidence floor — if the
                 # aggregated signal isn't above 0.70 we don't have an edge.
