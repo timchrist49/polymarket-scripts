@@ -54,15 +54,24 @@ class UpgradeDB:
             conn.execute(_CREATE_V2_TABLE)
 
     def get_unanalyzed_v1_rows(self) -> list:
-        """Return ai_analysis_log rows that have no ai_analysis_v2 entry yet."""
+        """Return ai_analysis_log rows that have no ai_analysis_v2 entry yet.
+
+        Deduplicates by market_slug: takes only the latest row per market so
+        the production bot's duplicate logging doesn't cause double analysis.
+        """
         with self._connect() as conn:
             cursor = conn.execute("""
                 SELECT l.*
                 FROM ai_analysis_log l
                 WHERE l.action IN ('YES', 'NO')
                   AND l.actual_outcome IS NULL
+                  AND l.id = (
+                      SELECT MAX(l2.id) FROM ai_analysis_log l2
+                      WHERE l2.market_slug = l.market_slug
+                  )
                   AND NOT EXISTS (
-                      SELECT 1 FROM ai_analysis_v2 v WHERE v.v1_id = l.id
+                      SELECT 1 FROM ai_analysis_v2 v
+                      WHERE v.market_slug = l.market_slug
                   )
                 ORDER BY l.fired_at ASC
                 LIMIT 20
@@ -123,21 +132,41 @@ class UpgradeDB:
             """, (actual_outcome, v1_correct, v2_correct, v1_id))
 
     def get_unsent_settled_rows(self) -> list:
-        """Return rows that are settled but haven't had a comparison alert sent."""
+        """Return rows that are settled but haven't had a comparison alert sent.
+
+        Deduplicates by market_slug: returns only the earliest row per market
+        so duplicate log entries never produce duplicate alerts.
+        """
         with self._connect() as conn:
             cursor = conn.execute("""
                 SELECT * FROM ai_analysis_v2
                 WHERE actual_outcome IS NOT NULL
                   AND comparison_sent = 0
+                  AND id = (
+                      SELECT MIN(v2.id) FROM ai_analysis_v2 v2
+                      WHERE v2.market_slug = ai_analysis_v2.market_slug
+                        AND v2.actual_outcome IS NOT NULL
+                  )
             """)
             return [dict(r) for r in cursor.fetchall()]
 
     def mark_comparison_sent(self, v1_id: int) -> None:
+        """Mark all v2 rows for this market as sent (handles duplicates)."""
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE ai_analysis_v2 SET comparison_sent = 1 WHERE v1_id = ?",
-                (v1_id,)
-            )
+            # Look up market_slug for this v1_id, then mark all rows for that market
+            row = conn.execute(
+                "SELECT market_slug FROM ai_analysis_v2 WHERE v1_id = ?", (v1_id,)
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE ai_analysis_v2 SET comparison_sent = 1 WHERE market_slug = ?",
+                    (row["market_slug"],)
+                )
+            else:
+                conn.execute(
+                    "UPDATE ai_analysis_v2 SET comparison_sent = 1 WHERE v1_id = ?",
+                    (v1_id,)
+                )
 
     def get_running_score(self) -> dict:
         """Return running win counts for v1 and v2."""
