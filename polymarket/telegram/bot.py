@@ -86,6 +86,55 @@ Expected profit: ~${position_size * (1/price - 1):.2f} if correct
 
         await self._send_message(message)
 
+    async def send_ai_analysis_alert(
+        self,
+        rows: list[dict],
+        executed_trade: dict | None = None,
+    ) -> None:
+        """Send post-settlement AI prediction accuracy report.
+
+        Args:
+            rows: List of ai_analysis_log rows (same market, both bots if available).
+            executed_trade: Dict with action/profit_loss if a real trade was placed,
+                            None if bot sat out (tracking-only market).
+        """
+        if not self._bot or not rows:
+            return
+
+        market_slug = rows[0].get('market_slug', 'unknown')
+        lines = [f"\U0001f52c *AI Analysis Report* \u2014 `{market_slug}`\n"]
+
+        for row in rows:
+            bot_label = "15m Bot (Meta)" if row.get('bot_type') == '15m' else "5m Bot (AI@3min)"
+            actual = row.get('actual_outcome', '?')
+            predicted = row.get('action', '?')
+            ai_correct = predicted == actual
+            result_icon = "\u2705 WIN" if ai_correct else "\u274c LOSS"
+            conf = (row.get('confidence') or 0) * 100
+            lines.append(
+                f"*{bot_label}:*\n"
+                f"  Predicted: {predicted}  |  Conf: {conf:.0f}%\n"
+                f"  Actual:    {actual}  {result_icon}\n"
+            )
+
+        # BTC context from first row
+        btc_movement = rows[0].get('btc_movement')
+        ptb = rows[0].get('ptb_price')
+        if btc_movement is not None:
+            sign = "+" if btc_movement >= 0 else ""
+            ptb_str = f" (PTB=${ptb:,.0f})" if ptb else ""
+            lines.append(f"\nBTC: {sign}${btc_movement:,.0f}{ptb_str}")
+
+        # Trade result
+        if executed_trade:
+            pl = executed_trade.get('profit_loss') or 0
+            pl_str = f"+${pl:.2f}" if pl >= 0 else f"-${abs(pl):.2f}"
+            lines.append(f"Trade placed: {executed_trade['action']} \u2014 P&L: {pl_str}")
+        else:
+            lines.append("_(No trade placed \u2014 tracking only)_")
+
+        await self._send_message("\n".join(lines))
+
     @staticmethod
     def _escape_markdown(text: str) -> str:
         """Escape characters that break Telegram's legacy Markdown parser.
