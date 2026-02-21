@@ -1199,6 +1199,58 @@ class BTCPriceService:
             )
             return 0.005
 
+    async def get_15min_range_usd(self) -> float | None:
+        """
+        Return the realized BTC price range (high - low) over the last 15 minutes.
+
+        Used as a volatility proxy for PTB gap-certainty calculations.
+        On flat markets, this range is small (~$10-20), making large PTB gaps
+        near-certain in the final 60-120 seconds of a market window.
+
+        Returns:
+            Range in USD (e.g., 13.5), or None if insufficient data.
+        """
+        try:
+            if not self._stream or not self._stream.price_buffer:
+                return None
+
+            import time as _time
+            current_time = int(_time.time())
+            prices = await self._stream.price_buffer.get_price_range(
+                start=current_time - 900,
+                end=current_time,
+            )
+
+            if len(prices) < 5:
+                logger.debug(
+                    "Insufficient data for 15min range",
+                    count=len(prices),
+                    required=5,
+                )
+                return None
+
+            high = float(max(p.price for p in prices))
+            low  = float(min(p.price for p in prices))
+            range_usd = high - low
+
+            # Sanity check: reject obviously bad data
+            if range_usd < 0.50 or range_usd > 5000:
+                logger.debug("15min range outside expected bounds", range_usd=f"${range_usd:.2f}")
+                return None
+
+            logger.debug(
+                "15min BTC range calculated",
+                high=f"${high:,.2f}",
+                low=f"${low:,.2f}",
+                range_usd=f"${range_usd:.2f}",
+                data_points=len(prices),
+            )
+            return range_usd
+
+        except Exception as e:
+            logger.debug("get_15min_range_usd failed", error=str(e))
+            return None
+
     async def get_order_flow_signal(self, minutes: int = 10) -> "OrderFlowSignal | None":
         """
         Compute buy/sell pressure signal from sequential Kraken 1-min candle CVD.

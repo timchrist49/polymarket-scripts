@@ -3180,11 +3180,27 @@ class AutoTrader:
             if final_confidence < self.TIMED_ENTRY_ODDS_MIN:
                 # Reuse the trading threshold as the confidence floor — if the
                 # aggregated signal isn't above 0.70 we don't have an edge.
-                logger.info(
-                    "Meta-analysis confidence below 0.70 threshold — no trade",
-                    market_id=market_id,
-                    final_confidence=f"{final_confidence:.2f}",
-                )
+                # EXCEPTION: Store a gap-certainty-only context so _timed_entry_monitor
+                # can still execute on flat markets where PTB gap is near-certain.
+                # The gap check in the monitor (z >= 2.0) is the real gate.
+                if winning_side:
+                    best_low = max(winning_side, key=lambda a: a['confidence'])
+                    ctx_low = dict(best_low)
+                    ctx_low['gap_certainty_only'] = True
+                    ctx_low['meta_confidence_low'] = final_confidence
+                    self._timed_decisions[market_id] = ctx_low
+                    logger.info(
+                        "Meta confidence < 0.70 — stored for gap-certainty fast path only",
+                        market_id=market_id,
+                        final_confidence=f"{final_confidence:.2f}",
+                        action=final_action,
+                    )
+                else:
+                    logger.info(
+                        "Meta-analysis confidence below 0.70 threshold — no trade",
+                        market_id=market_id,
+                        final_confidence=f"{final_confidence:.2f}",
+                    )
                 return
 
             # Promote the highest-confidence matching context as the execution template.
@@ -3366,44 +3382,106 @@ class AutoTrader:
                                 # Hard block: BTC must have moved ≥$15 in the confirmed direction.
                                 # $15 is just above the 2-min noise floor (~1-sigma ≈ $15-25).
                                 MIN_MICRO_DELTA = 15.0
+                                _path_b_ok = False  # set True if Path B (gap certainty) fires
                                 _dir_ok = (
                                     (snapshot_action == "YES" and _micro_delta >= MIN_MICRO_DELTA) or
                                     (snapshot_action == "NO"  and _micro_delta <= -MIN_MICRO_DELTA)
                                 )
 
                                 if not _dir_ok:
-                                    logger.info(
-                                        "5m timed entry skipped — BTC micro-momentum does not confirm CLOB",
-                                        market_id=market_id,
-                                        action=snapshot_action,
-                                        snapshot_btc=f"${_snapshot_btc:,.0f}",
-                                        current_btc=f"${_current_btc:,.0f}",
-                                        micro_delta=f"${_micro_delta:+.0f}",
-                                        min_required=f"${MIN_MICRO_DELTA:.0f}",
-                                        current_clob=f"{current_odds:.1%}",
-                                    )
-                                    continue
+                                    # PATH B: Gap Certainty — flat market fallback.
+                                    # When BTC barely moves, micro-delta can't confirm direction.
+                                    # Instead: check if BTC is so far from PTB that it realistically
+                                    # can't cross back before market close.
+                                    # Formula: z = gap / (range_15min * sqrt(t/900))
+                                    # At z >= 2.5: probability ≈ 99.4% (very high certainty).
+                                    _path_b_ok = False
+                                    try:
+                                        _mst_b = stored.get('market_start_ts')
+                                        if _mst_b is not None:
+                                            _ptb_b_raw = await self.btc_service.get_price_at_timestamp(_mst_b)
+                                            if _ptb_b_raw is not None:
+                                                _ptb_b = float(_ptb_b_raw)
+                                                _gap_b = (
+                                                    (_current_btc - _ptb_b) if snapshot_action == "YES"
+                                                    else (_ptb_b - _current_btc)
+                                                )
+                                                if _gap_b > 0:
+                                                    _range_b = await self.btc_service.get_15min_range_usd()
+                                                    if _range_b and _range_b > 1.0:
+                                                        import math as _math_b
+                                                        _t_b = max(time_remaining or 10, 5)
+                                                        _exp_move_b = _range_b * _math_b.sqrt(_t_b / 900)
+                                                        _z_b = _gap_b / _exp_move_b if _exp_move_b > 0 else 0
+                                                        PATH_B_Z_THRESHOLD = 2.5
+                                                        if _z_b >= PATH_B_Z_THRESHOLD and current_odds <= 0.90:
+                                                            _path_b_ok = True
+                                                            _gap_conf_b = min(0.70 + (_z_b - 2.5) * 0.05, 0.90)
+                                                            logger.info(
+                                                                "5m PATH-B: Gap certainty — executing despite flat BTC",
+                                                                market_id=market_id,
+                                                                action=snapshot_action,
+                                                                gap_usd=f"${_gap_b:.1f}",
+                                                                range_15min=f"${_range_b:.1f}",
+                                                                z_score=f"{_z_b:.2f}",
+                                                                clob=f"{current_odds:.1%}",
+                                                                time_remaining=time_remaining,
+                                                                gap_confidence=f"{_gap_conf_b:.2f}",
+                                                            )
+                                                            # Override composite confidence with gap-based value
+                                                            _clob_str = min((current_odds - self.TIMED_ENTRY_ODDS_MIN) / 0.20, 1.0)
+                                                            _comp_conf = _gap_conf_b
+                                                        else:
+                                                            logger.info(
+                                                                "5m PATH-B: Gap certainty insufficient — skipping",
+                                                                market_id=market_id,
+                                                                action=snapshot_action,
+                                                                gap_usd=f"${_gap_b:.1f}",
+                                                                range_15min=f"${_range_b:.1f}",
+                                                                z_score=f"{_z_b:.2f}",
+                                                                threshold=f"{PATH_B_Z_THRESHOLD}",
+                                                                micro_delta=f"${_micro_delta:+.0f}",
+                                                                current_clob=f"{current_odds:.1%}",
+                                                            )
+                                    except Exception as _eb:
+                                        logger.debug("5m PATH-B error", market_id=market_id, error=str(_eb))
 
-                                # Composite confidence:
+                                    if not _path_b_ok:
+                                        logger.info(
+                                            "5m timed entry skipped — BTC micro-momentum does not confirm CLOB",
+                                            market_id=market_id,
+                                            action=snapshot_action,
+                                            snapshot_btc=f"${_snapshot_btc:,.0f}",
+                                            current_btc=f"${_current_btc:,.0f}",
+                                            micro_delta=f"${_micro_delta:+.0f}",
+                                            min_required=f"${MIN_MICRO_DELTA:.0f}",
+                                            current_clob=f"{current_odds:.1%}",
+                                        )
+                                        continue
+                                    # PATH B passed — fall through to composite check below
+                                    # (_comp_conf and _clob_str already set above)
+
+                                # Composite confidence (Path A only — Path B sets _comp_conf directly):
                                 #   clob_strength:     how far CLOB is above 70% floor [0,1]
                                 #   momentum_strength: BTC move size normalized to $50 [0,1]
                                 # Formula: 0.70 + 0.15*clob + 0.15*momentum → [0.70, 1.00]
-                                _clob_str = min((current_odds - self.TIMED_ENTRY_ODDS_MIN) / 0.20, 1.0)
-                                _mom_str  = min(abs(_micro_delta) / 50.0, 1.0)
-                                _comp_conf = 0.70 + 0.15 * _clob_str + 0.15 * _mom_str
+                                if not _path_b_ok:
+                                    _clob_str = min((current_odds - self.TIMED_ENTRY_ODDS_MIN) / 0.20, 1.0)
+                                    _mom_str  = min(abs(_micro_delta) / 50.0, 1.0)
+                                    _comp_conf = 0.70 + 0.15 * _clob_str + 0.15 * _mom_str
 
-                                if _comp_conf < self.MIN_CONFIDENCE_5M:
-                                    logger.info(
-                                        "5m timed entry skipped — composite confidence below threshold",
-                                        market_id=market_id,
-                                        composite_confidence=f"{_comp_conf:.2f}",
-                                        threshold=f"{self.MIN_CONFIDENCE_5M:.2f}",
-                                        clob_strength=f"{_clob_str:.2f}",
-                                        momentum_strength=f"{_mom_str:.2f}",
-                                        micro_delta=f"${_micro_delta:+.0f}",
-                                        current_clob=f"{current_odds:.1%}",
-                                    )
-                                    continue
+                                    if _comp_conf < self.MIN_CONFIDENCE_5M:
+                                        logger.info(
+                                            "5m timed entry skipped — composite confidence below threshold",
+                                            market_id=market_id,
+                                            composite_confidence=f"{_comp_conf:.2f}",
+                                            threshold=f"{self.MIN_CONFIDENCE_5M:.2f}",
+                                            clob_strength=f"{_clob_str:.2f}",
+                                            momentum_strength=f"{_mom_str:.2f}",
+                                            micro_delta=f"${_micro_delta:+.0f}",
+                                            current_clob=f"{current_odds:.1%}",
+                                        )
+                                        continue
 
                                 # Check 3: BTC must be on correct side of market start price-to-beat.
                                 # Even if BTC is declining from T=1min snapshot (micro-delta confirms NO),
@@ -3520,18 +3598,99 @@ class AutoTrader:
                                 )
                                 continue
 
+                        # Gap-certainty gate for 15m bot flat-market fast path.
+                        # Fires when meta_confidence < 0.70 but PTB gap is near-certain.
+                        # Requires: z >= 2.0, CLOB 75-90%, time <= 150s.
+                        # When this gate fires, skip _fast_entry_check (stale RSI/MACD).
+                        _gap_only = stored.get('gap_certainty_only', False)
+                        _skip_fast_check = False
+                        if _gap_only:
+                            # Tighter time window: only last 150s (2.5 min)
+                            GAP_ONLY_MAX_TIME = 150
+                            if time_remaining > GAP_ONLY_MAX_TIME:
+                                logger.debug(
+                                    "15m gap-certainty: not yet in execution window",
+                                    market_id=market_id,
+                                    time_remaining=time_remaining,
+                                    max_time=GAP_ONLY_MAX_TIME,
+                                )
+                                continue
+                            # Require slightly higher CLOB floor (75% vs 70%)
+                            GAP_ONLY_CLOB_MIN = 0.75
+                            if current_odds < GAP_ONLY_CLOB_MIN:
+                                continue
+                            # Compute gap z-score
+                            try:
+                                _slug_gap = getattr(stored.get('market'), 'slug', '') or ''
+                                _st_gap = None
+                                try:
+                                    _sp_gap = _slug_gap.split('-')
+                                    if _sp_gap and _sp_gap[-1].isdigit():
+                                        _st_gap = int(_sp_gap[-1])
+                                except Exception:
+                                    pass
+                                if _st_gap is None:
+                                    continue
+                                _ptb_gap_raw = await self.btc_service.get_price_at_timestamp(_st_gap)
+                                _btc_gap_raw = await self.btc_service.get_current_price()
+                                if _ptb_gap_raw is None or _btc_gap_raw is None:
+                                    continue
+                                _ptb_gap = float(_ptb_gap_raw)
+                                _btc_gap = float(_btc_gap_raw.price)
+                                _gap_sz = (
+                                    (_btc_gap - _ptb_gap) if action == "YES"
+                                    else (_ptb_gap - _btc_gap)
+                                )
+                                if _gap_sz <= 0:
+                                    logger.info(
+                                        "15m gap-certainty: BTC on wrong side of PTB — skipping",
+                                        market_id=market_id, action=action,
+                                        current_btc=f"${_btc_gap:,.0f}", ptb=f"${_ptb_gap:,.0f}",
+                                    )
+                                    continue
+                                _range_gc = await self.btc_service.get_15min_range_usd()
+                                if not _range_gc or _range_gc < 1.0:
+                                    continue
+                                import math as _math_gc
+                                _t_gc = max(time_remaining, 5)
+                                _exp_gc = _range_gc * _math_gc.sqrt(_t_gc / 900)
+                                _z_gc = _gap_sz / _exp_gc if _exp_gc > 0 else 0
+                                GAP_ONLY_Z_THRESHOLD = 2.0
+                                if _z_gc < GAP_ONLY_Z_THRESHOLD:
+                                    logger.info(
+                                        "15m gap-certainty: z-score insufficient — skipping",
+                                        market_id=market_id, action=action,
+                                        gap_usd=f"${_gap_sz:.1f}", range_15min=f"${_range_gc:.1f}",
+                                        z_score=f"{_z_gc:.2f}", threshold=f"{GAP_ONLY_Z_THRESHOLD}",
+                                    )
+                                    continue
+                                logger.info(
+                                    "15m gap-certainty fast path: executing",
+                                    market_id=market_id, action=action,
+                                    gap_usd=f"${_gap_sz:.1f}", range_15min=f"${_range_gc:.1f}",
+                                    z_score=f"{_z_gc:.2f}", clob=f"{current_odds:.1%}",
+                                    time_remaining=time_remaining,
+                                    meta_conf_was=f"{stored.get('meta_confidence_low', 0):.2f}",
+                                )
+                                _skip_fast_check = True
+                            except Exception as _eg:
+                                logger.debug("15m gap-certainty error", error=str(_eg))
+                                continue
+
                         # Run fast non-AI check: RSI/MACD/trend alignment
-                        fast_ok, fast_reason = self._fast_entry_check(stored, action, time_remaining=time_remaining)
-                        if not fast_ok:
-                            logger.info(
-                                "Timed entry skipped — fast check failed (will retry next cycle)",
-                                market_id=market_id,
-                                action=action,
-                                current_odds=f"{current_odds:.2%}",
-                                reason=fast_reason,
-                                time_remaining=time_remaining
-                            )
-                            continue  # Retry on next 10s cycle
+                        # (skipped for gap-certainty path — stored indicators are stale)
+                        if not _skip_fast_check:
+                            fast_ok, fast_reason = self._fast_entry_check(stored, action, time_remaining=time_remaining)
+                            if not fast_ok:
+                                logger.info(
+                                    "Timed entry skipped — fast check failed (will retry next cycle)",
+                                    market_id=market_id,
+                                    action=action,
+                                    current_odds=f"{current_odds:.2%}",
+                                    reason=fast_reason,
+                                    time_remaining=time_remaining
+                                )
+                                continue  # Retry on next 10s cycle
 
                         # Fix 1: Require 2 consecutive in-range CLOB readings before executing.
                         # Prevents single-spike execution (e.g. CLOB=70% for 1 reading, then drops).
