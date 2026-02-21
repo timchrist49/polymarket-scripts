@@ -1368,7 +1368,7 @@ class AutoTrader:
 
             # Timeframe alignment check - don't trade against larger trend
             if timeframe_analysis and timeframe_analysis.alignment_score == "CONFLICTING":
-                if not self.test_mode.enabled:
+                if not self.test_mode.enabled and not is_sub_analysis:
                     logger.info(
                         "Skipping trade - conflicting timeframes",
                         market_id=market.id,
@@ -1387,8 +1387,10 @@ class AutoTrader:
                     )
 
             # Market regime check - skip unclear/volatile markets
+            # Sub-analyses bypass: AI should form opinion regardless; real execution
+            # gate (CLOB 70-90%, BTC meta-momentum ≥$30) is the actual filter.
             if regime and regime.regime in ["UNCLEAR", "VOLATILE"]:
-                if not self.test_mode.enabled:
+                if not self.test_mode.enabled and not is_sub_analysis:
                     logger.info(
                         "Skipping trade - unfavorable market regime",
                         market_id=market.id,
@@ -1424,7 +1426,7 @@ class AutoTrader:
                     # Note: CTF/AMM markets always show ~9900 bps spread (full range AMM liquidity,
                     # not a real bid-ask spread). Only block real CLOB markets with wide spreads.
                     if 500 < orderbook_analysis.spread_bps < 9000:  # 5-90% = real CLOB wide spread
-                        if not self.test_mode.enabled:
+                        if not self.test_mode.enabled and not is_sub_analysis:
                             logger.info(
                                 "Skipping trade - spread too wide",
                                 market_id=market.id,
@@ -1442,8 +1444,8 @@ class AutoTrader:
                                 bypassed=True
                             )
 
-                    # Skip if can't fill order
-                    if not orderbook_analysis.can_fill_order:
+                    # Skip if can't fill order (only for real executions, not sub-analyses)
+                    if not orderbook_analysis.can_fill_order and not is_sub_analysis:
                         logger.info(
                             "Skipping trade - insufficient liquidity",
                             market_id=market.id,
@@ -1868,6 +1870,9 @@ class AutoTrader:
             if decision.action == "HOLD":
                 decision.action = "YES" if aggregated_sentiment.final_score > 0 else "NO"
                 decision.confidence = min(decision.confidence, 0.72)
+                # Reassign token_id/token_name after direction change (was None for HOLD)
+                token_id = token_ids[0] if decision.action == "YES" else token_ids[1]
+                token_name = market_dict["outcomes"][0] if decision.action == "YES" else market_dict["outcomes"][1]
                 logger.info(
                     "AI returned HOLD — converted to direction from sentiment",
                     market_id=market.id,
@@ -2760,7 +2765,7 @@ class AutoTrader:
     TIMING_WATCHER_INTERVAL_SECONDS = 10
     TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter (no upper ceiling)
     TIMED_ENTRY_WINDOW_SECONDS = 180         # Only enter in last 3 minutes (<=180s remaining)
-    MIN_META_REVERSAL = 10.0                 # Block if BTC moved ≥$10 against bet direction since meta
+    MIN_META_REVERSAL = 30.0                 # Block if BTC moved ≥$30 against bet direction since meta
 
     # Multi-analysis strategy: run sub-analyses every 2 min, meta-analysis before betting window
     # NOTE: AI calls observed to take 60–240s. Meta fires at T=12min (720s) to ensure
@@ -3122,7 +3127,7 @@ class AutoTrader:
             # direction with high confidence, BTC has likely reversed. Skip this market.
             # Root cause of 18:15–18:30 UTC loss: T=9min sub said YES (conf=0.84) after BTC
             # reversed above PTB, but 3 earlier NO analyses (T=3/5/7min) outvoted it 3:1.
-            RECENCY_VETO_CONF = 0.90
+            RECENCY_VETO_CONF = 0.95
             most_recent_sub = max(sub_analyses, key=lambda a: a['stored_at'])
             if most_recent_sub['action'] != final_action and most_recent_sub['confidence'] >= RECENCY_VETO_CONF:
                 logger.info(
@@ -3849,7 +3854,11 @@ class AutoTrader:
         #                          STRONG_BEARISH, MIXED, CONFLICTING
         # Only block if ALL major timeframes are unanimously against our direction.
         # MIXED / CONFLICTING = uncertain → let CLOB odds decide → allow.
-        if timeframe_analysis:
+        # SKIP when stale: stored TF data is from T=2-8min (sub-analysis time); by
+        # execution at T=12-15min it may be 4-13 min old. CLOB ≥70% is the real-time gate.
+        if time_remaining is not None and time_remaining < self.FAST_CHECK_STALE_THRESHOLD:
+            pass  # Stale threshold reached: skip stale TF alignment check
+        elif timeframe_analysis:
             alignment = getattr(timeframe_analysis, 'alignment_score', None)
             if alignment:
                 if action == "YES" and alignment in ("ALIGNED_BEARISH", "STRONG_BEARISH"):
@@ -3860,7 +3869,11 @@ class AutoTrader:
         # Check 4: High-volume opposing momentum
         # Only block when volume is clearly elevated (>2x average) AND momentum direction
         # is firmly opposite. Threshold raised to 2x (from 1.5x) to reduce false blocks.
-        if btc_momentum:
+        # SKIP when stale: btc_momentum is captured at T=2-8min; by T=12-15min a volume
+        # spike may have fully resolved. CLOB odds ≥70% serve as real-time confirmation.
+        if time_remaining is not None and time_remaining < self.FAST_CHECK_STALE_THRESHOLD:
+            pass  # Stale threshold reached: skip stale volume momentum check
+        elif btc_momentum:
             vol_ratio = getattr(btc_momentum, 'volume_ratio', None)
             mom_direction = getattr(btc_momentum, 'momentum_direction', None)
             if vol_ratio is not None and mom_direction is not None and vol_ratio > 2.0:
