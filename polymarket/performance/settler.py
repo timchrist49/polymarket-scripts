@@ -3,7 +3,7 @@
 import re
 import asyncio
 import structlog
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 from decimal import Decimal
 
@@ -405,6 +405,80 @@ class TradeSettler:
             stats['errors'].append(str(e))
 
         return stats
+
+    async def settle_pending_ai_analyses(self) -> list[dict]:
+        """Settle ai_analysis_log rows for markets that ended without a placed trade.
+
+        The main settle_pending_trades() loop only processes entries in the trades
+        table. Markets where the bot sat out (tracking-only) never appear there, so
+        their ai_analysis_log rows would stay unsettled forever.  This method closes
+        that gap by scanning ai_analysis_log directly.
+
+        Returns:
+            List of alert dicts (same structure as stats['ai_alerts'] items) ready
+            for Telegram delivery by the caller.
+        """
+        alerts = []
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT market_slug FROM ai_analysis_log
+                WHERE actual_outcome IS NULL
+            """)
+            slugs = [row[0] for row in cursor.fetchall()]
+
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+
+            for market_slug in slugs:
+                try:
+                    close_ts = self._parse_market_close_timestamp(market_slug)
+                    if close_ts is None or close_ts > now_ts:
+                        continue  # Market hasn't closed yet
+
+                    # Need PTB to determine outcome — read from first logged row
+                    cursor.execute("""
+                        SELECT ptb_price FROM ai_analysis_log
+                        WHERE market_slug = ? AND ptb_price IS NOT NULL
+                        LIMIT 1
+                    """, (market_slug,))
+                    ptb_row = cursor.fetchone()
+                    if ptb_row is None:
+                        logger.warning(
+                            "No PTB in ai_analysis_log — cannot settle",
+                            market_slug=market_slug,
+                        )
+                        continue
+
+                    price_to_beat = float(ptb_row[0])
+
+                    btc_close_price = await self._get_btc_price_at_timestamp(close_ts)
+                    if btc_close_price is None:
+                        continue  # Will retry next cycle
+
+                    actual_outcome = self._determine_outcome(btc_close_price, price_to_beat)
+
+                    ai_rows = self.db.update_ai_outcome_and_fetch(market_slug, actual_outcome)
+                    if ai_rows:
+                        self.db.mark_ai_alerts_sent([r['id'] for r in ai_rows])
+                        alerts.append({'rows': ai_rows, 'market_slug': market_slug})
+                        logger.info(
+                            "AI-only analysis settled",
+                            market_slug=market_slug,
+                            actual_outcome=actual_outcome,
+                            rows=len(ai_rows),
+                        )
+
+                except Exception as _e:
+                    logger.error(
+                        "Failed to settle AI analysis row",
+                        market_slug=market_slug,
+                        error=str(_e),
+                    )
+
+        except Exception as e:
+            logger.error("settle_pending_ai_analyses failed", error=str(e))
+
+        return alerts
 
     def _mark_trade_failed(self, trade_id: int, verification: dict) -> None:
         """Mark a trade as failed due to verification failure."""

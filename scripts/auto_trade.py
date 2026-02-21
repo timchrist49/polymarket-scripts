@@ -543,7 +543,7 @@ class AutoTrader:
                         pending=stats["pending_count"]
                     )
 
-                # Send AI analysis accuracy alerts for settled markets
+                # Send AI analysis accuracy alerts for settled markets (traded)
                 for _alert in stats.get('ai_alerts', []):
                     try:
                         _executed = self.performance_tracker.db.get_executed_trade_for_market(
@@ -559,6 +559,27 @@ class AutoTrader:
                             market_slug=_alert.get('market_slug'),
                             error=str(_alert_err),
                         )
+
+                # Also settle ai_analysis_log rows for markets with no placed trade
+                try:
+                    _ai_only_alerts = await self.trade_settler.settle_pending_ai_analyses()
+                    for _alert in _ai_only_alerts:
+                        try:
+                            _executed = self.performance_tracker.db.get_executed_trade_for_market(
+                                _alert['market_slug']
+                            )
+                            await self.telegram.send_ai_analysis_alert(
+                                rows=_alert['rows'],
+                                executed_trade=_executed,
+                            )
+                        except Exception as _ae:
+                            logger.warning(
+                                "Failed to send AI-only alert",
+                                market_slug=_alert.get('market_slug'),
+                                error=str(_ae),
+                            )
+                except Exception as _ai_err:
+                    logger.warning("settle_pending_ai_analyses error", error=str(_ai_err))
 
                 # Check for stuck trades
                 if stats["pending_count"] > 0 and stats["settled_count"] == 0:
@@ -3323,10 +3344,39 @@ class AutoTrader:
                 except Exception:
                     pass
 
-            # Reuse cached data from last cycle — avoids expensive re-fetching
-            last = self._last_cycle_data or {}
-            indicators = last.get('indicators')
-            sentiment = last.get('aggregated_sentiment')
+            # Fetch fresh technical indicators (5-min price window for 5m market)
+            indicators = None
+            try:
+                price_history = await self.btc_service.get_price_history(minutes=5)
+                if price_history:
+                    indicators = TechnicalAnalysis.calculate_indicators(price_history)
+            except Exception as _ind_err:
+                logger.debug("5m AI: could not fetch indicators", error=str(_ind_err))
+
+            # Build a neutral stub so the AI call doesn't crash on aggregated.social/.market.
+            # The 5m bot has no sentiment pipeline — neutral signals tell the AI to rely
+            # on price/indicator data only.
+            from polymarket.models import (
+                SocialSentiment as _SS,
+                MarketSignals as _MS,
+                AggregatedSentiment as _AS,
+            )
+            _now = datetime.utcnow()
+            sentiment = _AS(
+                social=_SS(
+                    score=0.0, confidence=0.0, fear_greed=50, is_trending=False,
+                    vote_up_pct=50.0, vote_down_pct=50.0, signal_type="NEUTRAL",
+                    sources_available=[], timestamp=_now,
+                ),
+                market=_MS(
+                    score=0.0, confidence=0.0, order_book_score=0.0, whale_score=0.0,
+                    volume_score=0.0, momentum_score=0.0, order_book_bias="BALANCED",
+                    whale_direction="NEUTRAL", whale_count=0, volume_ratio=1.0,
+                    momentum_direction="FLAT", signal_type="NEUTRAL", timestamp=_now,
+                ),
+                final_score=0.0, final_confidence=0.0, agreement_multiplier=1.0,
+                signal_type="NEUTRAL", timestamp=_now,
+            )
 
             # Optionally refresh timeframe analysis
             timeframe_analysis = None
