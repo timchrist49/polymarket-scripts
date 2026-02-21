@@ -3568,9 +3568,10 @@ class AutoTrader:
                                 _current_btc = float(_btc_now.price)
                                 _micro_delta = _current_btc - _snapshot_btc  # positive = BTC rose
 
-                                # Hard block: BTC must have moved ≥$15 in the confirmed direction.
-                                # $15 is just above the 2-min noise floor (~1-sigma ≈ $15-25).
-                                MIN_MICRO_DELTA = 15.0
+                                # Hard block: BTC must have moved ≥ MIN_YES_MOVEMENT_USD in the
+                                # confirmed direction. Kept in sync with the profile threshold
+                                # (10 for 5m, would be 30 for 15m if this path ran there).
+                                MIN_MICRO_DELTA = float(self.MIN_YES_MOVEMENT_USD)
                                 _path_b_ok = False  # set True if Path B (gap certainty) fires
                                 _dir_ok = (
                                     (snapshot_action == "YES" and _micro_delta >= MIN_MICRO_DELTA) or
@@ -3981,12 +3982,8 @@ class AutoTrader:
                         asyncio.create_task(self._execute_timed_entry(market_id, entry_context, current_odds, time_remaining))
 
                     else:
-                        # Odds out of range. Only reset consecutive counter if CLOB dropped
-                        # *below* the 70% floor (signal lost / uncertain). If CLOB is *above*
-                        # the 90% ceiling the signal is even stronger — keep the counter so a
-                        # brief spike above ceiling doesn't erase accumulated confirmations.
-                        if current_odds < self.TIMED_ENTRY_ODDS_MIN:
-                            self._clob_consecutive_count[market_id] = 0
+                        # Odds out of range: reset consecutive CLOB counter.
+                        self._clob_consecutive_count[market_id] = 0
 
             except Exception as e:
                 logger.error("Timed entry monitor error", error=str(e))
