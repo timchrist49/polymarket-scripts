@@ -2,6 +2,7 @@
 """SQLite database for performance tracking."""
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 import structlog
 
@@ -495,7 +496,6 @@ class PerformanceDatabase:
         rsi: float | None = None,
     ) -> int:
         """Insert one AI analysis row. Returns inserted id."""
-        from datetime import datetime as _dt
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -507,7 +507,7 @@ class PerformanceDatabase:
             (
                 market_slug, market_id, bot_type, action, confidence,
                 reasoning, btc_price, ptb_price, btc_movement, rsi,
-                _dt.utcnow().isoformat(),
+                datetime.utcnow().isoformat(),
             ),
         )
         self.conn.commit()
