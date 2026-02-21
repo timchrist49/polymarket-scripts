@@ -60,10 +60,24 @@ async def analysis_loop(
         clob_yes = clob["yes"]
 
         btc_price = float(row.get("btc_price") or 0)
-        ptb = float(row.get("ptb") or btc_price)
+        # ai_analysis_log stores the field as ptb_price (not ptb)
+        ptb = float(row.get("ptb_price") or row.get("ptb") or 0)
+
+        # If ptb is still 0, try to infer from btc_price + btc_movement
+        # btc_movement = btc_price - ptb at the time of analysis
+        if ptb == 0 and btc_price > 0:
+            btc_movement = float(row.get("btc_movement") or 0)
+            ptb = btc_price - btc_movement
 
         # gap_usd = btc_price - ptb: positive = BTC ABOVE PTB = YES territory
-        gap_usd = btc_price - ptb
+        gap_usd = btc_price - ptb if ptb > 0 else 0.0
+
+        # If CLOB is unavailable (expired market), use v1's confidence as proxy
+        # so the AI still has a meaningful market signal
+        if clob_yes == 0.5:
+            v1_action = row.get("action", "")
+            v1_conf = float(row.get("confidence") or 0.5)
+            clob_yes = v1_conf if v1_action == "YES" else (1.0 - v1_conf)
 
         # Estimated time remaining: conservative 3 minutes
         # (v2 fires as soon as v1 fires; both happen ~3-5 min before close)
