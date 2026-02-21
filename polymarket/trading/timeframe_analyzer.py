@@ -74,10 +74,10 @@ class TimeframeAnalyzer:
             start_time = current_time - lookback_seconds
 
             # Get price from lookback_seconds ago
-            price_start_data = await self.price_buffer.get_price_at(start_time)
+            price_start_data = await self.price_buffer.get_price_at(start_time, tolerance=30)
 
             # Get current price
-            price_end_data = await self.price_buffer.get_price_at(current_time)
+            price_end_data = await self.price_buffer.get_price_at(current_time, tolerance=30)
 
             if not price_start_data or not price_end_data:
                 logger.warning(

@@ -239,7 +239,7 @@ class AutoTrader:
         # its order. This lock prevents the AI call from even starting for a duplicate.
         self._markets_with_active_cycle_analysis: set[str] = set()
 
-        # Timed strategy state: AI decisions stored at T=10min for entry in last 5 min.
+        # Timed strategy state: AI decisions stored at T=12min for entry in last N min (TIMED_ENTRY_WINDOW_SECONDS).
         # _timed_decisions holds the full execution context keyed by market_id.
         # _analysis_triggered tracks markets where any timed analysis has been fired
         # (used in _process_market to bypass the 60% odds filter).
@@ -397,7 +397,7 @@ class AutoTrader:
             "Market timing watcher started (multi-analysis: T=2/4/6/8min sub + T=12min meta)",
             sub_analysis_schedule="T=2, T=4, T=6, T=8 min",
             meta_analysis_at="T=12min (720s elapsed)",
-            entry_window="last 5 minutes (T=10-15min)",
+            entry_window="last 3 minutes (T=12-15min)",
         )
 
         # Timed strategy: entry monitor executes stored decisions when odds reach 70%
@@ -777,7 +777,7 @@ class AutoTrader:
 
             # Multi-timeframe trend analysis
             timeframe_analysis = None
-            if self.test_mode.enabled and self.timeframe_analyzer:
+            if self.timeframe_analyzer:
                 timeframe_analysis = await self.timeframe_analyzer.analyze()
                 if timeframe_analysis:
                     logger.info(
@@ -1960,8 +1960,8 @@ class AutoTrader:
                     no_odds_fresh = 1.0 - yes_odds_fresh
 
                 # Timed strategy: ALWAYS defer to _timed_entry_monitor if we are not yet in
-                # the last-5-min entry window, regardless of current odds. This enforces the
-                # "MUST be within last 5 minutes" constraint even if odds happen to be 70%+
+                # the entry window (TIMED_ENTRY_WINDOW_SECONDS), regardless of current odds.
+                # This enforces the constraint even if odds happen to be 70%+
                 # during the T=5min AI analysis phase.
                 not_in_entry_window = (
                     time_remaining is not None and
@@ -1980,7 +1980,7 @@ class AutoTrader:
                 if should_defer:
                     current_side_odds = yes_odds_fresh if decision.action == "YES" else no_odds_fresh
                     defer_reason = (
-                        f"not in last-5-min window ({time_remaining}s remaining)"
+                        f"not in entry window ({time_remaining}s remaining, need <={self.TIMED_ENTRY_WINDOW_SECONDS}s)"
                         if not_in_entry_window
                         else f"odds below 70% threshold ({current_side_odds:.2%})"
                     )
@@ -2015,7 +2015,7 @@ class AutoTrader:
                         'signal_lag_reason': signal_lag_reason,
                         'stored_at': datetime.now(timezone.utc),
                     }
-                    return  # _timed_entry_monitor will execute when in last 5 min AND odds >= 70%
+                    return  # _timed_entry_monitor will execute when in entry window AND odds >= 70%
 
                 # Store odds for paper trade logging
                 odds_yes = yes_odds_fresh
@@ -2759,13 +2759,14 @@ class AutoTrader:
 
     TIMING_WATCHER_INTERVAL_SECONDS = 10
     TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter (no upper ceiling)
-    TIMED_ENTRY_WINDOW_SECONDS = 60          # Only enter in last 1 minute (<=60s remaining)
+    TIMED_ENTRY_WINDOW_SECONDS = 180         # Only enter in last 3 minutes (<=180s remaining)
     MIN_META_REVERSAL = 10.0                 # Block if BTC moved ≥$10 against bet direction since meta
 
     # Multi-analysis strategy: run sub-analyses every 2 min, meta-analysis before betting window
     # NOTE: AI calls observed to take 60–240s. Meta fires at T=12min (720s) to ensure
     # even slow T=8min AI calls (480s trigger + 240s = 720s) are captured before aggregation.
-    # Execution window (last 1min = T=14-15min) still within the T=12-15min meta window.
+    # Execution window (last 3min = T=12-15min) opens right as meta fires — BTC momentum check
+    # guards against reversals during the 3-min window.
     SUB_ANALYSIS_FIRST_AT_SECONDS = 120      # First sub-analysis at T=2min
     SUB_ANALYSIS_INTERVAL_SECONDS = 120      # Repeat every 2 min (T=2, T=4, T=6, T=8)
     SUB_ANALYSIS_MAX_COUNT = 4               # At most 4 sub-analyses per market
@@ -2824,7 +2825,7 @@ class AutoTrader:
                 duration_seconds=900,
                 sub_analysis="T=2/4/6/8min (4 cycles)",
                 meta_analysis="T=12min",
-                entry_window="last 1min (<=60s remaining)",
+                entry_window="last 3min (<=180s remaining)",
                 min_yes_movement_usd=30,
             )
 
@@ -2861,7 +2862,7 @@ class AutoTrader:
             "Market timing watcher started (multi-analysis strategy)",
             sub_analysis_schedule="T=2, T=4, T=6, T=8 min",
             meta_analysis_at=f"T={int(self.META_ANALYSIS_TRIGGER_SECONDS / 60)}min",
-            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (T=14-15min)",
+            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (T=12-15min)",
             entry_odds_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}",
         )
 
@@ -3284,7 +3285,7 @@ class AutoTrader:
 
                     if time_remaining > self.TIMED_ENTRY_WINDOW_SECONDS:
                         logger.debug(
-                            "Timed entry: not yet in last-5-min window",
+                            "Timed entry: not yet in entry window",
                             market_id=market_id,
                             time_remaining=time_remaining
                         )
@@ -3907,6 +3908,17 @@ class AutoTrader:
                     action=getattr(decision, 'action', None),
                 )
                 return
+
+            # Refresh timeframe analysis with current BTC price data before final check.
+            # Uses local price buffer (no API call) — ensures Check 3 runs on fresh data
+            # for both 15m bot (stored data is T=2-8min old) and 5m bot (stored=None).
+            if self.timeframe_analyzer:
+                try:
+                    _fresh_tf = await self.timeframe_analyzer.analyze()
+                    if _fresh_tf is not None:
+                        stored['timeframe_analysis'] = _fresh_tf
+                except Exception:
+                    pass  # Use stored (possibly None) on failure
 
             # Final fast-check gate at actual execution time
             fast_ok, fast_reason = self._fast_entry_check(stored, decision.action, time_remaining=time_remaining)
