@@ -117,6 +117,28 @@ class PerformanceDatabase:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ai_analysis_log (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_slug    TEXT NOT NULL,
+                market_id      TEXT,
+                bot_type       TEXT NOT NULL,
+                action         TEXT NOT NULL,
+                confidence     REAL NOT NULL,
+                reasoning      TEXT,
+                btc_price      REAL,
+                ptb_price      REAL,
+                btc_movement   REAL,
+                rsi            REAL,
+                fired_at       TEXT NOT NULL,
+                actual_outcome TEXT,
+                telegram_sent  INTEGER DEFAULT 0
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ai_log_market
+            ON ai_analysis_log(market_slug)
+        """)
         self.conn.commit()
 
     def _create_indexes(self):
@@ -457,6 +479,89 @@ class PerformanceDatabase:
             is_win=is_win,
             profit_loss=profit_loss
         )
+
+
+    def log_ai_analysis(
+        self,
+        market_slug: str,
+        market_id: str | None,
+        bot_type: str,
+        action: str,
+        confidence: float,
+        reasoning: str | None = None,
+        btc_price: float | None = None,
+        ptb_price: float | None = None,
+        btc_movement: float | None = None,
+        rsi: float | None = None,
+    ) -> int:
+        """Insert one AI analysis row. Returns inserted id."""
+        from datetime import datetime as _dt
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO ai_analysis_log
+                (market_slug, market_id, bot_type, action, confidence,
+                 reasoning, btc_price, ptb_price, btc_movement, rsi, fired_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                market_slug, market_id, bot_type, action, confidence,
+                reasoning, btc_price, ptb_price, btc_movement, rsi,
+                _dt.utcnow().isoformat(),
+            ),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def update_ai_outcome_and_fetch(
+        self, market_slug: str, actual_outcome: str
+    ) -> list[dict]:
+        """Set actual_outcome on unsettled rows and return rows needing Telegram."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE ai_analysis_log
+            SET actual_outcome = ?
+            WHERE market_slug = ? AND actual_outcome IS NULL
+            """,
+            (actual_outcome, market_slug),
+        )
+        self.conn.commit()
+        cursor.execute(
+            """
+            SELECT * FROM ai_analysis_log
+            WHERE market_slug = ? AND actual_outcome IS NOT NULL AND telegram_sent = 0
+            """,
+            (market_slug,),
+        )
+        return [dict(r) for r in cursor.fetchall()]
+
+    def mark_ai_alerts_sent(self, ids: list[int]) -> None:
+        """Mark ai_analysis_log rows as Telegram-notified."""
+        if not ids:
+            return
+        cursor = self.conn.cursor()
+        placeholders = ",".join("?" for _ in ids)
+        cursor.execute(
+            f"UPDATE ai_analysis_log SET telegram_sent = 1 WHERE id IN ({placeholders})",
+            ids,
+        )
+        self.conn.commit()
+
+    def get_executed_trade_for_market(self, market_slug: str) -> dict | None:
+        """Return the most recently settled executed trade for a market slug."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT action, profit_loss, executed_price, position_size
+            FROM trades
+            WHERE market_slug = ? AND actual_outcome IS NOT NULL
+            ORDER BY timestamp DESC LIMIT 1
+            """,
+            (market_slug,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
     def close(self):
         """Close database connection."""
