@@ -262,6 +262,10 @@ class AutoTrader:
         # Maps market_id → {action, yes_odds, no_odds, snapshot_time}.
         self._5m_clob_snapshots: dict[str, dict] = {}
 
+        # 5m AI analysis at T=3min (informational only, does not affect execution)
+        self._5m_ai_decisions: dict[str, dict] = {}
+        self._5m_ai_analysis_triggered: set[str] = set()
+
         # Background tasks for price buffer maintenance
         self.background_tasks: list[asyncio.Task] = []
 
@@ -3272,6 +3276,116 @@ class AutoTrader:
         except Exception as e:
             logger.error("Meta-analysis failed", market_id=market_id, error=str(e))
 
+    async def _run_5m_ai_analysis(self, market_id: str, market, stored: dict) -> None:
+        """Run a single AI analysis on a 5m market at the 3-minute mark.
+
+        Informational only — result is logged to ai_analysis_log but does NOT
+        affect trade execution. Used to measure 5m AI prediction accuracy.
+        Called as a fire-and-forget asyncio task from _timed_entry_monitor.
+        """
+        try:
+            logger.info(
+                "5m AI analysis firing",
+                market_id=market_id,
+                market_slug=getattr(market, 'slug', None),
+            )
+
+            # Get fresh BTC price
+            btc_data = await self.btc_service.get_current_price()
+            if not btc_data:
+                logger.warning("5m AI analysis: no BTC price, skipping", market_id=market_id)
+                return
+
+            # Get price-to-beat from market start
+            ptb: float | None = None
+            market_start_ts = stored.get('market_start_ts')
+            if market_start_ts:
+                try:
+                    ptb_raw = await self.btc_service.get_price_at_timestamp(market_start_ts)
+                    ptb = float(ptb_raw) if ptb_raw else None
+                except Exception:
+                    pass
+
+            # Reuse cached data from last cycle — avoids expensive re-fetching
+            last = self._last_cycle_data or {}
+            indicators = last.get('indicators')
+            sentiment = last.get('aggregated_sentiment')
+
+            # Optionally refresh timeframe analysis
+            timeframe_analysis = None
+            if self.timeframe_analyzer:
+                try:
+                    timeframe_analysis = await self.timeframe_analyzer.analyze()
+                except Exception:
+                    pass
+
+            # Order flow signal
+            order_flow_signal = None
+            try:
+                order_flow_signal = await self.btc_service.get_order_flow_signal()
+            except Exception:
+                pass
+
+            # Build market_data dict
+            yes_price_raw = getattr(market, 'best_bid', None) or 0.5
+            yes_price = float(yes_price_raw)
+            market_data = {
+                'market_id': market_id,
+                'slug': getattr(market, 'slug', market_id),
+                'title': getattr(market, 'question', '') or '',
+                'description': getattr(market, 'description', '') or '',
+                'yes_price': yes_price,
+                'no_price': round(1.0 - yes_price, 4),
+                'end_date_iso': getattr(market, 'end_date_iso', None),
+                'active': True,
+            }
+
+            # Make AI decision — same call signature as sub-analyses in run_cycle()
+            decision = await self.ai_service.make_decision(
+                btc_price=btc_data,
+                technical_indicators=indicators,
+                aggregated_sentiment=sentiment,
+                market_data=market_data,
+                timeframe_analysis=timeframe_analysis,
+                order_flow_signal=order_flow_signal,
+            )
+
+            # Store in memory (for future use as gate if accuracy proves good)
+            self._5m_ai_decisions[market_id] = {
+                'action': decision.action,
+                'confidence': decision.confidence,
+                'reasoning': decision.reasoning,
+                'btc_price': float(btc_data.price),
+                'ptb_price': ptb,
+                'rsi': getattr(indicators, 'rsi', None) if indicators else None,
+                'fired_at': datetime.utcnow().isoformat(),
+            }
+
+            # Log to DB for settlement accuracy tracking
+            await self.performance_tracker.log_ai_analysis(
+                market_slug=getattr(market, 'slug', market_id),
+                market_id=market_id,
+                bot_type='5m',
+                action=decision.action,
+                confidence=decision.confidence,
+                reasoning=(decision.reasoning or '')[:500],
+                btc_price=float(btc_data.price),
+                ptb_price=ptb,
+                rsi=getattr(indicators, 'rsi', None) if indicators else None,
+            )
+
+            logger.info(
+                "5m AI analysis complete",
+                market_id=market_id,
+                action=decision.action,
+                confidence=f"{decision.confidence:.2f}",
+                btc_price=f"${float(btc_data.price):,.0f}",
+                ptb=f"${ptb:,.0f}" if ptb else "N/A",
+            )
+
+        except Exception as e:
+            logger.error("5m AI analysis failed", market_id=market_id, error=str(e))
+
     async def _timed_entry_monitor(self) -> None:
         """Background task: execute stored decisions when 70%+ odds appear in last 5 minutes.
 
@@ -3327,6 +3441,20 @@ class AutoTrader:
                         self._timed_decisions.pop(market_id, None)
                         self._analysis_triggered.discard(market_id)
                         continue
+
+                    # 5m bot: fire AI analysis at T=3min mark (<=180s remaining), once per market
+                    if (
+                        stored.get('clob_driven')
+                        and time_remaining is not None
+                        and time_remaining <= 180
+                        and market_id not in self._5m_ai_analysis_triggered
+                    ):
+                        self._5m_ai_analysis_triggered.add(market_id)
+                        _market_for_5m_ai = stored.get('market')
+                        if _market_for_5m_ai is not None:
+                            asyncio.create_task(
+                                self._run_5m_ai_analysis(market_id, _market_for_5m_ai, stored)
+                            )
 
                     if time_remaining > self.TIMED_ENTRY_WINDOW_SECONDS:
                         logger.debug(
