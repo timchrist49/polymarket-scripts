@@ -2759,12 +2759,13 @@ class AutoTrader:
 
     TIMING_WATCHER_INTERVAL_SECONDS = 10
     TIMED_ENTRY_ODDS_MIN = 0.70              # Minimum CLOB odds to enter (no upper ceiling)
-    TIMED_ENTRY_WINDOW_SECONDS = 300         # Only enter in last 5 minutes (<=300s remaining)
+    TIMED_ENTRY_WINDOW_SECONDS = 60          # Only enter in last 1 minute (<=60s remaining)
+    MIN_META_REVERSAL = 10.0                 # Block if BTC moved ≥$10 against bet direction since meta
 
     # Multi-analysis strategy: run sub-analyses every 2 min, meta-analysis before betting window
     # NOTE: AI calls observed to take 60–240s. Meta fires at T=12min (720s) to ensure
     # even slow T=8min AI calls (480s trigger + 240s = 720s) are captured before aggregation.
-    # Execution window (last 5min = T=10-15min) still covers T=12-15min for trade entry.
+    # Execution window (last 1min = T=14-15min) still within the T=12-15min meta window.
     SUB_ANALYSIS_FIRST_AT_SECONDS = 120      # First sub-analysis at T=2min
     SUB_ANALYSIS_INTERVAL_SECONDS = 120      # Repeat every 2 min (T=2, T=4, T=6, T=8)
     SUB_ANALYSIS_MAX_COUNT = 4               # At most 4 sub-analyses per market
@@ -2823,7 +2824,7 @@ class AutoTrader:
                 duration_seconds=900,
                 sub_analysis="T=2/4/6/8min (4 cycles)",
                 meta_analysis="T=12min",
-                entry_window="last 5min (<=300s remaining)",
+                entry_window="last 1min (<=60s remaining)",
                 min_yes_movement_usd=30,
             )
 
@@ -2860,7 +2861,7 @@ class AutoTrader:
             "Market timing watcher started (multi-analysis strategy)",
             sub_analysis_schedule="T=2, T=4, T=6, T=8 min",
             meta_analysis_at=f"T={int(self.META_ANALYSIS_TRIGGER_SECONDS / 60)}min",
-            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (T=10-15min)",
+            entry_window=f"last {self.TIMED_ENTRY_WINDOW_SECONDS}s (T=14-15min)",
             entry_odds_min=f"{self.TIMED_ENTRY_ODDS_MIN:.0%}",
         )
 
@@ -3196,6 +3197,15 @@ class AutoTrader:
                 'no_weight':       no_weight,
                 'final_confidence': final_confidence,
             }
+
+            # Store BTC price at meta trigger for momentum check at execution time.
+            # At execution (≤60s remaining), if BTC moved ≥$10 against bet direction
+            # since meta fired (T=12min), the trade is blocked as momentum has reversed.
+            try:
+                _meta_btc = await self.btc_service.get_current_price()
+                context['meta_btc_price'] = float(_meta_btc.price) if _meta_btc else None
+            except Exception:
+                context['meta_btc_price'] = None
 
             self._timed_decisions[market_id] = context
 
@@ -3574,6 +3584,28 @@ class AutoTrader:
                                                 current_btc=f"${_btc_exec_val:,.0f}",
                                                 price_to_beat=f"${_ptb_15m:,.0f}",
                                             )
+                                            # BTC momentum check: block if BTC reversed ≥$10
+                                            # against bet direction since meta fired (T=12min).
+                                            _meta_btc_price = stored.get('meta_btc_price')
+                                            if _meta_btc_price is not None:
+                                                _meta_delta = _btc_exec_val - _meta_btc_price
+                                                _momentum_ok = (
+                                                    (action == "YES" and _meta_delta >= -self.MIN_META_REVERSAL) or
+                                                    (action == "NO"  and _meta_delta <= self.MIN_META_REVERSAL)
+                                                )
+                                                if not _momentum_ok:
+                                                    logger.info(
+                                                        "15m timed entry blocked — BTC reversed "
+                                                        "against bet direction since meta-analysis",
+                                                        market_id=market_id,
+                                                        action=action,
+                                                        btc_at_meta=f"${_meta_btc_price:,.0f}",
+                                                        btc_now=f"${_btc_exec_val:,.0f}",
+                                                        delta=f"${_meta_delta:+,.0f}",
+                                                        threshold=f"±${self.MIN_META_REVERSAL:.0f}",
+                                                    )
+                                                    self._clob_consecutive_count[market_id] = 0
+                                                    continue
                                 except Exception:
                                     pass  # Buffer miss — skip PTB check gracefully
 
@@ -3701,6 +3733,27 @@ class AutoTrader:
                                 )
                                 self._clob_consecutive_count[market_id] = 0
                                 return
+                            # BTC momentum check: block if BTC reversed ≥$10 against bet direction since meta
+                            _meta_btc_price_rt = stored.get('meta_btc_price')
+                            if _meta_btc_price_rt is not None:
+                                _meta_delta_rt = _btc_rt_val - _meta_btc_price_rt
+                                _momentum_ok_rt = (
+                                    (action == "YES" and _meta_delta_rt >= -self.MIN_META_REVERSAL) or
+                                    (action == "NO"  and _meta_delta_rt <= self.MIN_META_REVERSAL)
+                                )
+                                if not _momentum_ok_rt:
+                                    logger.info(
+                                        "Real-time entry blocked — BTC reversed against bet "
+                                        "direction since meta-analysis",
+                                        market_id=market_id,
+                                        action=action,
+                                        btc_at_meta=f"${_meta_btc_price_rt:,.0f}",
+                                        btc_now=f"${_btc_rt_val:,.0f}",
+                                        delta=f"${_meta_delta_rt:+,.0f}",
+                                        threshold=f"±${self.MIN_META_REVERSAL:.0f}",
+                                    )
+                                    self._clob_consecutive_count[market_id] = 0
+                                    return
                 except Exception:
                     pass  # Buffer miss — skip PTB check gracefully
 
