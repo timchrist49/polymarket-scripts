@@ -1,11 +1,8 @@
-"""Enhanced AI analysis v2 — phase-weighted ensemble with hard rules.
+"""Enhanced AI analysis v2 — phase-weighted ensemble.
 
 Architecture:
-  1. Hard rules fire first (no AI call):
-     - gap_usd < -$20 AND ≤180s → NO (BTC below PTB, no time to recover)
-     - gap_z > 2.5 AND <120s   → YES (BTC far above PTB, can't fall back)
-  2. For ambiguous zone: call OpenAI with regime-aware prompt
-  3. Return action + confidence + reasoning
+  1. Call OpenAI with regime-aware prompt
+  2. Return action + confidence + reasoning
 
 gap_usd convention: gap_usd = btc_price - ptb
   Positive = BTC ABOVE PTB = YES territory
@@ -23,22 +20,8 @@ from AI_analysis_upgrade.trend_analyzer import TrendResult
 
 logger = structlog.get_logger()
 
-# Hard rule thresholds (empirically validated from our 87-row dataset)
-NEGATIVE_GAP_THRESHOLD_USD = -20.0      # Below this AND ≤180s → always NO
-GAP_Z_CERTAINTY_THRESHOLD = 2.5         # Above this AND <120s → always YES
-GAP_Z_CERTAINTY_MAX_SECONDS = 120
-NEGATIVE_GAP_MAX_SECONDS = 180
-
 # Phase split: market is "late" when ≤33% of duration remains
 LATE_PHASE_FRACTION = 0.33
-
-
-@dataclass
-class HardRuleResult:
-    action: str    # "YES" or "NO"
-    confidence: float
-    rule: str
-    reasoning: str
 
 
 @dataclass
@@ -72,49 +55,6 @@ def get_phase(time_remaining_seconds: int, market_duration_seconds: int) -> str:
     fraction_remaining = time_remaining_seconds / market_duration_seconds
     return "late" if fraction_remaining <= LATE_PHASE_FRACTION else "early"
 
-
-def apply_hard_rules(
-    gap_usd: float,
-    gap_z: float,
-    clob_yes: float,
-    time_remaining_seconds: int,
-) -> Optional[HardRuleResult]:
-    """Check hard rules. Returns HardRuleResult if a rule fires, else None.
-
-    gap_usd = btc_price - ptb
-    Negative gap → BTC is BELOW price-to-beat → NO territory.
-    Positive gap → BTC is ABOVE price-to-beat → YES territory.
-    """
-
-    # Rule 1: Negative gap AND little time → always NO
-    # gap_usd < -20 means BTC is $20+ BELOW PTB. With ≤3min left, probability of recovery is 8%.
-    if gap_usd < NEGATIVE_GAP_THRESHOLD_USD and time_remaining_seconds <= NEGATIVE_GAP_MAX_SECONDS:
-        return HardRuleResult(
-            action="NO",
-            confidence=0.90,
-            rule="negative_gap",
-            reasoning=(
-                f"BTC is ${abs(gap_usd):.0f} BELOW price-to-beat (gap={gap_usd:.1f}) "
-                f"with only {time_remaining_seconds}s remaining. "
-                f"Historical: 92% NO accuracy when gap < -$20 and <3min."
-            ),
-        )
-
-    # Rule 2: Large positive z-score with little time → near-certain YES
-    # BTC is so far ABOVE price-to-beat that it's statistically implausible to fall back below it.
-    if gap_z > GAP_Z_CERTAINTY_THRESHOLD and time_remaining_seconds < GAP_Z_CERTAINTY_MAX_SECONDS:
-        return HardRuleResult(
-            action="YES",
-            confidence=0.93,
-            rule="gap_z_certainty",
-            reasoning=(
-                f"Gap z-score={gap_z:.2f} > {GAP_Z_CERTAINTY_THRESHOLD} with only "
-                f"{time_remaining_seconds}s remaining. BTC statistically can't fall "
-                f"back below target before expiry."
-            ),
-        )
-
-    return None
 
 
 def build_prompt(
@@ -171,7 +111,7 @@ BTC CONTEXT:
   Current price: ${btc_price:,.2f}
   Price-to-beat: ${ptb:,.2f}
   Gap (btc - ptb): ${gap_usd:+.2f}  [positive = BTC ABOVE target (YES territory), negative = BTC BELOW target (NO territory)]
-  Gap z-score: {gap_z:.2f}  [positive = above target; >2.5 with <2min = near certain YES]
+  Gap z-score: {gap_z:.2f}  [positive = above target, negative = below target]
   Realized vol/min: ${realized_vol_per_min:.2f}
 
 MACRO TREND (multi-timeframe):
@@ -183,10 +123,6 @@ MACRO TREND (multi-timeframe):
 
 MARKET SIGNAL:
   CLOB YES odds: {clob_yes:.2f}
-
-HARD RULES (already checked — none fired, you must decide):
-  - If gap < -$20 AND ≤180s, rule forces NO (already checked above)
-  - If gap_z > 2.5 AND <120s, rule forces YES (already checked above)
 
 TASK: Using the weighted ensemble for the {phase.upper()} phase, predict whether BTC will be
 ABOVE the price-to-beat at market close.
@@ -220,19 +156,6 @@ async def run_analysis(
     phase = get_phase(time_remaining_seconds, market_duration_seconds)
     gap_z = compute_gap_z(gap_usd, realized_vol_per_min, time_remaining_seconds / 60.0)
 
-    # Check hard rules first
-    hard_rule = apply_hard_rules(gap_usd, gap_z, clob_yes, time_remaining_seconds)
-    if hard_rule:
-        return V2Prediction(
-            action=hard_rule.action,
-            confidence=hard_rule.confidence,
-            reasoning=hard_rule.reasoning,
-            hard_rule=hard_rule.rule,
-            gap_z=gap_z,
-            phase=phase,
-        )
-
-    # Call Claude for the ambiguous zone
     prompt = build_prompt(
         market_slug=market_slug,
         gap_usd=gap_usd,
