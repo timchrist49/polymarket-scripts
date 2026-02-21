@@ -44,6 +44,7 @@ class RealtimeOddsStreamer:
         self._current_market_slug: Optional[str] = None
         self._current_token_ids_decimal: Optional[list[str]] = None
         self._current_token_ids_hex: Optional[list[str]] = None
+        self._current_market_obj = None  # cached Market object (fallback for snapshot)
         self._ws: Optional[ClientConnection] = None
         self._stream_task: Optional[asyncio.Task] = None
         self._rest_task: Optional[asyncio.Task] = None
@@ -637,6 +638,7 @@ class RealtimeOddsStreamer:
             self._current_market_slug = market.slug
             self._current_token_ids_decimal = decimal_token_ids
             self._current_token_ids_hex = hex_token_ids
+            self._current_market_obj = market  # cache for snapshot fallback
 
         logger.info(
             "Connecting to CLOB WebSocket",

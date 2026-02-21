@@ -2771,7 +2771,7 @@ class AutoTrader:
     PRICE_WATCHER_MAX_CACHE_SECONDS = 90     # Max age of cached price data in price watcher
     # 5m CLOB-driven strategy constants (disabled for 15m, activated in _apply_market_profile for 5m)
     CLOB_SNAPSHOT_AT_SECONDS = 999999        # Disabled for 15m; set to 60 for 5m
-    MIN_CONFIDENCE_5M = 0.85                 # Higher confidence threshold for noisy 5m markets
+    MIN_CONFIDENCE_5M = 0.80                 # Confidence threshold for 5m CLOB-driven entries
 
     def _apply_market_profile(self) -> None:
         """Override timing constants based on MARKET_TYPE env var (15m or 5m).
@@ -2800,7 +2800,7 @@ class AutoTrader:
             self.FAST_CHECK_STALE_THRESHOLD = 60
             self.PRICE_WATCHER_MAX_CACHE_SECONDS = 40
             self.CLOB_SNAPSHOT_AT_SECONDS = 60           # CLOB snapshot at T=1min
-            self.MIN_CONFIDENCE_5M = 0.85                # High threshold for noisy 5m markets
+            self.MIN_CONFIDENCE_5M = 0.80                # Threshold for 5m CLOB-driven entries
             logger.info(
                 "Market profile applied: 5m (CLOB-driven strategy)",
                 duration_seconds=300,
@@ -2960,7 +2960,7 @@ class AutoTrader:
         At execution time (T=3-5min), _timed_entry_monitor will:
           1. Confirm current CLOB direction still matches this snapshot
           2. Confirm probability model agrees (>= 55% in our direction)
-          3. Confirm composite confidence >= MIN_CONFIDENCE_5M (0.85)
+          3. Confirm composite confidence >= MIN_CONFIDENCE_5M (0.80)
         Only then will it build a synthetic TradingDecision and execute.
         """
         try:
@@ -2976,8 +2976,12 @@ class AutoTrader:
             action = "YES" if clob_snapshot.yes_odds > clob_snapshot.no_odds else "NO"
             direction_odds = clob_snapshot.yes_odds if action == "YES" else clob_snapshot.no_odds
 
-            # Get market object for execution context (sync API call)
+            # Get market object for execution context.
+            # Try fresh discovery first; fall back to the cached market object that was
+            # already subscribed by the streamer (avoids Gamma DNS failures blocking snapshot).
             market = self._discover_current_market()
+            if not market:
+                market = self.realtime_streamer._current_market_obj
             if not market:
                 logger.warning(
                     "5m CLOB snapshot: could not discover market — skipping",

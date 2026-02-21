@@ -1,10 +1,19 @@
 """Multi-timeframe BTC trend analyzer.
 
-Fetches OHLCV at 5 timeframes from Kraken (free, no auth) + Fear & Greed from
-Alternative.me. Outputs trend_score ∈ [-1, +1] and p_yes_prior ∈ [0.35, 0.65].
+Fetches OHLCV-equivalent price history at 5 timeframes from CoinGecko Pro
++ Fear & Greed from Alternative.me. Outputs trend_score ∈ [-1, +1] and
+p_yes_prior ∈ [0.35, 0.65].
 
-Why Kraken? Already in production codebase, supports all intervals (5, 15, 60,
-240, 1440 minutes), true OHLCV, free, no auth required.
+Why CoinGecko? The server blocks Kraken DNS. CoinGecko Pro is already used
+for CPI/volume/funding signals. The /market_chart endpoint returns 5-min
+close prices — sufficient for EMA(20), EMA(50), RSI(14).
+
+API call plan:
+  days=1   → ~5-min data points (~288 pts/day)  → derive 5m and 15m TFs
+  days=14  → hourly data points (~336 pts)       → derive 1h and 4h TFs
+  days=100 → daily data points (~100 pts, >90d)  → derive 1d TF
+
+tf_score() only uses .close from candles, so we set open=high=low=close.
 
 Timeframes: 5m + 15m + 1H + 4H + 1D (complete picture, not just macro).
 Longer timeframes weighted more for stability; 5m adds immediate direction signal.
@@ -20,6 +29,9 @@ import structlog
 from AI_analysis_upgrade import config
 
 logger = structlog.get_logger()
+
+# CoinGecko Pro base URL
+_CG_BASE_URL = "https://pro-api.coingecko.com/api/v3"
 
 # Timeframe weights (interval_minutes → weight): longer TFs weighted more for stability
 # 1D=30%, 4H=25%, 1H=20%, 15m=15%, 5m=10%
@@ -103,47 +115,75 @@ def tf_score(candles: list) -> float:
 
 
 class BTCTrendAnalyzer:
-    def __init__(self):
+    def __init__(self, coingecko_api_key: Optional[str] = None):
         self._session: Optional[aiohttp.ClientSession] = None
+        self._coingecko_api_key = coingecko_api_key or config.COINGECKO_API_KEY
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            headers = {}
+            if self._coingecko_api_key:
+                headers["x-cg-pro-api-key"] = self._coingecko_api_key
+            self._session = aiohttp.ClientSession(headers=headers)
         return self._session
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def fetch_ohlcv(self, interval_minutes: int, num_candles: int = 60) -> list:
-        """Fetch OHLCV from Kraken. interval_minutes: 5, 15, 60, 240, 1440."""
+    async def _fetch_cg_prices(self, days: int) -> list:
+        """Fetch Bitcoin price history from CoinGecko Pro.
+
+        days=1   → ~5-min data points (~288 pts for last 24h)
+        days=14  → hourly data points (~336 pts)
+        days=100 → daily data points (~100 pts; >90 days triggers daily granularity)
+
+        Returns [[timestamp_ms, price], ...] or [] on error.
+        """
         session = await self._get_session()
-        since = int((datetime.now() - timedelta(minutes=interval_minutes * num_candles)).timestamp())
-        params = {"pair": "XBTUSD", "interval": str(interval_minutes), "since": str(since)}
         try:
             async with session.get(
-                config.KRAKEN_OHLC_URL,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=15)
+                f"{_CG_BASE_URL}/coins/bitcoin/market_chart",
+                params={"vs_currency": "usd", "days": str(days)},
+                timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
-                if data.get("error"):
-                    logger.warning("Kraken OHLCV error", error=data["error"], interval=interval_minutes)
-                    return []
-                raw = data["result"].get("XXBTZUSD", [])
-                return [
-                    OHLCCandle(
-                        timestamp=datetime.fromtimestamp(c[0]),
-                        open=Decimal(str(c[1])), high=Decimal(str(c[2])),
-                        low=Decimal(str(c[3])), close=Decimal(str(c[4])),
-                        volume=Decimal(str(c[6])),
-                    )
-                    for c in raw
-                ]
+                return data.get("prices", [])
         except Exception as e:
-            logger.error("fetch_ohlcv failed", interval=interval_minutes, error=str(e))
+            logger.error("CoinGecko price fetch failed", days=days, error=str(e))
             return []
+
+    @staticmethod
+    def _group_into_candles(
+        prices: list,
+        interval_minutes: int,
+        source_interval_minutes: float,
+    ) -> list:
+        """Group price data points into OHLCCandle objects.
+
+        tf_score() only reads .close — open/high/low are set equal to close.
+
+        Args:
+            prices: [[timestamp_ms, price], ...]
+            interval_minutes: target candle duration
+            source_interval_minutes: approximate duration between input data points
+        """
+        if not prices:
+            return []
+        points_per_candle = max(1, round(interval_minutes / source_interval_minutes))
+        candles = []
+        for i in range(0, len(prices), points_per_candle):
+            group = prices[i : i + points_per_candle]
+            if not group:
+                continue
+            close = Decimal(str(group[-1][1]))
+            candles.append(OHLCCandle(
+                timestamp=datetime.fromtimestamp(group[-1][0] / 1000),
+                open=close, high=close, low=close, close=close,
+                volume=Decimal("0"),
+            ))
+        return candles
 
     async def fetch_fear_greed(self) -> int:
         """Fetch Alternative.me Fear & Greed Index (0=extreme fear, 100=extreme greed)."""
@@ -161,17 +201,29 @@ class BTCTrendAnalyzer:
             return 50
 
     async def compute(self) -> TrendResult:
-        """Compute trend_score and p_yes_prior from 5m/15m/1H/4H/1D data + Fear&Greed."""
-        # Fetch all 5 timeframes + Fear&Greed concurrently
-        results = await asyncio.gather(
-            self.fetch_ohlcv(interval_minutes=5, num_candles=60),
-            self.fetch_ohlcv(interval_minutes=15, num_candles=60),
-            self.fetch_ohlcv(interval_minutes=60, num_candles=60),
-            self.fetch_ohlcv(interval_minutes=240, num_candles=60),
-            self.fetch_ohlcv(interval_minutes=1440, num_candles=60),
+        """Compute trend_score and p_yes_prior from CoinGecko price data + Fear&Greed.
+
+        Three parallel CoinGecko calls cover all five timeframes:
+          days=1   → ~5-min data  → 5m and 15m TFs
+          days=14  → hourly data  → 1h and 4h TFs
+          days=100 → daily data   → 1d TF
+        """
+        prices_1d, prices_14d, prices_100d, fear_greed = await asyncio.gather(
+            self._fetch_cg_prices(1),
+            self._fetch_cg_prices(14),
+            self._fetch_cg_prices(100),
             self.fetch_fear_greed(),
         )
-        candles_5m, candles_15m, candles_1h, candles_4h, candles_1d, fear_greed = results
+
+        # Group into candles for each timeframe
+        # days=1 source: ~5-min intervals
+        candles_5m  = self._group_into_candles(prices_1d,   5,    5.0)
+        candles_15m = self._group_into_candles(prices_1d,   15,   5.0)
+        # days=14 source: hourly intervals
+        candles_1h  = self._group_into_candles(prices_14d,  60,   60.0)
+        candles_4h  = self._group_into_candles(prices_14d,  240,  60.0)
+        # days=100 source: daily intervals
+        candles_1d  = self._group_into_candles(prices_100d, 1440, 1440.0)
 
         tf_candles = {
             5: candles_5m,
