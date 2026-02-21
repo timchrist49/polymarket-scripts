@@ -177,11 +177,12 @@ async def run_analysis(
         client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         response = await client.chat.completions.create(
             model=config.OPENAI_MODEL,
-            max_completion_tokens=128,
+            max_completion_tokens=8000,  # reasoning models use 2k-4k reasoning tokens + ~100 output
             reasoning_effort=config.OPENAI_REASONING_EFFORT,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.choices[0].message.content.strip()
+        logger.debug("OpenAI v2 raw response", market=market_slug, text=text[:200])
         return _parse_response(text, gap_z, phase)
     except Exception as e:
         logger.error("OpenAI v2 analysis failed", market=market_slug, error=str(e))
