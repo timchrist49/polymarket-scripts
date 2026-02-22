@@ -140,6 +140,47 @@ class PerformanceDatabase:
             CREATE INDEX IF NOT EXISTS idx_ai_log_market
             ON ai_analysis_log(market_slug)
         """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS quant_shadow_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_slug TEXT NOT NULL,
+                market_id TEXT,
+                asset TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+
+                -- Features at analysis time
+                gap_usd REAL,
+                gap_z REAL,
+                clob_yes REAL,
+                realized_vol_per_min REAL,
+                trend_score REAL,
+                time_remaining_seconds INTEGER,
+                phase TEXT,
+
+                -- Quant model output
+                quant_p_yes REAL,
+                quant_action TEXT,
+                quant_edge REAL,
+
+                -- V2 comparison (filled at settlement)
+                v2_action TEXT,
+                v2_confidence REAL,
+
+                -- Outcome (filled at settlement)
+                actual_outcome TEXT,
+                quant_correct INTEGER,
+                v2_correct INTEGER,
+
+                -- Metadata
+                fired_at TEXT NOT NULL,
+                telegram_sent INTEGER DEFAULT 0
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_quant_shadow_slug
+            ON quant_shadow_log(market_slug)
+        """)
         self.conn.commit()
 
     def _create_indexes(self):
@@ -545,6 +586,67 @@ class PerformanceDatabase:
         cursor.execute(
             f"UPDATE ai_analysis_log SET telegram_sent = 1 WHERE id IN ({placeholders})",
             ids,
+        )
+        self.conn.commit()
+
+    def log_quant_shadow(
+        self,
+        market_slug: str,
+        market_id: str | None,
+        asset: str,
+        timeframe: str,
+        gap_usd: float,
+        gap_z: float,
+        clob_yes: float,
+        realized_vol_per_min: float,
+        trend_score: float,
+        time_remaining_seconds: int,
+        phase: str,
+        quant_p_yes: float,
+        quant_action: str,
+        quant_edge: float,
+    ) -> int:
+        """Insert one quant shadow prediction row. Returns inserted id."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO quant_shadow_log
+                (market_slug, market_id, asset, timeframe,
+                 gap_usd, gap_z, clob_yes, realized_vol_per_min,
+                 trend_score, time_remaining_seconds, phase,
+                 quant_p_yes, quant_action, quant_edge, fired_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                market_slug, market_id, asset, timeframe,
+                gap_usd, gap_z, clob_yes, realized_vol_per_min,
+                trend_score, time_remaining_seconds, phase,
+                quant_p_yes, quant_action, quant_edge,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def settle_quant_shadow(
+        self,
+        row_id: int,
+        actual_outcome: str,
+        quant_correct: int | None,
+        v2_action: str | None,
+        v2_confidence: float | None,
+        v2_correct: int | None,
+    ) -> None:
+        """Update quant shadow row with settlement data."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE quant_shadow_log
+            SET actual_outcome=?, quant_correct=?, v2_action=?,
+                v2_confidence=?, v2_correct=?, telegram_sent=1
+            WHERE id=?
+            """,
+            (actual_outcome, quant_correct, v2_action, v2_confidence, v2_correct, row_id),
         )
         self.conn.commit()
 
