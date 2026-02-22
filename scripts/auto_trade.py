@@ -3345,9 +3345,12 @@ class AutoTrader:
             except Exception:
                 pass
 
-            # Build market_data dict
-            yes_price_raw = getattr(market, 'best_bid', None) or 0.5
-            yes_price = float(yes_price_raw)
+            # Build market_data dict — use live CLOB odds (not stale Gamma best_bid)
+            _live_5m_odds = self.realtime_odds_streamer.get_current_odds(market_id) if self.realtime_odds_streamer else None
+            if _live_5m_odds:
+                yes_price = float(_live_5m_odds.yes_odds)
+            else:
+                yes_price = float(getattr(market, 'best_bid', None) or 0.5)
             market_data = {
                 'market_id': market_id,
                 'slug': getattr(market, 'slug', market_id),
@@ -3359,7 +3362,10 @@ class AutoTrader:
                 'active': True,
             }
 
-            # Make AI decision — same call signature as sub-analyses in run_cycle()
+            # Make AI decision — raw_confidence=True bypasses _calculate_weighted_confidence
+            # and the timeframe modifier so the AI's direct output is stored as-is.
+            # This is informational only (not used for trade execution) so we want the
+            # undampened confidence for accurate V1 vs V2 comparison.
             decision = await self.ai_service.make_decision(
                 btc_price=btc_data,
                 technical_indicators=indicators,
@@ -3367,6 +3373,7 @@ class AutoTrader:
                 market_data=market_data,
                 timeframe_analysis=timeframe_analysis,
                 order_flow_signal=order_flow_signal,
+                raw_confidence=True,
             )
 
             # Store in memory (for future use as gate if accuracy proves good)

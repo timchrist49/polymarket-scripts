@@ -59,7 +59,8 @@ class AIDecisionService:
         market_signals: "Any | None" = None,  # NEW: CoinGecko Pro market signals
         contrarian_signal: ContrarianSignal | None = None,  # NEW: contrarian mean-reversion signal
         order_flow_signal: "Any | None" = None,  # NEW: CVD buy/sell pressure from Kraken
-        force_trade: bool = False  # NEW: TEST MODE - force YES/NO decision
+        force_trade: bool = False,  # NEW: TEST MODE - force YES/NO decision
+        raw_confidence: bool = False  # Skip _calculate_weighted_confidence post-processing
     ) -> TradingDecision:
         """Generate trading decision using AI with regime awareness, timeframe, arbitrage, and market signals."""
         try:
@@ -171,6 +172,14 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
                     ai_confidence=f"{decision.confidence:.1%}",
                     arbitrage_edge=f"{arbitrage_opportunity.edge_percentage:.1%}"
                 )
+            # raw_confidence=True: caller wants the AI's direct output without post-processing.
+            # Used by _run_5m_ai_analysis (informational/tracking only — not for trade execution)
+            # to avoid double-dampening that structurally caps V1 confidence at ~0.45.
+            elif raw_confidence and decision.action in ("YES", "NO"):
+                logger.info(
+                    "Skipping tiered signal weighting (raw_confidence mode)",
+                    ai_confidence=f"{decision.confidence:.1%}",
+                )
             # Apply weighted confidence calculation (tiered signal prioritization)
             # This prevents sentiment from overriding price reality
             elif decision.action in ("YES", "NO"):
@@ -220,7 +229,8 @@ Use reasoning tokens to analyze all signals carefully. Always return valid JSON.
                 decision.confidence = weighted_confidence
 
             # Apply timeframe confidence modifier if available
-            if timeframe_analysis:
+            # Skip when raw_confidence=True — the AI already factored timeframe alignment in.
+            if timeframe_analysis and not raw_confidence:
                 base_confidence = decision.confidence
                 modifier = timeframe_analysis.confidence_modifier
                 decision.confidence = min(base_confidence + modifier, 1.0)
