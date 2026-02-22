@@ -76,13 +76,33 @@ def build_prompt(
 ) -> str:
     """Build the AI analysis prompt with phase-weighted ensemble guidance."""
 
-    # Phase-dependent weight description for AI context.
-    # When CLOB is expired, promote gap signal since CLOB is unavailable.
+    # Phase + z-score tiered weight description for AI context.
+    #
+    # Key insight: a gap_z of 0.72 is NOT statistically meaningful — BTC has
+    # roughly a 47% chance of crossing back through PTB from noise alone. Giving
+    # a weak gap 60% weight causes the AI to confidently predict the wrong side.
+    # Weights now scale with how statistically decisive the gap is.
+    #
+    # Tiers:
+    #   z >= 2.0  → gap is near-certain (≥97.7%). Gap dominates.
+    #   1.0 ≤ z < 2.0 → gap is meaningful but not certain. Balanced.
+    #   z < 1.0   → gap is statistical noise. Trend + CLOB dominate.
+    abs_z = abs(gap_z)
     if phase == "late":
         if clob_expired:
-            weight_desc = "LATE PHASE: gap signal = 70% weight, trend prior = 20%, OFI = 10%  [CLOB unavailable]"
+            if abs_z >= 2.0:
+                weight_desc = "LATE PHASE: gap signal = 75% weight (z≥2 STRONG), trend prior = 15%, OFI = 10%  [CLOB unavailable]"
+            elif abs_z >= 1.0:
+                weight_desc = "LATE PHASE: gap signal = 45% weight (z moderate), trend prior = 35%, OFI = 20%  [CLOB unavailable]"
+            else:
+                weight_desc = "LATE PHASE: gap signal = 15% weight (z<1 WEAK — not statistically decisive), trend prior = 55%, OFI = 30%  [CLOB unavailable]"
         else:
-            weight_desc = "LATE PHASE: gap signal = 60% weight, CLOB = 20%, trend prior = 10%, OFI = 10%"
+            if abs_z >= 2.0:
+                weight_desc = "LATE PHASE: gap signal = 70% weight (z≥2 STRONG), CLOB = 20%, trend prior = 5%, OFI = 5%"
+            elif abs_z >= 1.0:
+                weight_desc = "LATE PHASE: gap signal = 40% weight (z moderate), CLOB = 30%, trend prior = 20%, OFI = 10%"
+            else:
+                weight_desc = "LATE PHASE: gap signal = 15% weight (z<1 WEAK — not statistically decisive), CLOB = 40%, trend prior = 30%, OFI = 15%"
     else:
         if clob_expired:
             weight_desc = "EARLY PHASE: gap signal = 40%, trend prior = 40%, OFI = 20%  [CLOB unavailable — no live market signal]"
@@ -115,15 +135,41 @@ def build_prompt(
     else:
         clob_note = f"  CLOB YES odds: {clob_yes:.2f}  [live market consensus]"
 
-    # Strong gap note: when z-score is high, gap direction is statistically
-    # dominant regardless of macro trend. The macro trend (EMA/RSI on 4H/1D)
-    # predicts multi-hour direction; it cannot override a near-certain current
-    # price position with only minutes remaining.
+    # Gap notes: communicate statistical strength of the gap to the AI.
+    # Strong gap (z≥2): nearly certain, macro trend cannot override.
+    # Weak gap (z<1): statistical noise — trend + CLOB must dominate.
+    # Conflict note: when trend actively opposes a weak gap, flag it explicitly.
     gap_note = ""
     if abs(gap_z) >= 2.0:
         direction = "ABOVE" if gap_z > 0 else "BELOW"
         implied_action = "YES" if gap_z > 0 else "NO"
-        gap_note = f"\n⚠️ STRONG GAP SIGNAL: z={gap_z:.2f} means BTC is {abs(gap_z):.1f}σ {direction} the price-to-beat with only {time_remaining_seconds}s left. The macro trend reflects multi-hour structure and must NOT override this statistical certainty. Lean strongly toward {implied_action}."
+        gap_note = (
+            f"\n⚠️ STRONG GAP SIGNAL: z={gap_z:.2f} means BTC is {abs(gap_z):.1f}σ {direction} "
+            f"the price-to-beat with only {time_remaining_seconds}s left. "
+            f"The macro trend reflects multi-hour structure and must NOT override this "
+            f"statistical certainty. Lean strongly toward {implied_action}."
+        )
+    elif abs(gap_z) < 1.0 and phase == "late":
+        # Weak gap in late phase: the gap is likely noise.
+        gap_direction_label = "YES territory (above PTB)" if gap_usd > 0 else "NO territory (below PTB)"
+        gap_note = (
+            f"\n⚠️ WEAK GAP SIGNAL: z={gap_z:.2f} < 1.0 — BTC is only ${abs(gap_usd):.0f} "
+            f"from the price-to-beat ({gap_direction_label}). This is NOT statistically "
+            f"significant: with {time_remaining_seconds}s and ${realized_vol_per_min:.1f}/min volatility, "
+            f"BTC can easily cross back. Do NOT over-weight the gap direction. "
+            f"CLOB consensus and macro trend are more predictive here."
+        )
+        # Add trend-gap conflict warning if trend opposes the gap.
+        gap_direction_sign = 1 if gap_usd > 0 else -1
+        if trend.trend_score * gap_direction_sign < -0.2:
+            trend_implied = "NO" if gap_usd > 0 else "YES"
+            gap_note += (
+                f"\n⚠️ TREND-GAP CONFLICT: Macro trend is {trend_direction} "
+                f"({trend.trend_score:+.2f}) but BTC is currently in "
+                f"{'YES' if gap_usd > 0 else 'NO'} territory. "
+                f"With a weak gap (z={gap_z:.2f}), the bearish trend is MORE predictive "
+                f"than the current gap position. Lean toward {trend_implied}."
+            )
 
     return f"""You are analyzing a Polymarket BTC prediction market. Output ONLY: YES or NO, then a confidence (0.0-1.0), then one sentence of reasoning.
 
