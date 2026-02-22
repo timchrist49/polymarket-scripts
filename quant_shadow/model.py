@@ -1,7 +1,8 @@
 """Logistic regression model for quant shadow service.
 
-Trains on ai_analysis_v2 table (134+ settled rows).
-Features: gap_z, clob_yes, trend_score, phase, gap_usd_abs, asset_code.
+Trains on quant_shadow_log table (288+ settled rows).
+Features: gap_z, clob_yes, trend_score, phase_bin, gap_usd_abs, asset_code,
+          realized_vol_per_min, time_remaining_seconds.
 Output: P(YES) → edge vs CLOB midpoint → action (YES / NO / HOLD).
 
 Edge formula:
@@ -10,9 +11,11 @@ Edge formula:
 
 Execute signal if edge > TAU (3%).
 
-New in v2 features:
-  gap_usd_abs — absolute USD gap; prevents inflated gap_z from near-zero vol
-  asset_code  — 0=BTC, 1=ETH, 2=SOL, 3=XRP; allows asset-specific calibration
+Features:
+  gap_usd_abs           — absolute USD gap; prevents inflated gap_z from near-zero vol
+  asset_code            — 0=BTC, 1=ETH, 2=SOL, 3=XRP; asset-specific calibration
+  realized_vol_per_min  — calibrated vol; directly captures noise floor
+  time_remaining_seconds — exact TTE; better than binary phase_bin alone
 """
 
 import pickle
@@ -33,7 +36,10 @@ SPREAD_HALF = 0.01  # assumed half-spread cost (1 cent)
 
 # Asset code mapping: used in both training and inference
 ASSET_CODES = {"btc": 0, "eth": 1, "sol": 2, "xrp": 3}
-FEATURE_NAMES = ["gap_z", "clob_yes", "trend_score", "phase_bin", "gap_usd_abs", "asset_code"]
+FEATURE_NAMES = [
+    "gap_z", "clob_yes", "trend_score", "phase_bin",
+    "gap_usd_abs", "asset_code", "realized_vol_per_min", "time_remaining_seconds",
+]
 
 
 def _slug_to_asset_code(slug: str) -> float:
@@ -45,22 +51,24 @@ def _slug_to_asset_code(slug: str) -> float:
 
 
 def _load_training_data(db_path: str = "data/performance.db") -> tuple[np.ndarray, np.ndarray]:
-    """Load and prepare training data from ai_analysis_v2 table.
+    """Load and prepare training data from quant_shadow_log table.
 
-    Features (6):
-      gap_z         — normalized gap between current price and PTB
-      clob_yes      — CLOB midpoint probability of YES
-      trend_score   — macro trend signal
-      phase_bin     — 1=late, 0=early
-      gap_usd_abs   — absolute USD gap (captures noise-floor reliability)
-      asset_code    — 0=BTC, 1=ETH, 2=SOL, 3=XRP (asset-specific calibration)
+    Features (8):
+      gap_z                 — normalized gap between current price and PTB
+      clob_yes              — CLOB midpoint probability of YES
+      trend_score           — macro trend signal
+      phase_bin             — 1=late, 0=early
+      gap_usd_abs           — absolute USD gap (captures noise-floor reliability)
+      asset_code            — 0=BTC, 1=ETH, 2=SOL, 3=XRP (asset-specific calibration)
+      realized_vol_per_min  — calibrated vol per minute; directly measures noise floor
+      time_remaining_seconds — exact time-to-expiry (more precise than binary phase)
     """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT gap_z, clob_yes, trend_score, phase, actual_outcome,
-               gap_usd, market_slug
-        FROM ai_analysis_v2
+               gap_usd, realized_vol_per_min, time_remaining_seconds, asset
+        FROM quant_shadow_log
         WHERE actual_outcome IS NOT NULL
           AND gap_z IS NOT NULL
           AND clob_yes IS NOT NULL
@@ -74,13 +82,15 @@ def _load_training_data(db_path: str = "data/performance.db") -> tuple[np.ndarra
         raise ValueError(f"Insufficient training data: {len(rows)} rows (need ≥50)")
 
     X, y = [], []
-    for gap_z, clob_yes, trend_score, phase, outcome, gap_usd, market_slug in rows:
+    for gap_z, clob_yes, trend_score, phase, outcome, gap_usd, rvpm, tte_secs, asset in rows:
         phase_bin = 1.0 if phase == "late" else 0.0
         gap_usd_abs = abs(float(gap_usd)) if gap_usd is not None else 0.0
-        asset_code = _slug_to_asset_code(market_slug or "")
+        asset_code = float(ASSET_CODES.get(asset or "", 0))
+        rvpm_val = float(rvpm) if rvpm is not None else 0.0
+        tte_val = float(tte_secs) if tte_secs is not None else 120.0
         X.append([
             float(gap_z), float(clob_yes), float(trend_score), phase_bin,
-            gap_usd_abs, asset_code,
+            gap_usd_abs, asset_code, rvpm_val, tte_val,
         ])
         y.append(1 if outcome == "YES" else 0)
 
@@ -89,7 +99,7 @@ def _load_training_data(db_path: str = "data/performance.db") -> tuple[np.ndarra
 
 
 def train_and_save(db_path: str = "data/performance.db") -> dict:
-    """Train logistic regression on ai_analysis_v2 data and save to disk.
+    """Train logistic regression on quant_shadow_log data and save to disk.
 
     Returns metadata dict: {n_rows, pos_rate, coef}.
     """
@@ -147,12 +157,16 @@ def predict(
     phase: str,
     gap_usd_abs: float = 0.0,
     asset_code: int = 0,
+    realized_vol_per_min: float = 0.0,
+    time_remaining_seconds: int = 120,
 ) -> tuple[float, str, float]:
     """Predict P(YES), action, and edge.
 
     Args:
-        gap_usd_abs — absolute USD gap (new feature; default 0.0 for backward compat)
-        asset_code  — 0=BTC, 1=ETH, 2=SOL, 3=XRP (new feature; default 0 for BTC)
+        gap_usd_abs           — absolute USD gap (default 0.0 for backward compat)
+        asset_code            — 0=BTC, 1=ETH, 2=SOL, 3=XRP (default 0 for BTC)
+        realized_vol_per_min  — calibrated vol; captures noise floor (default 0.0)
+        time_remaining_seconds — exact TTE in seconds (default 120)
 
     Returns:
         p_yes   — model's estimated probability of YES outcome
@@ -163,6 +177,7 @@ def predict(
     X = np.array([[
         float(gap_z), float(clob_yes), float(trend_score), phase_bin,
         float(gap_usd_abs), float(asset_code),
+        float(realized_vol_per_min), float(time_remaining_seconds),
     ]])
     X_scaled = scaler.transform(X)
     p_yes = float(model.predict_proba(X_scaled)[0][1])

@@ -52,6 +52,8 @@ from AI_analysis_upgrade.ai_analysis_v2 import run_analysis, V2Prediction
 from AI_analysis_upgrade.trend_analyzer import AssetTrendAnalyzer
 from AI_analysis_upgrade import config as ai_config
 
+from quant_shadow.model import load_model as quant_load_model, predict as quant_predict, ASSET_CODES as QUANT_ASSET_CODES
+
 app = typer.Typer(help="V2 Multi-Asset Trading Bot")
 logger = structlog.get_logger()
 
@@ -96,6 +98,10 @@ MIN_GAP_USD_REQUIRED: dict[str, float] = {
 # outputs NO@92% on a $0.10 gap (which was trade 1555's CLOB signal).
 CLOB_VETO_THRESHOLD = 0.75         # CLOB vs V2 disagreement threshold
 CLOB_VETO_GAP_Z_OVERRIDE = 2.5    # |gap_z| above which CLOB veto is ignored
+
+# Inline quant gate: skip V2 trade when quant model disagrees with V2 direction
+# and |gap_z| < this threshold. HOLD = no opinion, V2 leads.
+QUANT_DISAGREE_GAP_Z_OVERRIDE = 2.5
 
 # Seconds to wait between settlement checks
 SETTLEMENT_INTERVAL_SECONDS = 120
@@ -253,6 +259,7 @@ class MarketMonitor:
         risk_manager: RiskManager,
         order_verifier: OrderVerifier,
         dry_run: bool = False,
+        quant_model_container: Optional[dict] = None,
     ):
         self.asset = asset
         self.timeframe = timeframe
@@ -271,6 +278,7 @@ class MarketMonitor:
         self.risk_manager = risk_manager
         self.order_verifier = order_verifier
         self.dry_run = dry_run
+        self.quant_model_container = quant_model_container or {}
 
         # Track markets we've already traded this session (no double-entry)
         self._traded_market_ids: set[str] = set()
@@ -794,21 +802,69 @@ class MarketMonitor:
                         )
 
                     else:
-                        logger.info(
-                            f"{self.label} ALL FILTERS PASSED — executing",
-                            action=prediction.action,
-                            confidence=f"{prediction.confidence:.0%}",
-                            gap_usd=f"{gap_usd:+.4f}",
-                            gap_z=f"{prediction.gap_z:.2f}",
-                        )
-                        await self._execute_trade(
-                            market=market,
-                            prediction=prediction,
-                            current_price=current_price,
-                            ptb=ptb,
-                            clob_yes=clob_yes,
-                            time_remaining=time_remaining,
-                        )
+                        # ── Layer 3: Inline quant gate ─────────────────────
+                        # Run quant model inline. Skip if quant disagrees with
+                        # V2 direction AND |gap_z| < 2.5σ (not conclusive).
+                        # HOLD = no strong opinion → V2 leads → execute.
+                        # On any error → fail open (execute anyway).
+                        _quant_block = False
+                        if self.quant_model_container.get("model") is not None:
+                            try:
+                                _q_p, _q_action, _q_edge = quant_predict(
+                                    self.quant_model_container["model"],
+                                    self.quant_model_container["scaler"],
+                                    prediction.gap_z,
+                                    clob_yes,
+                                    trend.trend_score,
+                                    prediction.phase,
+                                    gap_usd_abs=gap_usd_abs,
+                                    asset_code=float(QUANT_ASSET_CODES.get(self.asset, 0)),
+                                    realized_vol_per_min=realized_vol,
+                                    time_remaining_seconds=time_remaining,
+                                )
+                                _quant_disagrees = (
+                                    _q_action != prediction.action
+                                    and _q_action != "HOLD"
+                                    and abs(prediction.gap_z) < QUANT_DISAGREE_GAP_Z_OVERRIDE
+                                )
+                                if _quant_disagrees:
+                                    logger.info(
+                                        f"{self.label} SKIP — quant gate: model disagrees",
+                                        v2_action=prediction.action,
+                                        quant_action=_q_action,
+                                        quant_p_yes=f"{_q_p:.2f}",
+                                        gap_z=f"{prediction.gap_z:.2f}",
+                                    )
+                                    _quant_block = True
+                                else:
+                                    logger.info(
+                                        f"{self.label} quant gate: OK",
+                                        quant_action=_q_action,
+                                        quant_p_yes=f"{_q_p:.2f}",
+                                        quant_agrees=(not _quant_disagrees),
+                                    )
+                            except Exception as _qe:
+                                logger.warning(
+                                    f"{self.label} quant gate error — bypassing",
+                                    error=str(_qe),
+                                )
+
+                        if not _quant_block:
+                            logger.info(
+                                f"{self.label} ALL FILTERS PASSED — executing",
+                                action=prediction.action,
+                                confidence=f"{prediction.confidence:.0%}",
+                                gap_usd=f"{gap_usd:+.4f}",
+                                gap_z=f"{prediction.gap_z:.2f}",
+                            )
+                            await self._execute_trade(
+                                market=market,
+                                prediction=prediction,
+                                current_price=current_price,
+                                ptb=ptb,
+                                clob_yes=clob_yes,
+                                time_remaining=time_remaining,
+                            )
                 else:
                     logger.info(
                         f"{self.label} confidence below threshold — no trade",
@@ -894,6 +950,7 @@ class AutoTraderV2:
             asset_services=self.asset_services,
         )
 
+        self.quant_model_container: dict = {}
         self.background_tasks: list[asyncio.Task] = []
 
     async def _initialize(self) -> None:
@@ -909,6 +966,14 @@ class AutoTraderV2:
         for asset, svc in self.asset_services.items():
             await svc.start()
             logger.info(f"{asset.upper()} CoinGecko price service started", price=svc._current_price)
+
+        # Load quant model for inline gate (Layer 3)
+        try:
+            _qm, _qs = quant_load_model()
+            self.quant_model_container = {"model": _qm, "scaler": _qs}
+            logger.info("Quant model loaded for inline gate")
+        except Exception as _qe:
+            logger.warning("Quant model unavailable — inline gate disabled", error=str(_qe))
 
         logger.info(
             "V2 bot initialized",
@@ -961,6 +1026,7 @@ class AutoTraderV2:
                 risk_manager=self.risk_manager,
                 order_verifier=self.order_verifier,
                 dry_run=self.dry_run,
+                quant_model_container=self.quant_model_container,
             )
             task = asyncio.create_task(monitor.run_loop(), name=f"v2_{asset}_{timeframe}")
             self.background_tasks.append(task)

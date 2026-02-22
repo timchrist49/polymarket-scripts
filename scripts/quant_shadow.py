@@ -261,6 +261,8 @@ class QuantShadowMonitor:
             gap_z, clob_yes, trend_score, phase,
             gap_usd_abs=abs(gap_usd),
             asset_code=asset_code,
+            realized_vol_per_min=vol,
+            time_remaining_seconds=time_remaining,
         )
 
         logger.info(
@@ -433,7 +435,7 @@ async def retrain_loop(model_container: dict, db: PerformanceDatabase, telegram)
             # Count settled rows in training source
             cursor = db.conn.cursor()
             cursor.execute(
-                "SELECT COUNT(*) FROM ai_analysis_v2 WHERE actual_outcome IS NOT NULL"
+                "SELECT COUNT(*) FROM quant_shadow_log WHERE actual_outcome IS NOT NULL"
             )
             current_n = cursor.fetchone()[0]
 
@@ -537,7 +539,7 @@ async def main() -> None:
     # Shared container — retrain_loop mutates this in place, monitors read from it
     _model, _scaler = load_model()
     cursor = db.conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM ai_analysis_v2 WHERE actual_outcome IS NOT NULL")
+    cursor.execute("SELECT COUNT(*) FROM quant_shadow_log WHERE actual_outcome IS NOT NULL")
     _n_rows = cursor.fetchone()[0]
     model_container = {"model": _model, "scaler": _scaler, "n_rows": _n_rows}
 
