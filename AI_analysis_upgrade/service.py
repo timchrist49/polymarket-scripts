@@ -8,6 +8,7 @@ Polls production DB every 30s for:
 """
 import asyncio
 import sqlite3
+import time
 import structlog
 import aiohttp
 
@@ -72,16 +73,25 @@ async def analysis_loop(
         # gap_usd = btc_price - ptb: positive = BTC ABOVE PTB = YES territory
         gap_usd = btc_price - ptb if ptb > 0 else 0.0
 
-        # If CLOB is unavailable (expired market), use v1's confidence as proxy
-        # so the AI still has a meaningful market signal
-        if clob_yes == 0.5:
+        # Detect expired CLOB: expired markets return ~0.01-0.05, not 0.5.
+        # In both cases (exact 0.5 default or near-zero expired), use V1's
+        # confidence as a proxy so the AI doesn't treat clob=0.01 as "99% NO."
+        clob_expired = clob_yes <= 0.05 or clob_yes == 0.5
+        if clob_expired:
             v1_action = row.get("action", "")
             v1_conf = float(row.get("confidence") or 0.5)
             clob_yes = v1_conf if v1_action == "YES" else (1.0 - v1_conf)
 
-        # Estimated time remaining: conservative 3 minutes
-        # (v2 fires as soon as v1 fires; both happen ~3-5 min before close)
-        time_remaining_seconds = 180
+        # Compute actual time remaining from market slug timestamp.
+        # Slug format: btc-updown-5m-{unix_ts} or btc-updown-15m-{unix_ts}
+        # V1 fires ~3 min before close; V2 polls 30s later → ~150s remaining.
+        try:
+            slug_ts = int((row.get("market_slug") or "").split("-")[-1])
+            time_remaining_seconds = max(0, slug_ts - int(time.time()))
+            if time_remaining_seconds == 0:
+                time_remaining_seconds = 30  # already settled, use minimum
+        except (ValueError, IndexError):
+            time_remaining_seconds = 180  # fallback if slug can't be parsed
 
         # Realized vol: default $15/min (typical for 5-15 min BTC windows)
         realized_vol_per_min = 15.0
@@ -101,6 +111,7 @@ async def analysis_loop(
             cpi=cpi,
             volume_spike=volume_spike,
             funding_rate=funding_rate,
+            clob_expired=clob_expired,
         )
 
         db.save_v2_prediction(
@@ -130,6 +141,8 @@ async def analysis_loop(
             v2=prediction.action,
             confidence=f"{prediction.confidence:.2f}",
             rule=prediction.hard_rule or "AI",
+            clob_expired=clob_expired,
+            t_rem=time_remaining_seconds,
         )
 
 

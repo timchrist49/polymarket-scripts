@@ -72,14 +72,22 @@ def build_prompt(
     cpi: Optional[float] = None,
     volume_spike: Optional[float] = None,
     funding_rate: Optional[float] = None,
+    clob_expired: bool = False,
 ) -> str:
     """Build the AI analysis prompt with phase-weighted ensemble guidance."""
 
-    # Phase-dependent weight description for AI context
+    # Phase-dependent weight description for AI context.
+    # When CLOB is expired, promote gap signal since CLOB is unavailable.
     if phase == "late":
-        weight_desc = "LATE PHASE: gap signal = 60% weight, CLOB = 20%, trend prior = 10%, OFI = 10%"
+        if clob_expired:
+            weight_desc = "LATE PHASE: gap signal = 70% weight, trend prior = 20%, OFI = 10%  [CLOB unavailable]"
+        else:
+            weight_desc = "LATE PHASE: gap signal = 60% weight, CLOB = 20%, trend prior = 10%, OFI = 10%"
     else:
-        weight_desc = "EARLY PHASE: trend prior = 35%, CLOB = 30%, OFI = 20%, gap signal = 15%"
+        if clob_expired:
+            weight_desc = "EARLY PHASE: gap signal = 40%, trend prior = 40%, OFI = 20%  [CLOB unavailable — no live market signal]"
+        else:
+            weight_desc = "EARLY PHASE: trend prior = 35%, CLOB = 30%, OFI = 20%, gap signal = 15%"
 
     trend_direction = "BULLISH" if trend.trend_score > 0.1 else ("BEARISH" if trend.trend_score < -0.1 else "NEUTRAL")
     fg_label = "Greed" if trend.fear_greed > 55 else ("Fear" if trend.fear_greed < 45 else "Neutral")
@@ -101,20 +109,36 @@ def build_prompt(
         cg_lines.append(f"  Funding rate: {funding_rate:+.4f}%  [extreme — crowded positioning]")
     coingecko_section = "\nCOINGECKO SIGNALS:\n" + "\n".join(cg_lines) if cg_lines else ""
 
+    # CLOB note: warn when market has expired
+    if clob_expired:
+        clob_note = f"  CLOB YES odds: {clob_yes:.2f}  ⚠️ ESTIMATED — market has expired, live CLOB unavailable. Treat as rough proxy from V1 prediction, not a live market signal."
+    else:
+        clob_note = f"  CLOB YES odds: {clob_yes:.2f}  [live market consensus]"
+
+    # Strong gap note: when z-score is high, gap direction is statistically
+    # dominant regardless of macro trend. The macro trend (EMA/RSI on 4H/1D)
+    # predicts multi-hour direction; it cannot override a near-certain current
+    # price position with only minutes remaining.
+    gap_note = ""
+    if abs(gap_z) >= 2.0:
+        direction = "ABOVE" if gap_z > 0 else "BELOW"
+        implied_action = "YES" if gap_z > 0 else "NO"
+        gap_note = f"\n⚠️ STRONG GAP SIGNAL: z={gap_z:.2f} means BTC is {abs(gap_z):.1f}σ {direction} the price-to-beat with only {time_remaining_seconds}s left. The macro trend reflects multi-hour structure and must NOT override this statistical certainty. Lean strongly toward {implied_action}."
+
     return f"""You are analyzing a Polymarket BTC prediction market. Output ONLY: YES or NO, then a confidence (0.0-1.0), then one sentence of reasoning.
 
 MARKET: {market_slug}
 TIME REMAINING: {time_remaining_seconds}s
 PHASE: {phase.upper()} — {weight_desc}
-
+{gap_note}
 BTC CONTEXT:
   Current price: ${btc_price:,.2f}
   Price-to-beat: ${ptb:,.2f}
   Gap (btc - ptb): ${gap_usd:+.2f}  [positive = BTC ABOVE target (YES territory), negative = BTC BELOW target (NO territory)]
-  Gap z-score: {gap_z:.2f}  [positive = above target, negative = below target]
+  Gap z-score: {gap_z:.2f}  [|z|>2 = statistically strong; macro trend is irrelevant at this level]
   Realized vol/min: ${realized_vol_per_min:.2f}
 
-MACRO TREND (multi-timeframe):
+MACRO TREND (multi-timeframe) — context for early phase, not a veto on clear gap signals:
   Trend score: {trend.trend_score:+.2f}  [-1=strongly bearish, +1=strongly bullish]
   Direction: {trend_direction}
   5m score: {tf_5m:+.2f} | 15m: {tf_15m:+.2f} | 1H: {tf_1h:+.2f} | 4H: {tf_4h:+.2f} | 1D: {tf_1d:+.2f}
@@ -122,7 +146,7 @@ MACRO TREND (multi-timeframe):
   Regime-adaptive prior P(YES): {trend.p_yes_prior:.2f}{coingecko_section}
 
 MARKET SIGNAL:
-  CLOB YES odds: {clob_yes:.2f}
+{clob_note}
 
 TASK: Using the weighted ensemble for the {phase.upper()} phase, predict whether BTC will be
 ABOVE the price-to-beat at market close.
@@ -150,6 +174,7 @@ async def run_analysis(
     cpi: Optional[float] = None,
     volume_spike: Optional[float] = None,
     funding_rate: Optional[float] = None,
+    clob_expired: bool = False,
 ) -> V2Prediction:
     """Run v2 analysis for one market. Returns a prediction."""
 
@@ -171,6 +196,7 @@ async def run_analysis(
         cpi=cpi,
         volume_spike=volume_spike,
         funding_rate=funding_rate,
+        clob_expired=clob_expired,
     )
 
     try:
