@@ -7,8 +7,10 @@ Polls production DB every 30s for:
   2. Settled markets not yet compared → sends Telegram comparison alert
 """
 import asyncio
+import calendar
 import sqlite3
 import time
+from datetime import datetime
 import structlog
 import aiohttp
 
@@ -82,21 +84,30 @@ async def analysis_loop(
             v1_conf = float(row.get("confidence") or 0.5)
             clob_yes = v1_conf if v1_action == "YES" else (1.0 - v1_conf)
 
+        market_duration = 900 if row.get("bot_type") == "15m" else 300
+
         # Compute actual time remaining from market slug timestamp.
         # Slug format: btc-updown-5m-{unix_ts} or btc-updown-15m-{unix_ts}
-        # V1 fires ~3 min before close; V2 polls 30s later → ~150s remaining.
+        # IMPORTANT: slug_ts is the market START time, not close time.
+        # market_close = slug_ts + duration (300s for 5m, 900s for 15m)
+        # time_remaining = market_close - fired_at (when V1 actually ran)
         try:
             slug_ts = int((row.get("market_slug") or "").split("-")[-1])
-            time_remaining_seconds = max(0, slug_ts - int(time.time()))
-            if time_remaining_seconds == 0:
-                time_remaining_seconds = 30  # already settled, use minimum
+            market_close = slug_ts + market_duration
+            # Parse fired_at ISO string (e.g. "2026-02-22T01:37:29.737659")
+            fired_at_str = row.get("fired_at")
+            if fired_at_str:
+                s = str(fired_at_str).replace("T", " ").split(".")[0]
+                dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+                fired_at_unix = calendar.timegm(dt.timetuple())
+                time_remaining_seconds = max(30, market_close - fired_at_unix)
+            else:
+                time_remaining_seconds = max(30, market_close - int(time.time()))
         except (ValueError, IndexError):
             time_remaining_seconds = 180  # fallback if slug can't be parsed
 
         # Realized vol: default $15/min (typical for 5-15 min BTC windows)
         realized_vol_per_min = 15.0
-
-        market_duration = 900 if row.get("bot_type") == "15m" else 300
 
         prediction = await run_analysis(
             market_slug=market_slug,
