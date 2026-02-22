@@ -1626,8 +1626,12 @@ class AutoTrader:
                 market_signals_confidence=market_signals.confidence if market_signals else None
             )
 
-            # Apply conflict analysis — no longer auto-hold, apply large penalty instead
-            if conflict_analysis.should_hold:
+            # Apply conflict analysis — no longer auto-hold, apply large penalty instead.
+            # Skip for sub-analyses: they're information gathering, not execution decisions.
+            # Sub-analyses with heavily penalized confidence produce a near-zero meta average,
+            # which prevents any trade. The penalty was designed to block bad real-time trades,
+            # not to suppress sub-analysis signals used later by meta-analysis.
+            if conflict_analysis.should_hold and not is_sub_analysis:
                 original_conf = decision.confidence
                 decision.confidence = max(0.0, decision.confidence - 0.30)
                 logger.info(
@@ -1647,7 +1651,7 @@ class AutoTrader:
                 arbitrage_opportunity is not None and
                 arbitrage_opportunity.edge_percentage >= self.settings.arbitrage_high_edge_pct
             )
-            if conflict_analysis.confidence_penalty != 0.0:
+            if conflict_analysis.confidence_penalty != 0.0 and not is_sub_analysis:
                 if arb_is_high_urgency and not conflict_analysis.should_hold:
                     logger.info(
                         "Conflict penalty bypassed — high-urgency arbitrage edge supersedes minor signal conflicts",
@@ -2796,7 +2800,7 @@ class AutoTrader:
             self.META_ANALYSIS_WINDOW_SECONDS = 20
             self.TIMED_ENTRY_WINDOW_SECONDS = 60         # Last 60s (<=60s remaining)
             self.TIMING_WATCHER_INTERVAL_SECONDS = 5
-            self.MIN_BTC_MOVEMENT_USD = 10
+            self.MIN_BTC_MOVEMENT_USD = 5
             self.FAST_CHECK_STALE_THRESHOLD = 60
             self.PRICE_WATCHER_MAX_CACHE_SECONDS = 40
             self.CLOB_SNAPSHOT_AT_SECONDS = 60           # CLOB snapshot at T=1min
@@ -2806,8 +2810,8 @@ class AutoTrader:
                 duration_seconds=300,
                 strategy="CLOB snapshot T=1min → execute last 60s with probability agreement",
                 entry_window="last 60s (<=60s remaining)",
-                min_confidence=0.85,
-                min_yes_movement_usd=10,
+                min_confidence=0.80,
+                min_yes_movement_usd=self.MIN_BTC_MOVEMENT_USD,
             )
         else:
             # 15-minute market profile (class defaults — already set)
@@ -3580,10 +3584,10 @@ class AutoTrader:
                                                         _t_b = max(time_remaining or 10, 5)
                                                         _exp_move_b = _range_b * _math_b.sqrt(_t_b / 900)
                                                         _z_b = _gap_b / _exp_move_b if _exp_move_b > 0 else 0
-                                                        PATH_B_Z_THRESHOLD = 1.8
+                                                        PATH_B_Z_THRESHOLD = 1.2
                                                         if _z_b >= PATH_B_Z_THRESHOLD:
                                                             _path_b_ok = True
-                                                            _gap_conf_b = min(0.70 + (_z_b - 1.8) * 0.05, 0.90)
+                                                            _gap_conf_b = min(0.70 + (_z_b - 1.2) * 0.05, 0.90)
                                                             stored['_path_b_confirmed'] = True
                                                             logger.info(
                                                                 "5m PATH-B: Gap certainty — executing despite flat BTC",
@@ -3634,6 +3638,37 @@ class AutoTrader:
                                 #   momentum_strength: BTC move size normalized to $50 [0,1]
                                 # Formula: 0.70 + 0.15*clob + 0.15*momentum → [0.70, 1.00]
                                 if not _path_b_ok:
+                                    # Exhausted momentum guard (Path A only).
+                                    #
+                                    # Problem: if CLOB at T=1min snapshot was weak (< 75%), the entire
+                                    # directional move built AFTER the snapshot — a "priced-in" position.
+                                    # Smart participants who took early positions are now taking profits
+                                    # in the final 60s, creating mean-reversion pressure right at close.
+                                    #
+                                    # Example: snapshot NO=60% → builds to 85% over 3 min → BTC reverses
+                                    # in the last 5 seconds. The 85% CLOB reflected an exhausted move,
+                                    # not fresh momentum. All sellers were already in; no one was left.
+                                    #
+                                    # Fix: if snapshot CLOB was weak (< 75%), only execute when
+                                    # execution CLOB is extreme (>= 88%) — meaning genuine conviction
+                                    # was reached, not just slow accumulation over 3 minutes.
+                                    _snap_clob = stored.get('snapshot_clob_odds', 0.5)
+                                    _SNAP_STRONG_MIN = 0.75   # snapshot must show real conviction at T=1min
+                                    _EXEC_MIN_WEAK   = 0.88   # weak snapshot → need extreme execution CLOB
+
+                                    if _snap_clob < _SNAP_STRONG_MIN and current_odds < _EXEC_MIN_WEAK:
+                                        logger.info(
+                                            "5m timed entry skipped — exhausted momentum: "
+                                            "snapshot CLOB was weak, move already priced in",
+                                            market_id=market_id,
+                                            snapshot_clob=f"{_snap_clob:.1%}",
+                                            snapshot_threshold=f"{_SNAP_STRONG_MIN:.0%}",
+                                            current_clob=f"{current_odds:.1%}",
+                                            required_clob=f"{_EXEC_MIN_WEAK:.0%}",
+                                            micro_delta=f"${_micro_delta:+.0f}",
+                                        )
+                                        continue
+
                                     _clob_str = min((current_odds - self.TIMED_ENTRY_ODDS_MIN) / 0.20, 1.0)
                                     _mom_str  = min(abs(_micro_delta) / 50.0, 1.0)
                                     _comp_conf = 0.70 + 0.15 * _clob_str + 0.15 * _mom_str
@@ -3783,10 +3818,23 @@ class AutoTrader:
                                     max_time=GAP_ONLY_MAX_TIME,
                                 )
                                 continue
-                            # Require slightly higher CLOB floor (75% vs 70%)
+                            # Require slightly higher CLOB floor (75% vs 70%).
+                            # IMPORTANT: use live CLOB to determine direction, not meta action.
+                            # Meta confidence was < 0.70 (possibly decided by a tiny margin like
+                            # 0.19 NO vs 0.17 YES). If CLOB YES = 0.97, trust CLOB over meta.
                             GAP_ONLY_CLOB_MIN = 0.75
-                            if current_odds < GAP_ONLY_CLOB_MIN:
-                                continue
+                            _clob_live_gc = self.realtime_streamer.get_current_odds(market_id)
+                            if _clob_live_gc:
+                                if _clob_live_gc.yes_odds >= GAP_ONLY_CLOB_MIN:
+                                    action = "YES"
+                                    current_odds = _clob_live_gc.yes_odds
+                                elif _clob_live_gc.no_odds >= GAP_ONLY_CLOB_MIN:
+                                    action = "NO"
+                                    current_odds = _clob_live_gc.no_odds
+                                else:
+                                    continue  # neither side meets the floor
+                            else:
+                                continue  # no live CLOB available
                             # Compute gap z-score
                             try:
                                 _slug_gap = getattr(stored.get('market'), 'slug', '') or ''
