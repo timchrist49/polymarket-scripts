@@ -80,6 +80,23 @@ AI_TRIGGER_ELAPSED = {"5m": 180, "15m": 720}
 # Execute only when V2 AI confidence >= this threshold
 V2_CONFIDENCE_THRESHOLD = 0.90
 
+# Minimum absolute USD gap required per asset before trading.
+# Prevents "inflated gap_z" false signals on flat markets (e.g. SOL $0.10
+# gap producing gap_z=-2.40 because realized_vol≈0 → 92% false confidence).
+# Trade 1555 (SOL gap=$0.10, gap_z=-2.40) would have been blocked.
+MIN_GAP_USD_REQUIRED: dict[str, float] = {
+    "btc": 15.0,   # $15 minimum gap  ($67k asset, ~0.02%)
+    "eth": 2.00,   # $2  minimum gap  ($1900 asset, ~0.10%)
+    "sol": 0.25,   # $0.25 minimum gap ($84 asset,  ~0.30%)
+    "xrp": 0.03,   # $0.03 minimum gap ($1.40 asset, ~2.1%)
+}
+
+# CLOB contradiction veto: skip when CLOB strongly disagrees with V2 direction
+# and gap_z is not conclusive.  Catches the case where clob=77% YES but V2
+# outputs NO@92% on a $0.10 gap (which was trade 1555's CLOB signal).
+CLOB_VETO_THRESHOLD = 0.75         # CLOB vs V2 disagreement threshold
+CLOB_VETO_GAP_Z_OVERRIDE = 2.5    # |gap_z| above which CLOB veto is ignored
+
 # Seconds to wait between settlement checks
 SETTLEMENT_INTERVAL_SECONDS = 120
 
@@ -737,18 +754,61 @@ class MarketMonitor:
                 # ── 7. Execute if confidence >= threshold ──────────────────
                 if prediction.action in ("YES", "NO") and prediction.confidence >= V2_CONFIDENCE_THRESHOLD:
                     logger.info(
-                        f"{self.label} CONFIDENCE THRESHOLD MET — executing",
+                        f"{self.label} CONFIDENCE THRESHOLD MET — checking filters",
                         action=prediction.action,
                         confidence=f"{prediction.confidence:.0%}",
                     )
-                    await self._execute_trade(
-                        market=market,
-                        prediction=prediction,
-                        current_price=current_price,
-                        ptb=ptb,
-                        clob_yes=clob_yes,
-                        time_remaining=time_remaining,
-                    )
+
+                    # ── Layer 1: Minimum absolute USD gap ──────────────────
+                    # Prevents inflated gap_z from near-zero realized_vol
+                    # dividing a tiny USD gap (the trade 1555 failure mode).
+                    gap_usd_abs = abs(gap_usd)
+                    min_gap = MIN_GAP_USD_REQUIRED.get(self.asset, 0.0)
+                    if gap_usd_abs < min_gap:
+                        logger.info(
+                            f"{self.label} SKIP — gap_usd below noise floor",
+                            gap_usd=f"{gap_usd:+.4f}",
+                            min_required=f"{min_gap:.4f}",
+                            gap_z=f"{prediction.gap_z:.2f}",
+                            asset=self.asset,
+                        )
+
+                    # ── Layer 2: CLOB contradiction veto ───────────────────
+                    # If CLOB strongly disagrees with our direction and gap_z
+                    # is not conclusively large, defer to market consensus.
+                    elif (
+                        (prediction.action == "NO"
+                         and clob_yes > CLOB_VETO_THRESHOLD
+                         and abs(prediction.gap_z) < CLOB_VETO_GAP_Z_OVERRIDE)
+                        or
+                        (prediction.action == "YES"
+                         and clob_yes < (1.0 - CLOB_VETO_THRESHOLD)
+                         and abs(prediction.gap_z) < CLOB_VETO_GAP_Z_OVERRIDE)
+                    ):
+                        logger.info(
+                            f"{self.label} SKIP — CLOB contradicts V2 direction",
+                            v2_action=prediction.action,
+                            clob_yes=f"{clob_yes:.2f}",
+                            gap_z=f"{prediction.gap_z:.2f}",
+                            veto_threshold=f"{CLOB_VETO_THRESHOLD:.2f}",
+                        )
+
+                    else:
+                        logger.info(
+                            f"{self.label} ALL FILTERS PASSED — executing",
+                            action=prediction.action,
+                            confidence=f"{prediction.confidence:.0%}",
+                            gap_usd=f"{gap_usd:+.4f}",
+                            gap_z=f"{prediction.gap_z:.2f}",
+                        )
+                        await self._execute_trade(
+                            market=market,
+                            prediction=prediction,
+                            current_price=current_price,
+                            ptb=ptb,
+                            clob_yes=clob_yes,
+                            time_remaining=time_remaining,
+                        )
                 else:
                     logger.info(
                         f"{self.label} confidence below threshold — no trade",

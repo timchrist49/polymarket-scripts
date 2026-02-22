@@ -22,8 +22,10 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+load_dotenv()  # Load .env before any service reads env vars
 
 from polymarket.client import PolymarketClient, ASSET_COINGECKO_IDS
 from polymarket.config import Settings
@@ -37,6 +39,11 @@ from AI_analysis_upgrade.ai_analysis_v2 import compute_gap_z, get_phase
 from quant_shadow.model import load_model, predict as quant_predict
 
 logger = structlog.get_logger()
+
+# Semaphore: limit concurrent CLOB orderbook calls to 2 at a time.
+# All 8 monitors fire simultaneously at trigger time, causing connection resets
+# (errno=0) if all 8 hit clob.polymarket.com in the same millisecond.
+_clob_semaphore: asyncio.Semaphore  # initialised in main() after event loop starts
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -69,8 +76,7 @@ class QuantShadowMonitor:
         trend_analyzers: dict,
         db: PerformanceDatabase,
         telegram: Optional[TelegramBot],
-        model,
-        scaler,
+        model_container: dict,
     ):
         self.asset = asset
         self.timeframe = timeframe
@@ -84,8 +90,7 @@ class QuantShadowMonitor:
         self.trend_analyzers = trend_analyzers
         self.db = db
         self.telegram = telegram
-        self.model = model
-        self.scaler = scaler
+        self.model_container = model_container  # shared dict; retrain_loop updates in place
 
         self._analyzed_markets: set[str] = set()
 
@@ -122,27 +127,52 @@ class QuantShadowMonitor:
         return 15.0 if self.asset == "btc" else 5.0
 
     def _get_clob_yes(self, market: Market) -> float:
+        """Fetch YES token CLOB midpoint.
+
+        Called under _clob_semaphore (max 2 concurrent) to avoid connection resets
+        when all 8 monitors hit clob.polymarket.com simultaneously.
+        """
         try:
             token_ids = market.get_token_ids()
-            if token_ids:
+            if not token_ids:
+                logger.warning(f"{self.label} CLOB: no token_ids", slug=market.slug)
+            else:
                 book = self.client.get_orderbook(token_ids[0], depth=5)
-                if book:
+                if not book:
+                    logger.warning(f"{self.label} CLOB: orderbook returned None", slug=market.slug)
+                else:
                     bids = book.get("bids", [])
                     asks = book.get("asks", [])
                     if bids and asks:
-                        return (float(bids[0][0]) + float(asks[0][0])) / 2.0
-        except Exception:
-            pass
-        return float(market.best_bid) if market.best_bid else 0.5
+                        # CLOB returns bids ascending (worst→best), asks descending (worst→best)
+                        # Use last element for best bid and best ask (tight midpoint)
+                        bid_p = bids[-1]["price"] if isinstance(bids[-1], dict) else bids[-1][0]
+                        ask_p = asks[-1]["price"] if isinstance(asks[-1], dict) else asks[-1][0]
+                        return (float(bid_p) + float(ask_p)) / 2.0
+                    logger.warning(
+                        f"{self.label} CLOB: empty book",
+                        slug=market.slug, bids=len(bids), asks=len(asks),
+                    )
+        except Exception as e:
+            import traceback as _tb
+            logger.warning(
+                f"{self.label} CLOB: exception",
+                error_type=type(e).__name__,
+                error=str(e),
+                tb=_tb.format_exc().splitlines()[-3:],
+            )
+        fallback = float(market.best_bid) if market.best_bid else 0.5
+        logger.info(f"{self.label} CLOB fallback", value=fallback, slug=market.slug)
+        return fallback
 
     async def _get_trend_score(self) -> float:
         try:
             analyzer = self.trend_analyzers.get(self.asset)
             if analyzer:
-                result = await asyncio.to_thread(analyzer.analyze)
+                result = await analyzer.compute()
                 return float(result.trend_score) if result else 0.0
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"{self.label} trend score failed", error=str(e))
         return 0.0
 
     # ── Main lifecycle ───────────────────────────────────────────────────────
@@ -219,12 +249,18 @@ class QuantShadowMonitor:
         gap_usd = current_price - ptb
         gap_z = compute_gap_z(gap_usd, vol, time_remaining / 60.0)
         phase = get_phase(time_remaining, self.duration)
-        clob_yes = await asyncio.to_thread(self._get_clob_yes, market)
+        async with _clob_semaphore:
+            clob_yes = await asyncio.to_thread(self._get_clob_yes, market)
         trend_score = await self._get_trend_score()
 
-        # Quant prediction
+        # Quant prediction (reads from shared container so retrain takes effect immediately)
+        asset_code = float({"btc": 0, "eth": 1, "sol": 2, "xrp": 3}.get(self.asset, 0))
         p_yes, action, edge = quant_predict(
-            self.model, self.scaler, gap_z, clob_yes, trend_score, phase
+            self.model_container["model"],
+            self.model_container["scaler"],
+            gap_z, clob_yes, trend_score, phase,
+            gap_usd_abs=abs(gap_usd),
+            asset_code=asset_code,
         )
 
         logger.info(
@@ -358,9 +394,11 @@ class QuantShadowMonitor:
         v2_conf_str = f"{v2_conf:.0%}" if v2_conf else "N/A"
         asset_sym = self.asset.upper()
 
+        market_url = f"https://polymarket.com/event/{slug}"
         msg = (
             f"🔬 Quant Shadow: {self.label} settled\n"
-            f"{'─' * 32}\n"
+            f"{'-' * 32}\n"
+            f"[{slug}]({market_url})\n"
             f"Outcome: {actual_icon} {actual_outcome} "
             f"({asset_sym} ${close_price:,.0f} vs PTB ${ptb:,.0f})\n\n"
             f"Quant: {action} (p={p_yes:.2f}, edge={edge_str}) {quant_icon}\n"
@@ -371,9 +409,77 @@ class QuantShadowMonitor:
         )
 
         try:
-            await self.telegram.send_message(msg)
+            await self.telegram._send_message(msg)
         except Exception as e:
             logger.warning(f"{self.label} Telegram alert failed", error=str(e))
+
+
+# ── Retrain loop ─────────────────────────────────────────────────────────────
+
+RETRAIN_MIN_NEW_ROWS = 50   # retrain if ai_analysis_v2 grew by this many settled rows
+RETRAIN_CHECK_INTERVAL = 3600  # check every hour
+
+
+async def retrain_loop(model_container: dict, db: PerformanceDatabase, telegram) -> None:
+    """Retrain logistic regression when enough new data has arrived (or weekly on Sunday midnight).
+
+    Updates model_container in place — all monitors pick up the new model immediately.
+    """
+    from quant_shadow.model import train_and_save, load_model
+
+    while True:
+        await asyncio.sleep(RETRAIN_CHECK_INTERVAL)
+        try:
+            # Count settled rows in training source
+            cursor = db.conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM ai_analysis_v2 WHERE actual_outcome IS NOT NULL"
+            )
+            current_n = cursor.fetchone()[0]
+
+            last_n = model_container.get("n_rows", 0)
+            now_utc = datetime.now(timezone.utc)
+            is_sunday_midnight = (now_utc.weekday() == 6 and now_utc.hour == 0)
+            enough_new_rows = (current_n - last_n) >= RETRAIN_MIN_NEW_ROWS
+
+            if not (is_sunday_midnight or enough_new_rows):
+                logger.debug(
+                    "Retrain check: no trigger",
+                    current_n=current_n,
+                    last_n=last_n,
+                    new_rows=current_n - last_n,
+                )
+                continue
+
+            trigger = "sunday-midnight" if is_sunday_midnight else f"+{current_n - last_n}-rows"
+            logger.info("Retraining model", trigger=trigger, current_n=current_n, last_n=last_n)
+
+            meta = await asyncio.to_thread(train_and_save)
+            new_model, new_scaler = await asyncio.to_thread(load_model)
+
+            model_container["model"] = new_model
+            model_container["scaler"] = new_scaler
+            model_container["n_rows"] = meta["n_rows"]
+
+            coef = meta["coef"]
+            msg = (
+                f"🔬 Quant model retrained ({trigger})\n"
+                f"Rows: {last_n} → {meta['n_rows']} | pos_rate: {meta['pos_rate']:.1%}\n"
+                f"Coef: gap_z={coef.get('gap_z', 0):+.3f} "
+                f"clob={coef.get('clob_yes', 0):+.3f} "
+                f"trend={coef.get('trend_score', 0):+.3f}\n"
+                f"gap_abs={coef.get('gap_usd_abs', 0):+.3f} "
+                f"asset={coef.get('asset_code', 0):+.3f}"
+            )
+            logger.info("Model reloaded", n_rows=meta["n_rows"], pos_rate=f"{meta['pos_rate']:.1%}")
+            if telegram:
+                try:
+                    await telegram._send_message(msg)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error("Retrain loop error", error=str(e))
 
 
 # ── Stats loop ───────────────────────────────────────────────────────────────
@@ -411,6 +517,9 @@ async def stats_loop(db: PerformanceDatabase) -> None:
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 async def main() -> None:
+    global _clob_semaphore
+    _clob_semaphore = asyncio.Semaphore(2)  # max 2 concurrent CLOB calls
+
     logger.info("Quant Shadow Service starting", markets=len(MARKETS))
 
     settings = Settings()
@@ -420,12 +529,17 @@ async def main() -> None:
     telegram = None
     try:
         telegram = TelegramBot(settings)
-        await telegram.send_message("🔬 Quant Shadow Service started — monitoring 8 markets")
+        await telegram._send_message("🔬 Quant Shadow Service started — monitoring 8 markets")
     except Exception:
         logger.warning("Telegram not configured or unavailable")
 
     # Load logistic regression model (trains if model file not found)
-    model, scaler = load_model()
+    # Shared container — retrain_loop mutates this in place, monitors read from it
+    _model, _scaler = load_model()
+    cursor = db.conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM ai_analysis_v2 WHERE actual_outcome IS NOT NULL")
+    _n_rows = cursor.fetchone()[0]
+    model_container = {"model": _model, "scaler": _scaler, "n_rows": _n_rows}
 
     # Price services
     btc_service = BTCPriceService(settings)
@@ -452,7 +566,7 @@ async def main() -> None:
     # Give services 5s to warm up before first monitor fires
     await asyncio.sleep(5)
 
-    # Launch 8 market monitors + stats loop
+    # Launch 8 market monitors + stats + retrain loops
     tasks = [
         asyncio.create_task(
             QuantShadowMonitor(
@@ -464,14 +578,16 @@ async def main() -> None:
                 trend_analyzers=trend_analyzers,
                 db=db,
                 telegram=telegram,
-                model=model,
-                scaler=scaler,
+                model_container=model_container,
             ).run(),
             name=f"quant-{asset}-{tf}",
         )
         for asset, tf in MARKETS
     ]
     tasks.append(asyncio.create_task(stats_loop(db), name="stats"))
+    tasks.append(asyncio.create_task(
+        retrain_loop(model_container, db, telegram), name="retrain"
+    ))
 
     # Graceful shutdown on SIGTERM / SIGINT
     loop = asyncio.get_running_loop()
@@ -485,7 +601,7 @@ async def main() -> None:
         logger.info("Quant Shadow shutting down")
         if telegram:
             try:
-                await telegram.send_message("🔬 Quant Shadow Service stopped")
+                await telegram._send_message("🔬 Quant Shadow Service stopped")
             except Exception:
                 pass
 
