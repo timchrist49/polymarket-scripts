@@ -3346,7 +3346,7 @@ class AutoTrader:
                 pass
 
             # Build market_data dict — use live CLOB odds (not stale Gamma best_bid)
-            _live_5m_odds = self.realtime_odds_streamer.get_current_odds(market_id) if self.realtime_odds_streamer else None
+            _live_5m_odds = self.realtime_streamer.get_current_odds(market_id) if self.realtime_streamer else None
             if _live_5m_odds:
                 yes_price = float(_live_5m_odds.yes_odds)
             else:
